@@ -228,9 +228,9 @@ class SymbolicVarRenewMutator : public ExprMutator, tir::ExprMutator {
     SymbolicVarRenewMutator mutator;
     return Downcast<Function>(mutator.VisitExpr(function));
   }
-  SymbolicVarRenewMutator() = default;
 
- protected:
+ private:
+  SymbolicVarRenewMutator() = default;
   using relax::ExprMutator::VisitExpr;
   using relax::ExprMutator::VisitExpr_;
   using tir::ExprMutator::VisitExpr_;
@@ -274,6 +274,7 @@ class SymbolicVarRenewMutator : public ExprMutator, tir::ExprMutator {
     }
   }
 
+ private:
   Map<tir::Var, tir::Var> var_map_;
 };
 
@@ -282,32 +283,22 @@ class SymbolicVarRenewMutator : public ExprMutator, tir::ExprMutator {
  * \details All variables that are bound inside the original function would be copied to satisfy
  * the restriction in the well-formed check: Variables in Relax must be bound exactly once.
  */
-class FunctionCopier : public SymbolicVarRenewMutator {
+class FunctionCopier : public ExprMutator {
  public:
-  FunctionCopier() = default;
-  Function Copy(Function func) { return Downcast<Function>(VisitExpr(func)); }
-  Map<Var, Var> GetVarMap() { return relax_var_map_; }
-
- private:
-  using relax::ExprMutator::VisitExpr;
-
-  Var VisitVarDef_(const DataflowVarNode* var) override {
-    Var new_var = SymbolicVarRenewMutator::VisitVarDef_(var);
-    Var copied_var = DataflowVar(new_var->name_hint(), GetStructInfo(new_var), new_var->span);
-    var_remap_[var->vid] = copied_var;
-    relax_var_map_.Set(GetRef<Var>(var), copied_var);
-    return copied_var;
+  Function Copy(Function func) {
+    auto new_func = Downcast<Function>(VisitExpr(func));
+    return SymbolicVarRenewMutator::Renew(new_func);
   }
 
   Var VisitVarDef_(const VarNode* var) override {
-    Var new_var = SymbolicVarRenewMutator::VisitVarDef_(var);
+    Var new_var = ExprMutator::VisitVarDef_(var);
     Var copied_var = Var(new_var->name_hint(), GetStructInfo(new_var), new_var->span);
     var_remap_[var->vid] = copied_var;
-    relax_var_map_.Set(GetRef<Var>(var), copied_var);
+    var_map.Set(GetRef<Var>(var), copied_var);
     return copied_var;
   }
 
-  Map<Var, Var> relax_var_map_;
+  Map<Var, Var> var_map;
 };
 
 /*!
