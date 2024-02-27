@@ -546,7 +546,7 @@ SBlock::SBlock(ffi::Array<IterVar> iter_vars, ffi::Array<BufferRegion> reads,
                ffi::Array<BufferRegion> writes, ffi::String name_hint, Stmt body,
                ffi::Optional<Stmt> init, ffi::Array<Buffer> alloc_buffers,
                ffi::Array<MatchBufferRegion> match_buffers, ffi::Map<ffi::String, Any> annotations,
-               Span span) {
+               Span span, ffi::Optional<ExecScope> exec_scope) {
   ObjectPtr<SBlockNode> node = ffi::make_object<SBlockNode>();
   node->iter_vars = std::move(iter_vars);
   node->reads = std::move(reads);
@@ -557,21 +557,23 @@ SBlock::SBlock(ffi::Array<IterVar> iter_vars, ffi::Array<BufferRegion> reads,
   node->alloc_buffers = std::move(alloc_buffers);
   node->match_buffers = std::move(match_buffers);
   node->annotations = std::move(annotations);
+  node->exec_scope = std::move(exec_scope);
   node->span = std::move(span);
   data_ = std::move(node);
 }
 
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
-  refl::GlobalDef().def("tir.SBlock",
-                        [](ffi::Array<IterVar> iter_vars, ffi::Array<BufferRegion> reads,
-                           ffi::Array<BufferRegion> writes, ffi::String name_hint, Stmt body,
-                           ffi::Optional<Stmt> init, ffi::Array<Buffer> alloc_buffers,
-                           ffi::Array<MatchBufferRegion> match_buffers,
-                           ffi::Map<ffi::String, Any> annotations, Span span) {
-                          return SBlock(iter_vars, reads, writes, name_hint, body, init,
-                                        alloc_buffers, match_buffers, annotations, span);
-                        });
+  refl::GlobalDef().def(
+      "tir.SBlock",
+      [](ffi::Array<IterVar> iter_vars, ffi::Array<BufferRegion> reads,
+         ffi::Array<BufferRegion> writes, ffi::String name_hint, Stmt body,
+         ffi::Optional<Stmt> init, ffi::Array<Buffer> alloc_buffers,
+         ffi::Array<MatchBufferRegion> match_buffers, ffi::Map<ffi::String, Any> annotations,
+         Span span, ffi::Optional<ExecScope> exec_scope) {
+        return SBlock(iter_vars, reads, writes, name_hint, body, init, alloc_buffers, match_buffers,
+                      annotations, span, exec_scope);
+      });
 }
 
 // BlockRealize
