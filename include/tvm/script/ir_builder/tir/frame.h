@@ -21,6 +21,7 @@
 
 #include <tvm/script/ir_builder/base.h>
 #include <tvm/script/ir_builder/ir/frame.h>
+#include <tvm/tir/exec_scope.h>
 #include <tvm/tir/stmt.h>
 
 #include <utility>
@@ -155,6 +156,9 @@ class SBlockFrameNode : public TIRFrameNode {
   /*! \brief The flag whether to construct BlockRealize or Block. */
   bool no_realize;
 
+  // TIR+ signature
+  Optional<tvm::tir::ExecScope> exec_scope;
+
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<SBlockFrameNode>()
@@ -168,7 +172,8 @@ class SBlockFrameNode : public TIRFrameNode {
         .def_ro("annotations", &SBlockFrameNode::annotations)
         .def_ro("iter_values", &SBlockFrameNode::iter_values)
         .def_ro("predicate", &SBlockFrameNode::predicate)
-        .def_ro("no_realize", &SBlockFrameNode::no_realize);
+        .def_ro("no_realize", &SBlockFrameNode::no_realize)
+        .def_ro("exec_scope", &SBlockFrameNode::exec_scope);
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("script.ir_builder.tir.SSBlockFrame", SBlockFrameNode,
                                     TIRFrameNode);

@@ -21,6 +21,7 @@
 
 #include <tvm/script/ir_builder/base.h>
 #include <tvm/script/ir_builder/tir/frame.h>
+#include <tvm/tir/exec_scope.h>
 #include <tvm/tir/op.h>
 
 namespace tvm {
@@ -122,6 +123,20 @@ Buffer MatchBuffer(ObjectRef param, ffi::Array<PrimExpr> shape,
  * \return The SBlockFrame.
  */
 SBlockFrame Block(ffi::String name, bool no_realize = false);
+
+BlockFrame World();
+
+BlockFrame Kernel();
+
+BlockFrame ScopeSlice(Array<tvm::tir::ScopeId> vars, Array<Range> ranges, String cur);
+
+tvm::tir::ScopeId KernelId(PrimExpr extent);
+
+Array<tvm::tir::ScopeId> BlockId(Array<PrimExpr> extents, String parent);
+
+Array<tvm::tir::ScopeId> WarpId(Array<PrimExpr> extents, String parent);
+
+Array<tvm::tir::ScopeId> ThreadId(Array<PrimExpr> extents, String parent);
 
 /*!
  * \brief The block initialization statement.
