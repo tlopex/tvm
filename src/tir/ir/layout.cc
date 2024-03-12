@@ -53,20 +53,20 @@ TVM_REGISTER_GLOBAL("tir.IterTree").set_body_typed([](Var root, Array<IterTreeSp
   return IterTree(root, splits);
 });
 
-// CoordIterTree
-CoordIterTree::CoordIterTree(Var root, Array<IterTreeSplit> splits, Array<PrimExpr> coeff) {
-  auto n = make_object<CoordIterTreeNode>();
+// DataIterTree
+DataIterTree::DataIterTree(Var root, Array<IterTreeSplit> splits, Array<PrimExpr> coeff) {
+  auto n = make_object<DataIterTreeNode>();
   n->root = std::move(root);
   n->splits = std::move(splits);
   n->coeff = std::move(coeff);
   data_ = std::move(n);
 }
 
-TVM_REGISTER_NODE_TYPE(CoordIterTreeNode);
+TVM_REGISTER_NODE_TYPE(DataIterTreeNode);
 
-TVM_REGISTER_GLOBAL("tir.CoordIterTree")
+TVM_REGISTER_GLOBAL("tir.DataIterTree")
     .set_body_typed([](Var root, Array<IterTreeSplit> splits, Array<PrimExpr> coeff) {
-      return CoordIterTree(root, splits, coeff);
+      return DataIterTree(root, splits, coeff);
     });
 
 // ScopeIdAttr
@@ -85,37 +85,35 @@ TVM_REGISTER_GLOBAL("tir.ScopeIdAttr")
       return ScopeIdAttr(static_cast<ScopeIdType>(type), bound, owner);
     });
 
-// ScopeIdIterTree
-ScopeIdIterTree::ScopeIdIterTree(Var root, Array<IterTreeSplit> splits, Array<ScopeIdAttr> attrs) {
-  auto n = make_object<ScopeIdIterTreeNode>();
+// DeviceIterTree
+DeviceIterTree::DeviceIterTree(Var root, Array<IterTreeSplit> splits, Array<ScopeIdAttr> attrs) {
+  auto n = make_object<DeviceIterTreeNode>();
   n->root = std::move(root);
   n->splits = std::move(splits);
   n->attrs = std::move(attrs);
   data_ = std::move(n);
 }
 
-TVM_REGISTER_NODE_TYPE(ScopeIdIterTreeNode);
+TVM_REGISTER_NODE_TYPE(DeviceIterTreeNode);
 
-TVM_REGISTER_GLOBAL("tir.ScopeIdIterTree")
+TVM_REGISTER_GLOBAL("tir.DeviceIterTree")
     .set_body_typed([](Var root, Array<IterTreeSplit> splits, Array<ScopeIdAttr> attrs) {
-      return ScopeIdIterTree(root, splits, attrs);
+      return DeviceIterTree(root, splits, attrs);
     });
 
 // TileLayout
-TileLayout::TileLayout(Array<CoordIterTree> coord_iter_trees,
-                       Array<ScopeIdIterTree> scope_id_iter_trees) {
+TileLayout::TileLayout(Array<DataIterTree> data_trees, Array<DeviceIterTree> device_trees) {
   auto n = make_object<TileLayoutNode>();
-  n->coord_iter_trees = std::move(coord_iter_trees);
-  n->scope_id_iter_trees = std::move(scope_id_iter_trees);
+  n->data_trees = std::move(data_trees);
+  n->device_trees = std::move(device_trees);
   data_ = std::move(n);
 }
 
 TVM_REGISTER_NODE_TYPE(TileLayoutNode);
 
 TVM_REGISTER_GLOBAL("tir.TileLayout")
-    .set_body_typed([](Array<CoordIterTree> coord_iter_trees,
-                       Array<ScopeIdIterTree> scope_id_iter_trees) {
-      return TileLayout(coord_iter_trees, scope_id_iter_trees);
+    .set_body_typed([](Array<DataIterTree> data_trees, Array<DeviceIterTree> device_trees) {
+      return TileLayout(data_trees, device_trees);
     });
 
 }  // namespace tir

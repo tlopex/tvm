@@ -24,10 +24,10 @@ from tvm.runtime import Object
 from .expr import Var, PrimExpr
 
 
-@register_object("tir.Layout")
-class Layout(Object):
+@register_object("tir.TLayout")
+class TLayout(Object):
     def __init__(self):
-        self.__init_handle_by_constructor__(_ffi_api.Layout)
+        self.__init_handle_by_constructor__(_ffi_api.TLayout)
 
 
 @register_object("tir.IterTreeSplit")
@@ -49,12 +49,12 @@ class IterTree(Object):
         self.__init_handle_by_constructor__(_ffi_api.IterTree, root, splits)
 
 
-@register_object("tir.CoordIterTree")
-class CoordIterTree(IterTree):
+@register_object("tir.DataIterTree")
+class DataIterTree(IterTree):
     coeff: List[PrimExpr]
 
     def __init__(self, root: Var, splits: List[IterTreeSplit], coeff: List[PrimExpr]):
-        self.__init_handle_by_constructor__(_ffi_api.CoordIterTree, root, splits, coeff)
+        self.__init_handle_by_constructor__(_ffi_api.DataIterTree, root, splits, coeff)
 
 
 @register_object("tir.ScopeIdAttr")
@@ -71,22 +71,18 @@ class ScopeIdAttr(Object):
         self.__init_handle_by_constructor__(_ffi_api.ScopeIdAttr, type, bound, owner)
 
 
-@register_object("tir.ScopeIdIterTree")
-class ScopeIdIterTree(IterTree):
+@register_object("tir.DeviceIterTree")
+class DeviceIterTree(IterTree):
     attrs: List[ScopeIdAttr]
 
     def __init__(self, root: Var, splits: List[IterTreeSplit], attrs: List[ScopeIdAttr]):
-        self.__init_handle_by_constructor__(_ffi_api.ScopeIdIterTree, root, splits, attrs)
+        self.__init_handle_by_constructor__(_ffi_api.DeviceIterTree, root, splits, attrs)
 
 
 @register_object("tir.TileLayout")
-class TileLayout(Layout):
-    coord_iter_trees: List[CoordIterTree]
-    scope_id_iter_trees: List[ScopeIdIterTree]
+class TileLayout(TLayout):
+    coord_iter_trees: List[DataIterTree]
+    scope_id_iter_trees: List[DeviceIterTree]
 
-    def __init__(
-        self, coord_iter_trees: List[CoordIterTree], scope_id_iter_trees: List[ScopeIdIterTree]
-    ):
-        self.__init_handle_by_constructor__(
-            _ffi_api.TileLayout, coord_iter_trees, scope_id_iter_trees
-        )
+    def __init__(self, data_trees: List[DataIterTree], device_trees: List[DeviceIterTree]):
+        self.__init_handle_by_constructor__(_ffi_api.TileLayout, data_trees, device_trees)
