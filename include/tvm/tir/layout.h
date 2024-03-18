@@ -102,7 +102,7 @@ class IterTreeNode : public Object {
     hash_reducer(splits);
   }
 
-  static constexpr const char* _type_key = "tir.IterTreeNode";
+  static constexpr const char* _type_key = "tir.IterTree";
   TVM_DECLARE_BASE_OBJECT_INFO(IterTreeNode, Object);
 };
 
