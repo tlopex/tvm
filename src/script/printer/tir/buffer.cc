@@ -358,7 +358,7 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
 TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
     .set_dispatch<tir::TileLayout>(
         "", [](tir::TileLayout layout, ObjectPath p, IRDocsifier d) -> Doc {
-          Doc doc = TIR(d, "TLayout")
+          Doc doc = TIR(d, "TileLayout")
                         ->Call({}, {"data_trees", "device_trees"},
                                {
                                    d->AsDoc<ExprDoc>(layout->data_trees, p->Attr("data_trees")),
@@ -448,6 +448,7 @@ TVM_SCRIPT_REPR(tir::BufferLoadNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::BufferStoreNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::BufferNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::TBufferNode, ReprPrintTIR);
+TVM_SCRIPT_REPR(tir::TileLayoutNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::DataIterTreeNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::DeviceIterTreeNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::IterTreeSplitNode, ReprPrintTIR);
