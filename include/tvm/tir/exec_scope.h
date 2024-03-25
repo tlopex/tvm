@@ -102,7 +102,12 @@ class ExecScopeNode : public Object {
 
 class ExecScope : public ObjectRef {
  public:
-  TVM_DLL explicit ExecScope(String name = "");
+  TVM_DLL explicit ExecScope(String name);
+
+  static ExecScope Create(String name);
+
+  /*! \brief scope is identified by name */
+  bool Is(const String& name) const;
 
   TVM_DEFINE_OBJECT_REF_METHODS(ExecScope, ObjectRef, ExecScopeNode);
 };
@@ -166,10 +171,12 @@ class ExecScopeSliceNode : public ExecScopeNode {
 
 class ExecScopeSlice : public ExecScope {
  public:
-  TVM_DLL explicit ExecScopeSlice(Array<ScopeId> vars, Array<Range> ranges, String name = "");
+  TVM_DLL explicit ExecScopeSlice(Array<ScopeId> vars, Array<Range> ranges, String name);
 
   TVM_DEFINE_OBJECT_REF_METHODS(ExecScopeSlice, ExecScope, ExecScopeSliceNode);
 };
+
+bool Higher(const ExecScope& lhs, const ExecScope& rhs);
 
 }  // namespace tir
 }  // namespace tvm
