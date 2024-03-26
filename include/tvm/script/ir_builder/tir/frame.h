@@ -162,6 +162,8 @@ class SBlockFrameNode : public TIRFrameNode {
 
   // TIR+ signature
   Optional<tvm::tir::ExecScope> exec_scope;
+  Array<tvm::tir::BufferView> buffer_views;
+  Array<tvm::tir::BufferGet> buffer_gets;
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
@@ -177,7 +179,9 @@ class SBlockFrameNode : public TIRFrameNode {
         .def_ro("iter_values", &SBlockFrameNode::iter_values)
         .def_ro("predicate", &SBlockFrameNode::predicate)
         .def_ro("no_realize", &SBlockFrameNode::no_realize)
-        .def_ro("exec_scope", &SBlockFrameNode::exec_scope);
+        .def_ro("exec_scope", &SBlockFrameNode::exec_scope)
+        .def_ro("buffer_views", &SBlockFrameNode::buffer_views)
+        .def_ro("buffer_gets", &SBlockFrameNode::buffer_gets);
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("script.ir_builder.tir.SSBlockFrame", SBlockFrameNode,
                                     TIRFrameNode);
