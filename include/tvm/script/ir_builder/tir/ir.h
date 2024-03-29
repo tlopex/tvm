@@ -151,7 +151,7 @@ BlockFrame ScopeSlice(ffi::Array<tvm::tir::ScopeId> vars, ffi::Array<Range> rang
 
 tvm::tir::ScopeId KernelId(PrimExpr extent);
 
-ffi::Array<tvm::tir::ScopeId> BlockId(ffi::Array<PrimExpr> extents, ffi::String parent);
+ffi::Array<tvm::tir::ScopeId> CtaId(ffi::Array<PrimExpr> extents, ffi::String parent);
 
 ffi::Array<tvm::tir::ScopeId> WarpId(ffi::Array<PrimExpr> extents, ffi::String parent);
 

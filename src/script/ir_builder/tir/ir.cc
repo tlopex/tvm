@@ -251,8 +251,8 @@ ffi::Array<tvm::tir::ScopeId> KernelScopeId(ffi::Array<PrimExpr> extents, ffi::S
   return scope_ids;
 }
 
-ffi::Array<tvm::tir::ScopeId> BlockId(ffi::Array<PrimExpr> extents, ffi::String parent) {
-  return KernelScopeId(extents, parent, "T.block_id", "block");
+ffi::Array<tvm::tir::ScopeId> CtaId(ffi::Array<PrimExpr> extents, ffi::String parent) {
+  return KernelScopeId(extents, parent, "T.cta_id", "cta");
 }
 
 ffi::Array<tvm::tir::ScopeId> WarpId(ffi::Array<PrimExpr> extents, ffi::String parent) {
@@ -842,7 +842,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def("script.ir_builder.tir.Thread", Thread)
       .def("script.ir_builder.tir.ScopeSlice", ScopeSlice)
       .def("script.ir_builder.tir.KernelId", KernelId)
-      .def("script.ir_builder.tir.BlockId", BlockId)
+      .def("script.ir_builder.tir.CTAId", CtaId)
       .def("script.ir_builder.tir.WarpId", WarpId)
       .def("script.ir_builder.tir.ThreadId", ThreadId)
       .def("script.ir_builder.tir.Init", Init)
