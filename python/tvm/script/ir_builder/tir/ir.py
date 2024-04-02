@@ -1510,6 +1510,10 @@ def func_gen(name: str):
     return func
 
 
+def static_assert(x: Any, message: str = ""):
+    assert x, message
+
+
 # pylint: disable=invalid-name
 int8 = func_gen(("Int8"))
 int16 = func_gen(("Int16"))
@@ -2500,4 +2504,5 @@ __all__ += [
     "S",
     "view",
     "get",
+    "static_assert"
 ]
