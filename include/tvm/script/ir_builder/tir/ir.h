@@ -125,7 +125,7 @@ Buffer MatchBuffer(ObjectRef param, ffi::Array<PrimExpr> shape,
 
 Buffer BufferView(tvm::tir::Buffer buffer, tvm::tir::TLayout layout, Buffer dst_buffer);
 
-Buffer BufferGet(tvm::tir::Buffer buffer, Buffer dst_buffer);
+Buffer BufferGet(tvm::tir::Buffer buffer);
 
 /*!
  * \brief The block declaration statement.
