@@ -809,6 +809,11 @@ TVM_STATIC_IR_FUNCTOR(Namer, vtable)
     });
 
 TVM_STATIC_IR_FUNCTOR(Namer, vtable)
+    .set_dispatch<tvm::tir::TileLayoutNode>([](const ObjectRef& node, ffi::String name) -> void {
+
+    });
+
+TVM_STATIC_IR_FUNCTOR(Namer, vtable)
     .set_dispatch<tvm::tir::TBufferNode>([](const ObjectRef& node, ffi::String name) -> void {
       tvm::tir::TBufferNode* buffer =
           const_cast<tvm::tir::TBufferNode*>(node.as<tvm::tir::TBufferNode>());
