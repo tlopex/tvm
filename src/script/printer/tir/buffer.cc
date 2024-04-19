@@ -407,8 +407,8 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
         });
 
 TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
-    .set_dispatch<tir::ScopeIdAttr>(
-        "", [](tir::ScopeIdAttr attr, ObjectPath p, IRDocsifier d) -> Doc {
+    .set_dispatch<tir::DeviceIterAttr>(
+        "", [](tir::DeviceIterAttr attr, ObjectPath p, IRDocsifier d) -> Doc {
           Array<String> keys;
           Array<ExprDoc> values;
           keys.push_back("type");
@@ -421,7 +421,7 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
             keys.push_back("owner");
             values.push_back(d->AsDoc<ExprDoc>(attr->owner, p->Attr("owner")));
           }
-          Doc doc = TIR(d, "ScopeIdAttr")->Call({}, keys, values);
+          Doc doc = TIR(d, "DeviceIterAttr")->Call({}, keys, values);
           return doc;
         });
 
@@ -452,7 +452,7 @@ TVM_SCRIPT_REPR(tir::TileLayoutNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::DataIterTreeNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::DeviceIterTreeNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::IterTreeSplitNode, ReprPrintTIR);
-TVM_SCRIPT_REPR(tir::ScopeIdAttrNode, ReprPrintTIR);
+TVM_SCRIPT_REPR(tir::DeviceIterAttrNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::MatchBufferRegionNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::ProducerLoadNode, ReprPrintTIR);
 
