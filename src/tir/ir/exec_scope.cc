@@ -112,7 +112,7 @@ ExecScope ExecScope::Create(String name) {
 
 TVM_REGISTER_NODE_TYPE(ExecScopeNode);
 
-TVM_REGISTER_GLOBAL("tir.ExecScope").set_body_typed([](Array<PrimExpr> dims, String name) {
+TVM_REGISTER_GLOBAL("tir.ExecScope").set_body_typed([](String name) {
   return ExecScope(name);
 });
 
