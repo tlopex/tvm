@@ -166,8 +166,22 @@ Buffer MatchBuffer(ObjectRef param, ffi::Array<PrimExpr> shape, DataType dtype,
   return buffer;
 }
 
-Buffer BufferView(tvm::tir::Buffer buffer, tvm::tir::TLayout layout, Buffer dst_buffer) {
+Buffer BufferView(tvm::tir::Buffer buffer, tvm::tir::TLayout layout) {
   SBlockFrame frame = FindSBlockFrame("T.View");
+
+  String logical_scope = buffer.logical_scope();
+  if (auto tile_layout = layout.as<tvm::tir::TileLayoutNode>()) {
+    if (tile_layout->from.defined()) {
+      ICHECK(tile_layout->to.defined())
+          << "ValueError: The from scope of the layout must match the to scope of the layout.";
+      ICHECK(tvm::tir::Equal(tvm::tir::ExecScope::Create(logical_scope), tile_layout->from.value()))
+          << "ValueError: The logical scope of the buffer must match the from scope of the layout.";
+      logical_scope = tile_layout->to.value()->name;
+    }
+  }
+  Buffer dst_buffer = BufferDecl(layout->GetShape(), buffer->dtype, "", NullOpt, NullOpt, NullOpt,
+                                 buffer.scope(), 1, 1, "auto", NullOpt, logical_scope, layout);
+
   frame->buffer_views.push_back(tvm::tir::BufferView(buffer, layout, dst_buffer));
   {
     // Update BufferView tree
