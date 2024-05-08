@@ -179,7 +179,7 @@ Buffer BufferView(tvm::tir::Buffer buffer, tvm::tir::TLayout layout) {
       logical_scope = tile_layout->to.value()->name;
     }
   }
-  Buffer dst_buffer = BufferDecl(layout->GetShape(), buffer->dtype, "", NullOpt, NullOpt, NullOpt,
+  Buffer dst_buffer = BufferDecl(layout->GetDefaultShape(), buffer->dtype, "", NullOpt, NullOpt, NullOpt,
                                  buffer.scope(), 1, 1, "auto", NullOpt, logical_scope, layout);
 
   frame->buffer_views.push_back(tvm::tir::BufferView(buffer, layout, dst_buffer));

@@ -523,6 +523,20 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
         });
 
 TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
+    .set_dispatch<tir::SwizzleLayout>(
+        "", [](tir::SwizzleLayout layout, ObjectPath p, IRDocsifier d) -> Doc {
+          return TIR(d, "SwizzleLayout")
+              ->Call(
+                  {
+                      LiteralDoc::Int(layout->per_element, p->Attr("per_element")),
+                      LiteralDoc::Int(layout->swizzle_len, p->Attr("swizzle_len")),
+                      LiteralDoc::Int(layout->atom_len, p->Attr("atom_len")),
+                  },
+                  {"swizzle_inner"},
+                  {LiteralDoc::Boolean(layout->swizzle_inner, p->Attr("swizzle_inner"))});
+        });
+
+TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
     .set_dispatch<tir::DeviceIterAttr>(
         "", [](tir::DeviceIterAttr attr, ObjectPath p, IRDocsifier d) -> Doc {
           Array<String> keys;
@@ -565,6 +579,7 @@ TVM_SCRIPT_REPR(tir::BufferStoreNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::BufferNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::TBufferNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::TileLayoutNode, ReprPrintTIR);
+TVM_SCRIPT_REPR(tir::SwizzleLayoutNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::DataIterTreeNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::DeviceIterTreeNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::IterTreeSplitNode, ReprPrintTIR);
