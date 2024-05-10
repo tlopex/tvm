@@ -31,7 +31,6 @@ namespace ir_builder {
 namespace tir {
 
 using tvm::tir::Buffer;
-using tvm::tir::TBuffer;
 using tvm::tir::TLayout;
 using tvm::tir::Var;
 

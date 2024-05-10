@@ -60,10 +60,10 @@ Buffer BufferDecl(ffi::Array<PrimExpr> shape, DataType dtype, ffi::String buffer
     DataType shape_dtype = shape.empty() ? DataType::Int(32) : shape[0]->dtype;
     elem_offset = tvm::tir::Var("elem_offset", shape_dtype);
   }
-  return TBuffer(buffer_data, dtype, shape, strides.value_or(ffi::Array<PrimExpr>()),
-                 elem_offset.value_or(PrimExpr()), buffer_name, align, offset_factor,
-                 (buffer_type == "auto" ? tvm::tir::kAutoBroadcast : tvm::tir::kDefault),
-                 axis_separators.value_or(ffi::Array<IntImm>()), layout);
+  return Buffer(buffer_data, dtype, shape, strides.value_or(ffi::Array<PrimExpr>()),
+                elem_offset.value_or(PrimExpr()), buffer_name, align, offset_factor,
+                (buffer_type == "auto" ? tvm::tir::kAutoBroadcast : tvm::tir::kDefault),
+                axis_separators.value_or(ffi::Array<IntImm>()), Span(), layout);
 }
 
 PrimFuncFrame PrimFunc(bool is_private, bool is_tirp) {
@@ -179,8 +179,9 @@ Buffer BufferView(tvm::tir::Buffer buffer, tvm::tir::TLayout layout) {
       logical_scope = tile_layout->to.value()->name;
     }
   }
-  Buffer dst_buffer = BufferDecl(layout->GetDefaultShape(), buffer->dtype, "", NullOpt, NullOpt, NullOpt,
-                                 buffer.scope(), 1, 1, "auto", NullOpt, logical_scope, layout);
+  Buffer dst_buffer =
+      BufferDecl(layout->GetDefaultShape(), buffer->dtype, "", NullOpt, NullOpt, NullOpt,
+                 buffer.scope(), 1, 1, "auto", NullOpt, logical_scope, layout);
 
   frame->buffer_views.push_back(tvm::tir::BufferView(buffer, layout, dst_buffer));
   {
@@ -796,21 +797,6 @@ TVM_STATIC_IR_FUNCTOR(Namer, vtable)
     .set_dispatch<tvm::tir::BufferNode>([](const ObjectRef& node, ffi::String name) -> void {
       tvm::tir::BufferNode* buffer =
           const_cast<tvm::tir::BufferNode*>(node.as<tvm::tir::BufferNode>());
-      buffer->name = name;
-      Namer::Name(buffer->data, name);
-      int n = buffer->strides.size();
-      for (int i = 0; i < n; ++i) {
-        PrimExpr e = buffer->strides[i];
-        if (auto v = e.as<tvm::tir::Var>()) {
-          Namer::Name(v.value(), name + "_s" + std::to_string(i));
-        }
-      }
-    });
-
-TVM_STATIC_IR_FUNCTOR(Namer, vtable)
-    .set_dispatch<tvm::tir::TBufferNode>([](const ObjectRef& node, ffi::String name) -> void {
-      tvm::tir::TBufferNode* buffer =
-          const_cast<tvm::tir::TBufferNode*>(node.as<tvm::tir::TBufferNode>());
       buffer->name = name;
       Namer::Name(buffer->data, name);
       int n = buffer->strides.size();
