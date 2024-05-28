@@ -27,6 +27,7 @@
 #include <tvm/tir/function.h>
 #include <tvm/tir/index_map.h>
 #include <tvm/tir/op.h>
+#include <tvm/tir/tirp_op.h>
 #include <tvm/tir/stmt.h>
 #include <tvm/tir/stmt_functor.h>
 
