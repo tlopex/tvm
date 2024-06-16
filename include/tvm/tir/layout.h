@@ -54,8 +54,8 @@ class TLayoutNode : public Object {
   virtual PrimExpr Apply(const Array<PrimExpr>& coord) const = 0;
 
   static constexpr const char* _type_key = "tir.TLayout";
-  static constexpr const bool _type_has_method_sequal_reduce = true;
-  static constexpr const bool _type_has_method_shash_reduce = true;
+  static constexpr const bool _type_has_method_sequal_reduce = false;
+  static constexpr const bool _type_has_method_shash_reduce = false;
   TVM_DECLARE_BASE_OBJECT_INFO(TLayoutNode, Object);
 };
 
@@ -357,6 +357,8 @@ class TileLayoutNode : public TLayoutNode {
   PrimExpr Apply(const Array<PrimExpr>& coord) const final;
 
   static constexpr const char* _type_key = "tir.TileLayout";
+  static constexpr const bool _type_has_method_sequal_reduce = true;
+  static constexpr const bool _type_has_method_shash_reduce = true;
   TVM_DECLARE_FINAL_OBJECT_INFO(TileLayoutNode, TLayoutNode);
 };
 
@@ -450,6 +452,8 @@ class SwizzleLayoutNode : public TLayoutNode {
   PrimExpr Apply(const Array<PrimExpr>& coord) const final;
 
   static constexpr const char* _type_key = "tir.SwizzleLayout";
+  static constexpr const bool _type_has_method_sequal_reduce = true;
+  static constexpr const bool _type_has_method_shash_reduce = true;
   TVM_DECLARE_FINAL_OBJECT_INFO(SwizzleLayoutNode, TLayoutNode);
 
  private:

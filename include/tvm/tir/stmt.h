@@ -26,6 +26,7 @@
 
 #include <tvm/ffi/reflection/registry.h>
 #include <tvm/node/script_printer.h>
+#include <tvm/tir/async_structs.h>
 #include <tvm/tir/exec_scope.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/layout.h>
@@ -909,6 +910,10 @@ class SBlockNode : public StmtNode {
   Array<BufferView> buffer_views;
   // Local views of buffers
   Array<BufferGet> buffer_gets;
+  // Barriers in the block
+  Array<Barrier> barriers;
+  // BarrierArray in the block
+  Array<BarrierArray> barrier_arrays;
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
@@ -924,7 +929,9 @@ class SBlockNode : public StmtNode {
         .def_ro("body", &SBlockNode::body)
         .def_ro("exec_scope", &SBlockNode::exec_scope)
         .def_ro("buffer_views", &SBlockNode::buffer_views)
-        .def_ro("buffer_gets", &SBlockNode::buffer_gets);
+        .def_ro("buffer_gets", &SBlockNode::buffer_gets)
+        .def_ro("barriers", &SBlockNode::barriers)
+        .def_ro("barrier_arrays", &SBlockNode::barrier_arrays);
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tir.SBlock", SBlockNode, StmtNode);
 };
@@ -944,7 +951,9 @@ class SBlock : public Stmt {
       ffi::Map<ffi::String, ffi::Any> annotations = ffi::Map<ffi::String, ffi::Any>(),
       Span span = Span(), ffi::Optional<ExecScope> exec_scope = std::nullopt,
       ffi::Array<BufferView> buffer_views = ffi::Array<BufferView>(),
-      ffi::Array<BufferGet> buffer_gets = ffi::Array<BufferGet>());
+      ffi::Array<BufferGet> buffer_gets = ffi::Array<BufferGet>(),
+      ffi::Array<Barrier> barriers = ffi::Array<Barrier>(),
+      ffi::Array<BarrierArray> barrier_arrays = ffi::Array<BarrierArray>());
 
   TVM_FFI_DEFINE_OBJECT_REF_METHODS_NULLABLE(SBlock, Stmt, SBlockNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(SBlockNode);

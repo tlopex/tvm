@@ -21,6 +21,7 @@
 
 #include <tvm/script/ir_builder/base.h>
 #include <tvm/script/ir_builder/ir/frame.h>
+#include <tvm/tir/async_structs.h>
 #include <tvm/tir/exec_scope.h>
 #include <tvm/tir/stmt.h>
 
@@ -168,6 +169,8 @@ class SBlockFrameNode : public TIRFrameNode {
   Optional<tvm::tir::ExecScope> exec_scope;
   Array<tvm::tir::BufferView> buffer_views;
   Array<tvm::tir::BufferGet> buffer_gets;
+  Array<tvm::tir::Barrier> barriers;
+  Array<tvm::tir::BarrierArray> barrier_arrays;
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
@@ -185,7 +188,9 @@ class SBlockFrameNode : public TIRFrameNode {
         .def_ro("no_realize", &SBlockFrameNode::no_realize)
         .def_ro("exec_scope", &SBlockFrameNode::exec_scope)
         .def_ro("buffer_views", &SBlockFrameNode::buffer_views)
-        .def_ro("buffer_gets", &SBlockFrameNode::buffer_gets);
+        .def_ro("buffer_gets", &SBlockFrameNode::buffer_gets)
+        .def_ro("barriers", &SBlockFrameNode::barriers)
+        .def_ro("barrier_arrays", &SBlockFrameNode::barrier_arrays);
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("script.ir_builder.tir.SSBlockFrame", SBlockFrameNode,
                                     TIRFrameNode);

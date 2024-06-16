@@ -245,6 +245,8 @@ SBlockFrame Block(ffi::String name, bool no_realize, ffi::String exec_scope) {
   }
   n->buffer_views.clear();
   n->buffer_gets.clear();
+  n->barriers.clear();
+  n->barrier_arrays.clear();
   return SBlockFrame(n);
 }
 
@@ -430,6 +432,32 @@ Buffer SBlockAllocBuffer(ffi::Array<PrimExpr> shape, DataType dtype, ffi::Option
   }
   return buffer;
 }
+
+Barrier AllocBarrier(String name_hint) {
+  Barrier barrier = tvm::tir::Barrier(name_hint);
+  IRBuilder builder = IRBuilder::Current();
+  if (Optional<BlockFrame> frame = builder->GetLastFrame<BlockFrame>()) {
+    frame.value()->barriers.push_back(barrier);
+  } else {
+    LOG(FATAL) << "ValueError: Block frame not find. Please ensure 'T.alloc_barrier' is called "
+                  "under T.block()";
+  }
+  ICHECK(barrier.defined()) << "InternalError: Barrier is not defined.";
+  return barrier;
+}
+
+BarrierArray AllocBarrierArray(size_t size, String name_hint) {
+  BarrierArray barrier_array = tvm::tir::BarrierArray(size, name_hint);
+  IRBuilder builder = IRBuilder::Current();
+  if (Optional<BlockFrame> frame = builder->GetLastFrame<BlockFrame>()) {
+    frame.value()->barrier_arrays.push_back(barrier_array);
+  } else {
+    LOG(FATAL) << "ValueError: Block frame not find. Please ensure 'T.alloc_barrier_array' is "
+                  "called under T.block()";
+  }
+  return barrier_array;
+}
+
 namespace axis {
 
 IterVar PushBlockVar(IterVar iter_var, PrimExpr binding) {
@@ -605,6 +633,7 @@ AssertFrame Assert(PrimExpr condition, ffi::String error_kind,
 }
 
 Var Bind(PrimExpr value, ffi::Optional<Type> type_annotation, ffi::Optional<Var> var) {
+  TVM_FFI_ICHECK(value.defined()) << "ValueError: Bind value must be defined";
   Var bind_var = [&]() {
     if (var.defined()) {
       return var.value();
@@ -819,18 +848,13 @@ TVM_STATIC_IR_FUNCTOR(Namer, vtable)
     });
 
 TVM_STATIC_IR_FUNCTOR(Namer, vtable)
-    .set_dispatch<tvm::tir::TBufferNode>([](const ObjectRef& node, ffi::String name) -> void {
-      tvm::tir::TBufferNode* buffer =
-          const_cast<tvm::tir::TBufferNode*>(node.as<tvm::tir::TBufferNode>());
-      buffer->name = name;
-      Namer::Name(buffer->data, name);
-      int n = buffer->strides.size();
-      for (int i = 0; i < n; ++i) {
-        PrimExpr e = buffer->strides[i];
-        if (auto v = e.as<tvm::tir::Var>()) {
-          Namer::Name(v.value(), name + "_s" + std::to_string(i));
-        }
-      }
+    .set_dispatch<tvm::tir::BarrierNode>([](const ObjectRef& node, String name) -> void {
+
+    });
+
+TVM_STATIC_IR_FUNCTOR(Namer, vtable)
+    .set_dispatch<tvm::tir::BarrierArrayNode>([](const ObjectRef& node, String name) -> void {
+
     });
 
 TVM_STATIC_IR_FUNCTOR(Namer, vtable)
