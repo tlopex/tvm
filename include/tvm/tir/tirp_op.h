@@ -24,6 +24,8 @@
 #define TVM_TIR_TIRP_OP_H_
 
 #include <tvm/ir/op.h>
+#include <tvm/target/target.h>
+#include <tvm/tir/exec_scope.h>
 #include <tvm/tir/stmt.h>
 #include <tvm/tir/tirp_stmt.h>
 
@@ -31,7 +33,21 @@ namespace tvm {
 namespace tir {
 namespace tirp {
 
+/*!
+ * \brief The type of the function that sanitizes the arguments of a TIR+ operator.
+ * \param op The operator.
+ * \param args The arguments.
+ */
 using FArgSanitizer = runtime::TypedPackedFunc<void(tvm::Op, Array<ObjectRef>)>;
+
+/*!
+ * \brief The type of the function that schedules a TIR+ operator.
+ * \param op The operator.
+ * \param target The target.
+ * \param exec_scope The execution scope.
+ * \param args The arguments.
+ */
+using FOpScheduler = runtime::TypedPackedFunc<Stmt(tvm::Op, Target, ExecScope, Array<ObjectRef>)>;
 
 /*!
  * \brief See pesudo code below:
@@ -74,6 +90,13 @@ TVM_DLL const Op& barrier_arrive();
  *  barrier.wait()
  */
 TVM_DLL const Op& barrier_wait();
+
+/*!
+ * \brief See pesudo code below:
+ *
+ * barrier.arrive_and_wait()
+ */
+TVM_DLL const Op& barrier_arrive_and_wait();
 
 /*!
  * \brief See pesudo code below:
