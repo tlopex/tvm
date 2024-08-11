@@ -30,6 +30,7 @@
 #include <tvm/tir/stmt.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/tirp_op.h>
+#include <tvm/ir/tensormap_type.h>
 
 #include <string>
 #include <unordered_map>

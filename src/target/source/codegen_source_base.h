@@ -29,6 +29,7 @@
 #include <tvm/target/codegen.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/op.h>
+#include <tvm/ir/tensormap_type.h>
 
 #include <functional>
 #include <string>
