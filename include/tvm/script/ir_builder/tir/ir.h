@@ -156,16 +156,15 @@ BlockFrame Warp();
 
 BlockFrame Thread();
 
-BlockFrame ScopeSlice(ffi::Array<tvm::tir::ScopeId> vars, ffi::Array<Range> ranges,
-                      ffi::String cur);
+BlockFrame ScopeSlice(ffi::Array<tvm::tir::Var> vars, ffi::Array<Range> ranges, ffi::String cur);
 
-tvm::tir::ScopeId KernelId(PrimExpr extent);
+tvm::tir::Var KernelId(PrimExpr extent);
 
-ffi::Array<tvm::tir::ScopeId> CtaId(ffi::Array<PrimExpr> extents, ffi::String parent);
+ffi::Array<tvm::tir::Var> CtaId(ffi::Array<PrimExpr> extents, ffi::String parent);
 
-ffi::Array<tvm::tir::ScopeId> WarpId(ffi::Array<PrimExpr> extents, ffi::String parent);
+ffi::Array<tvm::tir::Var> WarpId(ffi::Array<PrimExpr> extents, ffi::String parent);
 
-ffi::Array<tvm::tir::ScopeId> ThreadId(ffi::Array<PrimExpr> extents, ffi::String parent);
+ffi::Array<tvm::tir::Var> ThreadId(ffi::Array<PrimExpr> extents, ffi::String parent);
 
 /*!
  * \brief The block initialization statement.
