@@ -127,9 +127,11 @@ struct CUDAWarpIntrinsic {
       return Op::Get("tir.cuda.__shfl_sync");
     } else if (orig_op.same_as(builtin::tvm_warp_shuffle_up())) {
       return Op::Get("tir.cuda.__shfl_up_sync");
-    } else {
-      TVM_FFI_ICHECK(orig_op.same_as(builtin::tvm_warp_shuffle_down()));
+    } else if (orig_op.same_as(builtin::tvm_warp_shuffle_down())) {
       return Op::Get("tir.cuda.__shfl_down_sync");
+    } else {
+      TVM_FFI_ICHECK(orig_op.same_as(builtin::tvm_warp_shuffle_xor()));
+      return Op::Get("tir.cuda.__shfl_xor_sync");
     }
   }
 };
@@ -229,6 +231,9 @@ TVM_REGISTER_OP("tir.tvm_warp_shuffle_up")
 TVM_REGISTER_OP("tir.tvm_warp_shuffle_down")
     .set_attr<FLowerIntrinsic>("cuda.FLowerIntrinsic", DispatchCUDAShuffle<CUDAWarpIntrinsic>);
 
+TVM_REGISTER_OP("tir.tvm_warp_shuffle_xor")
+    .set_attr<FLowerIntrinsic>("cuda.FLowerIntrinsic", DispatchCUDAShuffle<CUDAWarpIntrinsic>);
+
 TVM_REGISTER_OP("tir.tvm_warp_activemask")
     .set_attr<FLowerIntrinsic>("cuda.FLowerIntrinsic", DispatchCUDAWarpActiveMask);
 
@@ -264,6 +269,16 @@ TVM_REGISTER_OP("tir.cuda.__shfl_down_sync")
     .add_argument("delta", "Expr", "The source lane id offset to be subtracted.")
     .add_argument("width", "Expr", "The warp thread width, must be a power of 2.")
     .set_attr<TGlobalSymbol>("TGlobalSymbol", "__shfl_down_sync")
+    .set_attr<TCallEffectKind>("TCallEffectKind", Integer(CallEffectKind::kOpaque))
+    .set_attr<bool>("cuda.need_warp_shuffle", true);
+
+TVM_REGISTER_OP("tir.cuda.__shfl_xor_sync")
+    .set_num_inputs(4)
+    .add_argument("mask", "Expr", "The thread mask.")
+    .add_argument("var", "Expr", "The variable to sync.")
+    .add_argument("lane_mask", "Expr", "The lane mask.")
+    .add_argument("width", "Expr", "The warp thread width, must be a power of 2.")
+    .set_attr<TGlobalSymbol>("TGlobalSymbol", "__shfl_xor_sync")
     .set_attr<TCallEffectKind>("TCallEffectKind", Integer(CallEffectKind::kOpaque))
     .set_attr<bool>("cuda.need_warp_shuffle", true);
 
