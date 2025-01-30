@@ -170,7 +170,7 @@ Buffer MatchBuffer(ObjectRef param, ffi::Array<PrimExpr> shape, DataType dtype,
   return buffer;
 }
 
-Buffer BufferView(tvm::tir::Buffer buffer, tvm::tir::TLayout layout) {
+Buffer BufferView(tvm::tir::Buffer buffer, tvm::tir::TLayout layout, Array<PrimExpr> shape) {
   SBlockFrame frame = FindSBlockFrame("T.View");
 
   String logical_scope = buffer.logical_scope();
@@ -183,7 +183,7 @@ Buffer BufferView(tvm::tir::Buffer buffer, tvm::tir::TLayout layout) {
       logical_scope = tile_layout->to.value()->name;
     }
   }
-  Buffer dst_buffer = BufferDecl(buffer->shape, buffer->dtype, "", NullOpt, NullOpt, NullOpt, buffer.scope(),
+  Buffer dst_buffer = BufferDecl(shape, buffer->dtype, "", NullOpt, NullOpt, NullOpt, buffer.scope(),
                                  1, 1, "auto", NullOpt, logical_scope, layout);
 
   frame->buffer_views.push_back(tvm::tir::BufferView(buffer, layout, dst_buffer));
