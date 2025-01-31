@@ -147,16 +147,9 @@ TVM_DLL const Op& pipeline_producer_acquire();
 /*!
  * \brief See pesudo code below:
  *
- *  pipe.producer_copy_async(BufferRegion dst, BufferRegion src)
+ *  pipe.producer_commit()
  */
-TVM_DLL const Op& pipeline_producer_copy_async();
-
-/*!
- * \brief See pesudo code below:
- *
- *  pipe.producer_commit_stage()
- */
-TVM_DLL const Op& pipeline_producer_commit_stage();
+TVM_DLL const Op& pipeline_producer_commit();
 
 /*!
  * \brief See pesudo code below:
@@ -171,6 +164,13 @@ TVM_DLL const Op& pipeline_consumer_wait();
  *  pipe.consumer_release()
  */
 TVM_DLL const Op& pipeline_consumer_release();
+
+/*!
+ * \brief See pesudo code below:
+ *
+ *  pipe.copy(BufferRegion dst, BufferRegion src)
+ */
+TVM_DLL const Op& pipeline_copy();
 
 }  // namespace tirp
 }  // namespace tir
