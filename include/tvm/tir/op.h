@@ -35,6 +35,7 @@
 #include <tvm/tir/expr.h>
 #include <tvm/tir/stmt.h>
 #include <tvm/tir/target_builtin/cuda.h>
+#include <tvm/tir/target_builtin/trn.h>
 
 #include <algorithm>
 #include <limits>
