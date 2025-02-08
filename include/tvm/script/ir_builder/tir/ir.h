@@ -156,7 +156,7 @@ BlockFrame Warp();
 
 BlockFrame Thread();
 
-BlockFrame ScopeSlice(ffi::Array<tvm::tir::Var> vars, ffi::Array<Range> ranges, ffi::String cur);
+BlockFrame ScopeSlice(ffi::Array<Range> slices, String parent, ffi::String cur);
 
 tvm::tir::Var KernelId(PrimExpr extent);
 

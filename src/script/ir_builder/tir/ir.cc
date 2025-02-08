@@ -263,7 +263,7 @@ BlockFrame Warp() { return Block("", false, "warp"); }
 
 BlockFrame Thread() { return Block("", false, "thread"); }
 
-BlockFrame ScopeSlice(ffi::Array<tvm::tir::Var> vars, ffi::Array<Range> ranges, ffi::String cur) {
+BlockFrame ScopeSlice(ffi::Array<Range> slices, ffi::String parent, ffi::String cur) {
   ObjectPtr<BlockFrameNode> n = ffi::make_object<BlockFrameNode>();
   n->name = cur;
   n->iter_vars.clear();
@@ -276,7 +276,7 @@ BlockFrame ScopeSlice(ffi::Array<tvm::tir::Var> vars, ffi::Array<Range> ranges, 
   n->iter_values.clear();
   n->predicate = std::nullopt;
   n->no_realize = false;
-  n->exec_scope = tvm::tir::ExecScopeSlice(vars, ranges, cur);
+  n->exec_scope = tvm::tir::ExecScopeSlice(slices, parent, cur);
   return BlockFrame(n);
 }
 
