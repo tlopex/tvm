@@ -167,6 +167,7 @@ class SBlockFrameNode : public TIRFrameNode {
 
   // TIR+ signature
   Optional<tvm::tir::ExecScope> exec_scope;
+  String exec_scope_slice_parent;
   Array<tvm::tir::BufferView> buffer_views;
   Array<tvm::tir::BufferGet> buffer_gets;
   Array<tvm::tir::Barrier> barriers;
@@ -188,6 +189,7 @@ class SBlockFrameNode : public TIRFrameNode {
         .def_ro("predicate", &SBlockFrameNode::predicate)
         .def_ro("no_realize", &SBlockFrameNode::no_realize)
         .def_ro("exec_scope", &SBlockFrameNode::exec_scope)
+        .def_ro("exec_scope_slice_parent", &SBlockFrameNode::exec_scope_slice_parent)
         .def_ro("buffer_views", &SBlockFrameNode::buffer_views)
         .def_ro("buffer_gets", &SBlockFrameNode::buffer_gets)
         .def_ro("barriers", &SBlockFrameNode::barriers)
