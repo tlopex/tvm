@@ -277,6 +277,11 @@ BlockFrame Kernel(ffi::Optional<ffi::Array<PrimExpr>> scope_slice_extents,
   return Block("", false, "kernel", scope_slice_extents, scope_slice_parent);
 }
 
+BlockFrame Cluster(ffi::Optional<ffi::Array<PrimExpr>> scope_slice_extents,
+                   ffi::String scope_slice_parent) {
+  return Block("", false, "cluster", scope_slice_extents, scope_slice_parent);
+}
+
 BlockFrame WarpGroup(ffi::Optional<ffi::Array<PrimExpr>> scope_slice_extents,
                      ffi::String scope_slice_parent) {
   return Block("", false, "warpgroup", scope_slice_extents, scope_slice_parent);
@@ -342,10 +347,21 @@ ffi::Array<tvm::tir::Var> KernelScopeId(ffi::Array<PrimExpr> extents, ffi::Strin
   return scope_ids;
 }
 
+ffi::Array<tvm::tir::Var> ClusterId(ffi::Array<PrimExpr> extents, ffi::String parent) {
+  return KernelScopeId(extents, parent, "T.cluster_id", "cluster");
+}
+
+ffi::Array<tvm::tir::Var> ClusterId(ffi::Array<PrimExpr> extents, ffi::String parent) {
+  return KernelScopeId(extents, parent, "T.cluster_id", "cluster");
+}
+
 ffi::Array<tvm::tir::Var> CtaId(ffi::Array<PrimExpr> extents, ffi::String parent) {
   return KernelScopeId(extents, parent, "T.cta_id", "cta");
 }
 
+Array<tvm::tir::Var> WarpgroupId(ffi::Array<PrimExpr> extents, ffi::String parent) {
+  return KernelScopeId(extents, parent, "T.warpgroup_id", "warpgroup");
+}
 ffi::Array<tvm::tir::Var> WarpId(ffi::Array<PrimExpr> extents, ffi::String parent) {
   return KernelScopeId(extents, parent, "T.warp_id", "warp");
 }
@@ -967,13 +983,16 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def("script.ir_builder.tir.OpCall", OpCall)
       .def("script.ir_builder.tir.World", World)
       .def("script.ir_builder.tir.Kernel", Kernel)
+      .def("script.ir_builder.tir.Cluster", Cluster)
       .def("script.ir_builder.tir.CTA", CTA)
       .def("script.ir_builder.tir.WarpGroup", WarpGroup)
       .def("script.ir_builder.tir.Warp", Warp)
       .def("script.ir_builder.tir.Thread", Thread)
       .def("script.ir_builder.tir.ScopeSlice", ScopeSlice)
       .def("script.ir_builder.tir.KernelId", KernelId)
+      .def("script.ir_builder.tir.ClusterId", ClusterId)
       .def("script.ir_builder.tir.CTAId", CtaId)
+      .def("script.ir_builder.tir.WarpgroupId", WarpgroupId)
       .def("script.ir_builder.tir.WarpId", WarpId)
       .def("script.ir_builder.tir.ThreadId", ThreadId)
       .def("script.ir_builder.tir.Init", Init)
