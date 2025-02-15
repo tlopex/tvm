@@ -409,6 +409,14 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
                                    });
 
 TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
+    .set_dispatch<tir::ComposeLayout>(
+        "", [](tir::ComposeLayout layout, ObjectPath p, IRDocsifier d) -> Doc {
+          auto layoutA = d->AsDoc<ExprDoc>(layout->layout_A, p);
+          auto layoutB = d->AsDoc<ExprDoc>(layout->layout_B, p);
+          return TIR(d, "ComposeLayout")->Call({layoutA, layoutB}, {}, {});
+        });
+
+TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
     .set_dispatch<tir::TrainiumLayout>(
         "", [](tir::TrainiumLayout layout, ObjectPath p, IRDocsifier d) -> Doc {
           Array<String> keys;
@@ -492,6 +500,7 @@ TVM_SCRIPT_REPR(tir::BufferLoadNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::BufferStoreNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::BufferNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::TileLayoutNode, ReprPrintTIR);
+TVM_SCRIPT_REPR(tir::ComposeLayoutNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::TrainiumLayoutNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::SwizzleLayoutNode, ReprPrintTIR);
 TVM_SCRIPT_REPR(tir::DeviceIterAttrNode, ReprPrintTIR);
