@@ -49,6 +49,9 @@ bool IsSimpleBuffer(const tir::Buffer& buf) {
   if (buf->layout.defined()) {
     return false;
   }
+  if (!buf->allocated_addr.empty()){
+    return false;
+  }
   return buf.scope() == "global" && buf->data_alignment == runtime::kAllocAlignment &&
          buf->offset_factor == 1 && buf->buffer_type == tir::BufferType::kDefault &&
          !buf->axis_separators.size();
