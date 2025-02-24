@@ -450,9 +450,10 @@ class LogicalTensorRemover : public arith::IRMutatorWithAnalyzer {
 
 class StorageLower : public arith::IRMutatorWithAnalyzer {
  public:
-  static Stmt Flatten(const Stmt& stmt, const Map<tir::Var, Buffer> buffer_map) {
+  static Stmt Flatten(const Stmt& stmt, const Map<tir::Var, Buffer> buffer_map,
+                      const Target& target) {
     arith::Analyzer ana;
-    StorageLower storage_lower(&ana);
+    StorageLower storage_lower(&ana, target);
     for (const auto& kv : buffer_map) {
     }
     return storage_lower(stmt);
@@ -462,7 +463,8 @@ class StorageLower : public arith::IRMutatorWithAnalyzer {
   using IRMutatorWithAnalyzer::VisitExpr_;
   using IRMutatorWithAnalyzer::VisitStmt_;
 
-  explicit StorageLower(arith::Analyzer* analyzer) : arith::IRMutatorWithAnalyzer(analyzer) {}
+  explicit StorageLower(arith::Analyzer* analyzer, const Target& target)
+      : arith::IRMutatorWithAnalyzer(analyzer), target_(target) {}
 
   Stmt VisitStmt_(const BlockNode* op) final {
     ICHECK_EQ(op->buffer_gets.size(), 0) << "Unexpected BufferGet found";
@@ -472,7 +474,12 @@ class StorageLower : public arith::IRMutatorWithAnalyzer {
     Block block = GetRef<Block>(op);
 
     Array<Buffer> alloc_buffers = op->alloc_buffers;
-    alloc_buffers.MutateByApply([this](Buffer buf) { return GetFlattenedBuffer(buf); });
+    alloc_buffers.MutateByApply([this](Buffer buf) {
+      if (target_->kind->name == "trn" && !buf->layout.defined()) {
+        return buf;
+      }
+      return GetFlattenedBuffer(buf);
+    });
     if (!alloc_buffers.same_as(op->alloc_buffers)) {
       block.CopyOnWrite()->alloc_buffers = alloc_buffers;
     }
@@ -583,9 +590,11 @@ class StorageLower : public arith::IRMutatorWithAnalyzer {
   template <typename Node>
   Node VisitBufferAccess(Node node) {
     ICHECK(node->buffer.defined());
+    if (target_->kind->name == "trn" && !node->buffer->layout.defined()) {
+      return node;
+    }
     auto flattened_indices = GetSimplifiedElemOffset(node->buffer, node->indices);
     Buffer flattened_buffer = GetFlattenedBuffer(node->buffer);
-
     auto writer = node.CopyOnWrite();
     writer->buffer = flattened_buffer;
     writer->indices = flattened_indices;
@@ -594,6 +603,7 @@ class StorageLower : public arith::IRMutatorWithAnalyzer {
 
   /*! \brief Map of buffers being remapped. */
   std::unordered_map<Buffer, Buffer, ObjectPtrHash, ObjectPtrEqual> buffer_remap_;
+  const Target& target_;
 };
 
 class BufferOffsetRemover : public StmtExprMutator {
@@ -636,7 +646,7 @@ Pass LowerTIRp() {
     n->body = ExecScopeSliceResolver::Resolve(n->body, target.value());
     n->body = ScheduleContextRemover::Remove(n->body);
     n->body = LogicalTensorRemover::Remove(n->body, n->buffer_map);
-    n->body = StorageLower::Flatten(n->body, n->buffer_map);
+    n->body = StorageLower::Flatten(n->body, n->buffer_map, target.value());
     n->body = BufferOffsetRemover::Remove(n->body);
     return f;
   };
