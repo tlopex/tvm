@@ -41,6 +41,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   IfFrameNode::RegisterReflection();
   ThenFrameNode::RegisterReflection();
   ElseFrameNode::RegisterReflection();
+  ComposeOpFrameNode::RegisterReflection();
 }
 
 void PrimFuncFrameNode::ExitWithScope() {
@@ -219,6 +220,28 @@ void ElseFrameNode::ExitWithScope() {
   FindIfFrame("T.else_")->else_stmts = stmts;
 }
 
+void DeclBufferFrameNode::ExitWithScope() {
+  TIRFrameNode::ExitWithScope();
+  if (allocated) {
+    AddToParent(tvm::tir::DeclBuffer(buffer, AsStmt(stmts)));
+  } else {
+    AddToParent(tvm::tir::Allocate(buffer->data, buffer->dtype, buffer->shape,
+                                   tvm::IntImm(DataType::Bool(), 1),
+                                   tvm::tir::DeclBuffer(buffer, AsStmt(stmts))));
+  }
+}
+
+void ComposeOpFrameNode::ExitWithScope() {
+  TIRFrameNode::ExitWithScope();
+  Array<ObjectRef> ops;
+  for (const auto& stmt : stmts) {
+    auto op_call = stmt.as<tvm::tir::tirp::OpCallNode>();
+    ICHECK(op_call) << "ValueError: Only TIRp op calls allowed in ComposeOp. Violated by " << stmt;
+    ops.push_back(GetRef<tvm::tir::tirp::OpCall>(op_call));
+  }
+  auto compose_op_op = tvm::Op::Get("tirp.compose_op");
+  AddToParent(tvm::tir::tirp::OpCall(compose_op_op, ops));
+}
 }  // namespace tir
 }  // namespace ir_builder
 }  // namespace script

@@ -622,6 +622,54 @@ class ElseFrame : public TIRFrame {
   TVM_FFI_DEFINE_OBJECT_REF_METHODS_NOTNULLABLE(ElseFrame, TIRFrame, ElseFrameNode);
 };
 
+class DeclBufferFrameNode : public TIRFrameNode {
+ public:
+  /*! \brief The declared buffer. */
+  tvm::tir::Buffer buffer;
+  /*! \brief The buffer allocated or not. */
+  bool allocated;
+
+  static void RegisterReflection() {
+    namespace refl = tvm::ffi::reflection;
+    refl::ObjectDef<DeclBufferFrameNode>()
+        .def_ro("buffer", &DeclBufferFrameNode::buffer)
+        .def_ro("allocated", &DeclBufferFrameNode::allocated);
+  }
+  TVM_FFI_DECLARE_OBJECT_INFO_FINAL("script.ir_builder.tir.DeclBufferFrame", DeclBufferFrameNode,
+                                    TIRFrameNode);
+
+ public:
+  void ExitWithScope() final;
+};
+
+class DeclBufferFrame : public TIRFrame {
+ public:
+  explicit DeclBufferFrame(ObjectPtr<DeclBufferFrameNode> data) : TIRFrame(data) {
+    TVM_FFI_ICHECK(data != nullptr);
+  }
+  TVM_FFI_DEFINE_OBJECT_REF_METHODS_NOTNULLABLE(DeclBufferFrame, TIRFrame, DeclBufferFrameNode);
+};
+
+class ComposeOpFrameNode : public TIRFrameNode {
+ public:
+  static void RegisterReflection() {
+    namespace refl = tvm::ffi::reflection;
+    refl::ObjectDef<ComposeOpFrameNode>();
+  }
+  TVM_FFI_DECLARE_OBJECT_INFO_FINAL("script.ir_builder.tir.ComposeOpFrame", ComposeOpFrameNode,
+                                    TIRFrameNode);
+
+ public:
+  void ExitWithScope() final;
+};
+
+class ComposeOpFrame : public TIRFrame {
+ public:
+  explicit ComposeOpFrame(ObjectPtr<ComposeOpFrameNode> data) : TIRFrame(data) {
+    TVM_FFI_ICHECK(data != nullptr);
+  }
+  TVM_FFI_DEFINE_OBJECT_REF_METHODS_NOTNULLABLE(ComposeOpFrame, TIRFrame, ComposeOpFrameNode);
+};
 }  // namespace tir
 }  // namespace ir_builder
 }  // namespace script

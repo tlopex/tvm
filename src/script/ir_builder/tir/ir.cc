@@ -797,6 +797,11 @@ ElseFrame Else() {
   return ElseFrame(n);
 }
 
+ComposeOpFrame ComposeOp() {
+  ObjectPtr<ComposeOpFrameNode> n = make_object<ComposeOpFrameNode>();
+  return ComposeOpFrame(n);
+}
+
 Var EnvThread(ffi::String thread_tag, DataType dtype) {
   IterVar iter_var(Range{nullptr}, Var("", dtype), tvm::tir::IterVarType::kThreadIndex, thread_tag);
   Var var = iter_var->var;
@@ -1057,6 +1062,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
              }
            })
       .def("script.ir_builder.tir.EnvThread", EnvThread)
+      .def("script.ir_builder.tir.ComposeOp", ComposeOp)
       .def("script.ir_builder.tir.BufferStore", BufferStore)
       .def("script.ir_builder.tir.Evaluate", Evaluate)
       .def("script.ir_builder.tir.Ptr", Ptr);
