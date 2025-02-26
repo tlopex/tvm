@@ -2281,6 +2281,7 @@ nki_tensorscalar = _op_wrapper(_tir_op.nki_tensorscalar)
 nki_tensorreduce = _op_wrapper(_tir_op.nki_tensorreduce)
 nki_memset = _op_wrapper(_tir_op.nki_memset)
 nki_activation_reduce = _op_wrapper(_tir_op.nki_activation_reduce)
+nki_tensorscalar_reduce = _op_wrapper(_tir_op.nki_tensorscalar_reduce)
 def _dtype_forward(func):
     @functools.wraps(func)
     def wrapped(*args, **kwargs):
@@ -2675,6 +2676,7 @@ __all__ = float_types + [
     "nki_tensorscalar",
     "nki_memset",
     "nki_activation_reduce",
+    "nki_tensorscalar_reduce",
     # tvm.tir.expr
     "Var",
     "SizeVar",
