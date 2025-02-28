@@ -26,6 +26,7 @@
 
 #include <tvm/ir/module.h>
 #include <tvm/runtime/object.h>
+#include <tvm/tir/buffer.h>
 #include <tvm/tir/exec_scope.h>
 
 namespace tvm {
@@ -154,18 +155,22 @@ class PipelineNode : public Object {
   bool separate_pc;
   /*! \brief The name hint of the pipeline. */
   String name_hint;
+  /*! \brief The workspace of the pipeline. */
+  Map<String, tvm::tir::Buffer> workspace;
 
   void VisitAttrs(AttrVisitor* v) {
     v->Visit("thread_scope", &thread_scope);
     v->Visit("name_hint", &name_hint);
     v->Visit("depth", &depth);
     v->Visit("separate_pc", &separate_pc);
+    v->Visit("workspace", &workspace);
   }
 
   bool SEqualReduce(const PipelineNode* other, SEqualReducer equal) const {
     if (!equal(thread_scope, other->thread_scope)) return false;
     if (!equal(depth, other->depth)) return false;
     if (!equal(separate_pc, other->separate_pc)) return false;
+    if (!equal(workspace, other->workspace)) return false;
     return equal.FreeVarEqualImpl(this, other);
   }
 
@@ -173,6 +178,7 @@ class PipelineNode : public Object {
     hash_reduce(thread_scope);
     hash_reduce(depth);
     hash_reduce(separate_pc);
+    hash_reduce(workspace);
     hash_reduce.FreeVarHashImpl(this);
   }
 
@@ -185,7 +191,7 @@ class PipelineNode : public Object {
 class Pipeline : public ObjectRef {
  public:
   TVM_DLL explicit Pipeline(ExecScope thread_scope, size_t depth = 0, bool separate_pc = false,
-                            String name_hint = "");
+                            String name_hint = "", Map<String, tvm::tir::Buffer> workspace = {});
 
   TVM_DEFINE_OBJECT_REF_METHODS(Pipeline, ObjectRef, PipelineNode);
 };
@@ -202,7 +208,7 @@ class CopyPipelineNode : public PipelineNode {
 class CopyPipeline : public Pipeline {
  public:
   TVM_DLL explicit CopyPipeline(ExecScope thread_scope, size_t depth = 0, bool separate_pc = false,
-                                String name_hint = "");
+                                String name_hint = "", Map<String, tvm::tir::Buffer> workspace = {});
 
   TVM_DEFINE_OBJECT_REF_METHODS(CopyPipeline, Pipeline, CopyPipelineNode);
 };
