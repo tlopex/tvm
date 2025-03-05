@@ -3903,5 +3903,27 @@ def test_is_floating_point():
     verify_model(IsFloatingPoint(), [([2, 3], "float32")], {}, Expected)
 
 
+def test_one_hot():
+    class OneHot(Module):
+        def forward(self, indices):
+            return torch.nn.functional.one_hot(indices, num_classes=10)
+
+    @tvm.script.ir_module
+    class Expected:
+        @R.function
+        def main(
+                inp_0: R.Tensor((5,), dtype="int32"),
+        ) -> R.Tensor((5, 10), dtype="int64"):
+            with R.dataflow():
+                lv: R.Tensor((5, 10), dtype="int64") = R.one_hot(inp_0, R.prim_value(1), R.prim_value(0), depth=10,
+                                                                 axis=-1)
+                gv: R.Tensor((5, 10), dtype="int64") = lv
+                R.output(gv)
+
+            return gv
+
+    verify_model(OneHot(), [([5], "int32")], {}, Expected)
+
+
 if __name__ == "__main__":
     tvm.testing.main()
