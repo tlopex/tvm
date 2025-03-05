@@ -511,6 +511,23 @@ class TorchFXImporter(BaseFXGraphImporter):
             )
         )
 
+    def _one_hot(self, node: fx.Node) -> relax.Var:
+        x = self.env[node.args[0]]
+        num_classes = node.args[1] if len(node.args) > 1 else node.kwargs.get("num_classes")
+        if num_classes is None:
+            raise ValueError("num_classes not found in node.args or node.kwargs")
+
+        on_value = node.args[2] if len(node.args) > 2 else node.kwargs.get("on_value", 1)
+        off_value = node.args[3] if len(node.args) > 3 else node.kwargs.get("off_value", 0)
+        axis = node.args[4] if len(node.args) > 4 else node.kwargs.get("axis", -1)
+
+        on_value = relax.PrimValue(on_value)
+        off_value = relax.PrimValue(off_value)
+
+        return self.block_builder.emit(
+            relax.op.one_hot(x, on_value, off_value, num_classes, axis)
+        )
+
     def _tensor(self, node: fx.Node) -> relax.Var:
         dtype = node.kwargs.get("dtype", None)
         if isinstance(node.args[0], float):
