@@ -758,6 +758,7 @@ class TorchFXImporter(BaseFXGraphImporter):
             "masked_scatter": self._masked_scatter,
             "new_ones": self._new_ones,
             "ones": self._ones,
+            "one_hot": self._one_hot,
             "tensor": self._tensor,
             # datatype
             "astype": self._type,
