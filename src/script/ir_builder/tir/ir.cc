@@ -259,7 +259,7 @@ SBlockFrame Block(ffi::String name, bool no_realize, ffi::String exec_scope,
   return SBlockFrame(n);
 }
 
-void OpCall(tvm::Op op, Array<ObjectRef> args, Map<String, Buffer> workspace) { AddToParent(tvm::tir::tirp::OpCall(op, args, workspace)); }
+void OpCall(tvm::Op op, Array<ObjectRef> args, Map<String, Buffer> workspace, Map<String, ObjectRef> schedule_config) { AddToParent(tvm::tir::tirp::OpCall(op, args, workspace, schedule_config)); }
 
 BlockFrame BlockFrameSlice(BlockFrame block, Variant<Array<Range>, PrimExpr> slice) {
   ICHECK(block->exec_scope.defined()) << "InternalError: Block frame must have an execution scope";
@@ -525,8 +525,8 @@ BarrierArray AllocBarrierArray(ExecScope thread_scope, size_t size, String name_
 }
 
 CopyPipeline AllocCopyPipeline(ExecScope thread_scope, size_t depth, bool separate_pc,
-                               String name_hint, Map<String, Buffer> workspace) {
-  CopyPipeline pipeline = tvm::tir::CopyPipeline(thread_scope, depth, separate_pc, name_hint, workspace);
+                               String name_hint, Map<String, Buffer> workspace, Map<String, ObjectRef> schedule_config) {
+  CopyPipeline pipeline = tvm::tir::CopyPipeline(thread_scope, depth, separate_pc, name_hint, workspace, schedule_config);
   IRBuilder builder = IRBuilder::Current();
   if (Optional<BlockFrame> frame = builder->GetLastFrame<BlockFrame>()) {
     frame.value()->pipelines.push_back(pipeline);
@@ -797,9 +797,10 @@ ElseFrame Else() {
   return ElseFrame(n);
 }
 
-ComposeOpFrame ComposeOp(Map<String, Buffer> workspace) {
+ComposeOpFrame ComposeOp(Map<String, Buffer> workspace, Map<String, ObjectRef> schedule_config) {
   ObjectPtr<ComposeOpFrameNode> n = make_object<ComposeOpFrameNode>();
   n->workspace = workspace;
+  n->schedule_config = schedule_config;
   return ComposeOpFrame(n);
 }
 
