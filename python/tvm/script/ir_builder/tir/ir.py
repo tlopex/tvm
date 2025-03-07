@@ -160,7 +160,7 @@ def buffer(
     logical_scope: str = "",
     layout: TLayout | None = None,
     allocated_addr: int | tuple[int, ...] | None = None,
-    buffer_name: str = ""
+    buffer_name: str = "",
 ) -> Buffer:
     """The buffer declaration function.
 
@@ -423,11 +423,11 @@ def match_buffer(
 
 
 def view(src_buffer: Buffer, layout: TLayout, shape: List[PrimExpr]) -> Buffer:
-    return _ffi_api.BufferView(src_buffer, layout, shape)
+    return _ffi_api.BufferView(src_buffer, layout, shape)  # type: ignore[attr-defined] # pylint: disable=no-member
 
 
 def get(src_buffer: Buffer) -> Buffer:
-    return _ffi_api.BufferGet(src_buffer)
+    return _ffi_api.BufferGet(src_buffer)  # type: ignore[attr-defined] # pylint: disable=no-member
 
 
 def sblock(
@@ -571,39 +571,39 @@ def thread(
 
 
 def kernel_id(extent: Union[PrimExpr, int]) -> Var:
-    return _ffi_api.KernelId(extent)
+    return _ffi_api.KernelId(extent)  # type: ignore[attr-defined] # pylint: disable=no-member
 
 
 def cluster_id(extents: List[Union[PrimExpr, int]], parent: str) -> List[Var]:
-    ret = _ffi_api.ClusterId(extents, parent)
+    ret = _ffi_api.ClusterId(extents, parent)  # type: ignore[attr-defined] # pylint: disable=no-member
     if len(ret) == 1:
         return ret[0]
     return ret
 
 
 def cta_id(extents: List[Union[PrimExpr, int]], parent: str) -> List[Var]:
-    ret = _ffi_api.CtaId(extents, parent)
+    ret = _ffi_api.CtaId(extents, parent)  # type: ignore[attr-defined] # pylint: disable=no-member
     if len(ret) == 1:
         return ret[0]
     return ret
 
 
 def warpgroup_id(extents: List[Union[PrimExpr, int]], parent: str) -> List[Var]:
-    ret = _ffi_api.WarpgroupId(extents, parent)
+    ret = _ffi_api.WarpgroupId(extents, parent)  # type: ignore[attr-defined] # pylint: disable=no-member
     if len(ret) == 1:
         return ret[0]
     return ret
 
 
 def warp_id(extents: List[Union[PrimExpr, int]], parent: str) -> List[Var]:
-    ret = _ffi_api.WarpId(extents, parent)
+    ret = _ffi_api.WarpId(extents, parent)  # type: ignore[attr-defined] # pylint: disable=no-member
     if len(ret) == 1:
         return ret[0]
     return ret
 
 
 def thread_id(extents: List[Union[PrimExpr, int]], parent: str) -> List[Var]:
-    ret = _ffi_api.ThreadId(extents, parent)
+    ret = _ffi_api.ThreadId(extents, parent)  # type: ignore[attr-defined] # pylint: disable=no-member
     if len(ret) == 1:
         return ret[0]
     return ret
@@ -776,7 +776,7 @@ def sblock_alloc_buffer(
 
     layout: Optional[Union[str, TLayout]]
         The layout of the buffer.
-        
+
     allocated_addr: Optional[Union[int, Tuple[int]]]
         The address of the allocated buffer. Might be multi-dimensional.
 
@@ -1410,6 +1410,7 @@ def decl_buffer(
     offset_factor=0,
     buffer_type="",
     axis_separators=None,
+    layout=None,
 ) -> Buffer:
     """Create a buffer declaration node.
 
@@ -1450,6 +1451,9 @@ def decl_buffer(
     axis_separators : List[int]
         The separators between input axes when generating flattened output axes.
 
+    layout : TLayout
+        The layout of the buffer.
+
     Returns
     -------
     res : Buffer
@@ -1472,6 +1476,7 @@ def decl_buffer(
         offset_factor,
         buffer_type,
         axis_separators,
+        _get_layout(layout, shape),
     )
 
 
@@ -2294,6 +2299,8 @@ nki_tensorscalar_reduce = _op_wrapper(_tir_op.nki_tensorscalar_reduce)
 nki_identity = _op_wrapper(_tir_op.nki_identity)
 nki_scalar_tensor_tensor = _op_wrapper(_tir_op.nki_scalar_tensor_tensor)
 nki_scalar_tensor_scalar = _op_wrapper(_tir_op.nki_scalar_tensor_scalar)
+
+
 def _dtype_forward(func):
     @functools.wraps(func)
     def wrapped(*args, **kwargs):

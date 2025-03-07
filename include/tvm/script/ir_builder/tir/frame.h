@@ -172,8 +172,6 @@ class SBlockFrameNode : public TIRFrameNode {
 
   Array<tvm::tir::BufferView> buffer_views;
   Array<tvm::tir::BufferGet> buffer_gets;
-  Array<tvm::tir::Barrier> barriers;
-  Array<tvm::tir::BarrierArray> barrier_arrays;
   Array<tvm::tir::Pipeline> pipelines;
 
   static void RegisterReflection() {
@@ -195,8 +193,6 @@ class SBlockFrameNode : public TIRFrameNode {
         .def_ro("scope_slice_extents", &SBlockFrameNode::scope_slice_extents)
         .def_ro("buffer_views", &SBlockFrameNode::buffer_views)
         .def_ro("buffer_gets", &SBlockFrameNode::buffer_gets)
-        .def_ro("barriers", &SBlockFrameNode::barriers)
-        .def_ro("barrier_arrays", &SBlockFrameNode::barrier_arrays)
         .def_ro("pipelines", &SBlockFrameNode::pipelines);
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("script.ir_builder.tir.SSBlockFrame", SBlockFrameNode,
