@@ -26,6 +26,7 @@
 #include <tvm/tir/exec_scope.h>
 #include <tvm/tir/layout.h>
 #include <tvm/tir/op.h>
+#include <tvm/tir/tirp_stmt.h>
 
 namespace tvm {
 namespace script {
@@ -148,8 +149,7 @@ SBlockFrame Block(ffi::String name, bool no_realize = false, ffi::String exec_sc
                   ffi::Optional<ffi::Array<PrimExpr>> scope_slice_extents = std::nullopt,
                   ffi::String scope_slice_parent = "");
 
-void OpCall(tvm::Op op, Array<ObjectRef> args, Map<String, Buffer> workspace = {},
-            Map<String, ObjectRef> schedule_config = {});
+void OpCall(tvm::tir::tirp::OpCall op_call);
 
 BlockFrame BlockFrameSlice(BlockFrame block, ffi::Variant<ffi::Array<Range>, PrimExpr> slice);
 

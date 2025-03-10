@@ -258,9 +258,8 @@ SBlockFrame Block(ffi::String name, bool no_realize, ffi::String exec_scope,
   return SBlockFrame(n);
 }
 
-void OpCall(tvm::Op op, Array<ObjectRef> args, Map<String, Buffer> workspace,
-            Map<String, ObjectRef> schedule_config) {
-  AddToParent(tvm::tir::tirp::OpCall(op, args, workspace, schedule_config));
+void OpCall(tvm::tir::tirp::OpCall op_call) {
+  AddToParent(op_call);
 }
 
 BlockFrame BlockFrameSlice(BlockFrame block, Variant<Array<Range>, PrimExpr> slice) {
