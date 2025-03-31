@@ -132,9 +132,22 @@ Buffer MatchBuffer(ObjectRef param, ffi::Array<PrimExpr> shape,
                    ffi::Optional<ffi::Array<IntImm>> axis_separators = std::nullopt,
                    ffi::String logical_scope = "", ffi::Optional<TLayout> layout = std::nullopt);
 
+/*!
+ * \brief The buffer view statement.
+ * \param buffer The physical buffer storing data.
+ * \param layout The target layout of the logical buffer.
+ * \param shape The target shape of the logical buffer.
+ * \return The logical buffer for given layout and shape.
+ */
 Buffer BufferView(tvm::tir::Buffer buffer, tvm::tir::TLayout layout, Array<PrimExpr> shape);
 
-Buffer BufferGet(tvm::tir::Buffer buffer);
+/*!
+ * \brief The buffer get statement.
+ * \param buffer The logical buffer viewed by physical buffer.
+ * \param shape The target shape of the physical buffer.
+ * \return The physical buffer storing underlying data.
+ */
+Buffer BufferGet(tvm::tir::Buffer buffer, Array<PrimExpr> shape);
 
 /*!
  * \brief The block declaration statement.

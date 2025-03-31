@@ -90,8 +90,6 @@ class PrimFuncFrameNode : public TIRFrameNode {
   // TIR utils
   /*! \brief Whether it is TIR+ PrimFunc. */
   bool is_tirp;
-  /*! \brief BufferView map */
-  Map<tvm::tir::Buffer, tvm::tir::Buffer> buffer_view_map;
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
@@ -105,7 +103,6 @@ class PrimFuncFrameNode : public TIRFrameNode {
         .def_ro("env_threads", &PrimFuncFrameNode::env_threads)
         .def_ro("root_alloc_buffers", &PrimFuncFrameNode::root_alloc_buffers)
         .def_ro("is_tirp", &PrimFuncFrameNode::is_tirp)
-        .def_ro("buffer_view_map", &PrimFuncFrameNode::buffer_view_map);
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("script.ir_builder.tir.PrimFuncFrame", PrimFuncFrameNode,
                                     TIRFrameNode);
