@@ -19,7 +19,7 @@
 """The TIR backend compilation pipeline."""
 
 import tvm
-from tvm import tir
+from tvm import tir, tirp
 
 from . import backend
 
@@ -243,6 +243,7 @@ def trn_pipeline():
         pass_ctx = tvm.transform.PassContext.current()
         config = pass_ctx.config
         passes = [
+            tirp.transform.PrivateBufferAlloc(),
             tir.transform.LowerTIRp(),
             tir.transform.DecorateDeviceScope(),
             tir.transform.ConvertBlocksToOpaque(),
