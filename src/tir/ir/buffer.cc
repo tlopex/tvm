@@ -654,6 +654,13 @@ tir::Buffer BufferWithOffsetAlignment(ffi::Array<PrimExpr> shape, DataType dtype
                      offset_factor, buffer_type);
 }
 
+Buffer Buffer::with_allocated_addr(ffi::Array<Integer> allocated_addr) const {
+  Buffer output = *this;
+  auto writer = output.CopyOnWrite();
+  writer->allocated_addr = std::move(allocated_addr);
+  return output;
+}
+
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
   refl::GlobalDef()
@@ -681,7 +688,8 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def_method("tir.BufferVLoad", &Buffer::vload)
       .def_method("tir.BufferVStore", &Buffer::vstore)
       .def_method("tir.BufferStorageScope", &Buffer::scope)
-      .def_method("tir.BufferLogicalScope", &Buffer::logical_scope);
+      .def_method("tir.BufferLogicalScope", &Buffer::logical_scope)
+      .def_method("tir.BufferWithAllocatedAddr", &Buffer::with_allocated_addr);
 }
 
 }  // namespace tir

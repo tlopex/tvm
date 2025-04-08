@@ -175,9 +175,19 @@ class ASTPrinter(StmtVisitor):
         self.log.add("OpCall")
         self.log.push_scope()
         for arg in op.args:
-            self.visit_expr(arg)
+            if isinstance(arg, tir.BufferRegion):
+                self.visit_buffer_region_(arg)
+            else:
+                self.visit_expr(arg)
         self.log.pop_scope()
         
+    def visit_buffer_region_(self, op):
+        self.log.add("BufferRegion")
+        self.log.push_scope()
+        for r in op.region:
+            self.visit_expr(r.min)
+            self.visit_expr(r.extent)
+        self.log.pop_scope()
 
     def visit_expr(self, expr):
         """Simple expression visitor that logs expression types."""
@@ -307,6 +317,11 @@ class ASTPrinterMutator(StmtMutator):
     def visit_op_call_(self, op):
         result = super().visit_op_call_(op)
         self.log.add("OpCall")
+        return result
+    
+    def visit_buffer_region_(self, op):
+        result = super().visit_buffer_region_(op)
+        self.log.add("BufferRegion")
         return result
 
     def visit_expr(self, expr):
@@ -899,11 +914,15 @@ def test_op_call():
         "\n".join([
             "Block",
             "\tOpCall",
-            "\t\tExpr::BufferRegion",
-            "\t\tExpr::BufferRegion",
+            "\t\tBufferRegion",
+            "\t\t\tIntImm",
+            "\t\t\tIntImm",
+            "\t\tBufferRegion",
+            "\t\t\tIntImm",
+            "\t\t\tIntImm",
             "\t\tExpr::FloatImm",
         ]),
-        "\n".join(["Expr::FloatImm", "OpCall", "Block"])
+        "\n".join(["IntImm", "IntImm", "BufferRegion", "IntImm", "IntImm", "BufferRegion", "Expr::FloatImm", "OpCall", "Block"])
     )
 
 def test_stmt_expr_mutator():

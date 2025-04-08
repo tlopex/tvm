@@ -16,7 +16,7 @@
 # under the License.
 import tvm
 from tvm import tir
-from tvm.ir import Op
+from tvm.ir import Op, Range
 from tvm.ir.base import assert_structural_equal
 from tvm.tir.expr_functor import ExprMutator, ExprVisitor
 from tvm.tir.expr import (
@@ -53,7 +53,6 @@ from tvm.tir.expr import (
     IntImm,
     FloatImm,
     StringImm,
-    Any,
 )
 import pytest
 import tvm.testing
@@ -318,9 +317,6 @@ class ASTPrinter(ExprVisitor):
     def visit_string_imm_(self, op: StringImm) -> None:
         self.log.add("StringImm")
 
-    def visit_any_(self, op: Any) -> None:
-        self.log.add("Any")
-
 
 class BasicMutator(ExprMutator):
     """Default ExprMutator"""
@@ -498,10 +494,6 @@ class ASTPostPrinterMutator(ExprMutator):
         self.log.add("StringImm")
         return result
 
-    def visit_any_(self, op: Any) -> tir.PrimExpr:
-        result = super().visit_any_(op)
-        self.log.add("Any")
-        return result
 
 
 def basic_check(expr, visitor_str, mutator_str):
