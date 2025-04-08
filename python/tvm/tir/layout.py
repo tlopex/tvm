@@ -514,7 +514,6 @@ class TrainiumLayout(TLayout):
     @classmethod
     def from_annotation(cls, annotation: str, shape: Tuple[PrimExpr]) -> "TrainiumLayout":
         from tvm.arith import Analyzer
-
         analyzer = Analyzer()
         assert re.fullmatch(
             r"[PF]*", annotation
@@ -532,7 +531,7 @@ class TrainiumLayout(TLayout):
             if analyzer.can_prove(p_dim > 128):
                 # split out the P dimension and put the higher part on the free dimension with largest stride
                 annotation = "F" + annotation
-                shape = [p_dim // 128] + shape[:p_idx] + [128] + shape[p_idx + 1 :]
+                shape = (p_dim // 128,) + shape[:p_idx] + (128,) + shape[p_idx + 1 :]
         elif num_p_dim > 1:
             p_dim_prod = functools.reduce(
                 operator.mul, [s for s, c in zip(shape, annotation) if c == "P"]

@@ -115,6 +115,7 @@ def _get_layout(
     if isinstance(layout, TLayout):
         return layout
     assert isinstance(layout, str)
+    shape = tuple(shape)
     if scope == "trn.sbuf":
         layout = TrainiumLayout.from_annotation(layout, shape)
     elif scope == "trn.psum":
