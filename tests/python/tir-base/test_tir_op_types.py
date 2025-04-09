@@ -242,38 +242,38 @@ def test_op_ptx_cp_async_bulk():
 
 
 def test_op_ptx_commit_group():
-    expr = tir.ptx_commit_group()
-    assert expr.op.name == "tir.ptx_commit_group"
+    expr = tir.ptx_cp_async_commit_group()
+    assert expr.op.name == "tir.ptx_cp_async_commit_group"
 
 
 def test_op_ptx_wait_group():
-    expr = tir.ptx_wait_group(8)
-    assert expr.op.name == "tir.ptx_wait_group"
+    expr = tir.ptx_cp_async_wait_group(8)
+    assert expr.op.name == "tir.ptx_cp_async_wait_group"
 
 
-def test_op_ptx_cp_async_barrier():
-    expr = tir.ptx_cp_async_barrier(0)
-    assert expr.op.name == "tir.ptx_cp_async_barrier"
+def test_op_ptx_cp_async_mbarrier_arrive():
+    expr = tir.ptx_cp_async_mbarrier_arrive(0)
+    assert expr.op.name == "tir.ptx_cp_async_mbarrier_arrive"
 
 
 def test_op_ptx_init_barrier_thread_count():
-    expr = tir.ptx_init_barrier_thread_count(0, 32)
-    assert expr.op.name == "tir.ptx_init_barrier_thread_count"
+    expr = tir.init_barrier_thread_count(0, 32)
+    assert expr.op.name == "tir.init_barrier_thread_count"
 
 
 def test_op_ptx_arrive_barrier():
-    expr = tir.ptx_arrive_barrier(0)
-    assert expr.op.name == "tir.ptx_arrive_barrier"
+    expr = tir.arrive_barrier(0)
+    assert expr.op.name == "tir.arrive_barrier"
 
 
 def test_op_ptx_arrive_barrier_expect_tx():
-    expr = tir.ptx_arrive_barrier_expect_tx(0, 32)
-    assert expr.op.name == "tir.ptx_arrive_barrier_expect_tx"
+    expr = tir.arrive_barrier_expect_tx(0, 32)
+    assert expr.op.name == "tir.arrive_barrier_expect_tx"
 
 
 def test_op_ptx_wait_barrier():
-    expr = tir.ptx_wait_barrier(0)
-    assert expr.op.name == "tir.ptx_wait_barrier"
+    expr = tir.wait_barrier(0)
+    assert expr.op.name == "tir.wait_barrier"
 
 
 def test_op_create_barriers():

@@ -16,11 +16,10 @@
 # under the License.
 # pylint: disable=redefined-builtin, invalid-name, too-many-arguments
 """Operators used in TIR expression."""
-
-from typing import Any
+import warnings
+from typing import Any, Optional, Union
 
 import tvm_ffi
-
 import tvm
 from tvm import tir
 from tvm.ir import Array, Op, PrimExpr
@@ -573,6 +572,7 @@ def address_of(obj: Buffer | BufferLoad, span: Span | None = None) -> PrimExpr:
         The call expression.
     """
     if isinstance(obj, Buffer):
+
         n_dim = len(obj.shape)
         buffer_load = BufferLoad(obj, [0] * n_dim)
         return call_intrin("handle", "tir.address_of", buffer_load, span=span)
@@ -1476,7 +1476,7 @@ def ptx_cp_async_bulk(
     )
 
 
-def ptx_commit_group():
+def ptx_cp_async_commit_group():
     """TVM intrinsic for ptx async copy commit
     https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cp-async-commit-group
 
@@ -1485,10 +1485,10 @@ def ptx_commit_group():
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.ptx_commit_group")
+    return call_intrin("", "tir.ptx_cp_async_commit_group")
 
 
-def ptx_wait_group(num):
+def ptx_cp_async_wait_group(num):
     """TVM intrinsic for ptx async copy wait
     https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cp-async-wait-group
 
@@ -1502,10 +1502,10 @@ def ptx_wait_group(num):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.ptx_wait_group", num)
+    return call_intrin("", "tir.ptx_cp_async_wait_group", num)
 
 
-def ptx_cp_async_barrier(barrier_id):
+def ptx_cp_async_mbarrier_arrive(barrier_id):
     """TVM intrinsic for ptx async copy barrier using cp.async.mbarrier.arrive
     https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-cp-async-mbarrier-arrive
 
@@ -1519,10 +1519,10 @@ def ptx_cp_async_barrier(barrier_id):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.ptx_cp_async_barrier", barrier_id)
+    return call_intrin("", "tir.ptx_cp_async_mbarrier_arrive", barrier_id)
 
 
-def ptx_init_barrier_thread_count(barrier_id, thread_count):
+def init_barrier_thread_count(barrier_id, thread_count):
     """TVM intrinsic for ptx barrier initialization of thread count using mbarrier.init
     https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-mbarrier-init
 
@@ -1539,10 +1539,16 @@ def ptx_init_barrier_thread_count(barrier_id, thread_count):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.ptx_init_barrier_thread_count", barrier_id, thread_count)
+    warnings.warn(
+        "init_barrier_thread_count is deprecated and will be removed in the future. "
+        "Please use `ptx_mbarrier_init` instead.",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+    return call_intrin("", "tir.init_barrier_thread_count", barrier_id, thread_count)
 
 
-def ptx_arrive_barrier(barrier_id):
+def arrive_barrier(barrier_id):
     """TVM intrinsic for ptx barrier arrival using mbarrier.arrive
     https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-mbarrier-arrive
 
@@ -1556,10 +1562,16 @@ def ptx_arrive_barrier(barrier_id):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.ptx_arrive_barrier", barrier_id)
+    warnings.warn(
+        "arrive_barrier is deprecated and will be removed in a future release. "
+        "Please use `ptx_mbarrier_arrive` instead.",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+    return call_intrin("", "tir.arrive_barrier", barrier_id)
 
 
-def ptx_arrive_barrier_expect_tx(barrier_id, byte_count):
+def arrive_barrier_expect_tx(barrier_id, byte_count):
     """TVM intrinsic for ptx barrier arrival with expect tx using mbarrier.arrive.expect_tx
     https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-mbarrier-arrive
     https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-mbarrier-expect-tx-operation
@@ -1578,10 +1590,16 @@ def ptx_arrive_barrier_expect_tx(barrier_id, byte_count):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.ptx_arrive_barrier_expect_tx", barrier_id, byte_count)
+    warnings.warn(
+        "arrive_barrier_expect_tx is deprecated and will be removed in a future release. "
+        "Please use `ptx_mbarrier_arrive_expect_tx` instead.",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+    return call_intrin("", "tir.arrive_barrier_expect_tx", barrier_id, byte_count)
 
 
-def ptx_wait_barrier(barrier_id):
+def wait_barrier(barrier_id):
     """TVM intrinsic for ptx barrier wait using mbarrier.try_wait
     https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-mbarrier-test-wait-mbarrier-try-wait
 
@@ -1595,7 +1613,13 @@ def ptx_wait_barrier(barrier_id):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.ptx_wait_barrier", barrier_id)
+    warnings.warn(
+        "wait_barrier is deprecated and will be removed in a future release. "
+        "Please use `ptx_mbarrier_try_wait` instead.",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+    return call_intrin("", "tir.wait_barrier", barrier_id)
 
 
 def create_barriers(barrier_count):
@@ -1715,7 +1739,7 @@ def cuda_barrier_arrive_and_wait(barrier_id, barrier_arr_id):
     return call_intrin("", "tir.cuda_barrier_arrive_and_wait", barrier_id, barrier_arr_id)
 
 
-def cuda_fence_proxy_async(scope: str):
+def ptx_fence_proxy(scope: str):
     """TVM intrinsic to call cuda::ptx::fence_proxy_async
 
     Parameters
@@ -1728,10 +1752,10 @@ def cuda_fence_proxy_async(scope: str):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.cuda_fence_proxy_async", scope)
+    return call_intrin("", "tir.ptx_fence_proxy", scope)
 
 
-def mbarrier_init(bar, thread_count):
+def ptx_mbarrier_init(bar, thread_count):
     """TVM intrinsic to call mbarrier.init.shared::cta.b64
 
     Parameters
@@ -1747,10 +1771,10 @@ def mbarrier_init(bar, thread_count):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.mbarrier_init", bar, thread_count)
+    return call_intrin("", "tir.ptx_mbarrier_init", bar, thread_count)
 
 
-def mbarrier_arrive(bar, cta_id=None, pred=None):
+def ptx_mbarrier_arrive(bar, cta_id=None, pred=None):
     """TVM intrinsic to call
         mbarrier.arrive.shared::cta.b64
     or
@@ -1769,13 +1793,13 @@ def mbarrier_arrive(bar, cta_id=None, pred=None):
         The predicate to guard the operation.
     """
     if cta_id is None and pred is None:
-        return call_intrin("", "tir.mbarrier_arrive", bar)
+        return call_intrin("", "tir.ptx_mbarrier_arrive", bar)
     else:
         assert cta_id is not None and pred is not None
-        return call_intrin("", "tir.mbarrier_arrive", bar, cta_id, pred)
+        return call_intrin("", "tir.ptx_mbarrier_arrive", bar, cta_id, pred)
 
 
-def mbarrier_arrive_expect_tx(bar, byte_count, cta_id=None, pred=None):
+def ptx_mbarrier_arrive_expect_tx(bar, byte_count, cta_id=None, pred=None):
     """TVM intrinsic to call
         mbarrier.arrive_expect_tx.shared::cta.b64
     or
@@ -1803,13 +1827,13 @@ def mbarrier_arrive_expect_tx(bar, byte_count, cta_id=None, pred=None):
         The call expression.
     """
     if cta_id is None and pred is None:
-        return call_intrin("", "tir.mbarrier_arrive_expect_tx", bar, byte_count)
+        return call_intrin("", "tir.ptx_mbarrier_arrive_expect_tx", bar, byte_count)
     else:
         assert cta_id is not None and pred is not None
-        return call_intrin("", "tir.mbarrier_arrive_expect_tx", bar, byte_count, cta_id, pred)
+        return call_intrin("", "tir.ptx_mbarrier_arrive_expect_tx", bar, byte_count, cta_id, pred)
 
 
-def mbarrier_wait(bar, phase):
+def ptx_mbarrier_try_wait(bar, phase):
     """TVM intrinsic to call mbarrier.try_wait.parity repeatedly until it returns true
 
     Parameters
@@ -1825,10 +1849,10 @@ def mbarrier_wait(bar, phase):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.mbarrier_wait", bar, phase)
+    return call_intrin("", "tir.ptx_mbarrier_try_wait", bar, phase)
 
 
-def named_barrier_arrive(name_bar_id, thread_count):
+def ptx_bar_arrive(name_bar_id, thread_count):
     """TVM intrinsic to call bar.arrive a, b
 
     Parameters
@@ -1844,10 +1868,10 @@ def named_barrier_arrive(name_bar_id, thread_count):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.named_barrier_arrive", name_bar_id, thread_count)
+    return call_intrin("", "tir.ptx_bar_arrive", name_bar_id, thread_count)
 
 
-def named_barrier_sync(name_bar_id, thread_count):
+def ptx_bar_sync(name_bar_id, thread_count):
     """TVM intrinsic to call bar.sync a, {b}
 
     Parameters
@@ -1863,10 +1887,10 @@ def named_barrier_sync(name_bar_id, thread_count):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.named_barrier_sync", name_bar_id, thread_count)
+    return call_intrin("", "tir.ptx_bar_sync", name_bar_id, thread_count)
 
 
-def cp_async_bulk_tensor_global_to_cluster(dim, dst_ptr, bar, tensormap, *coords, cta_mask=0):
+def ptx_cp_async_bulk_tensor_global_to_cluster(dim, dst_ptr, bar, tensormap, *coords, cta_mask=0):
     """TVM intrinsic to call cp.async.bulk.tensor.dim.shared::cluster.global.tile.mbarrier::complete_tx::bytes
 
     Parameters
@@ -1896,7 +1920,7 @@ def cp_async_bulk_tensor_global_to_cluster(dim, dst_ptr, bar, tensormap, *coords
     """
     return call_intrin(
         "",
-        "tir.cp_async_bulk_tensor_global_to_cluster",
+        "tir.ptx_cp_async_bulk_tensor_global_to_cluster",
         dim,
         dst_ptr,
         bar,
@@ -1906,7 +1930,7 @@ def cp_async_bulk_tensor_global_to_cluster(dim, dst_ptr, bar, tensormap, *coords
     )
 
 
-def cp_async_bulk_tensor_shared_to_global(dim, src_ptr, tensormap, *coords):
+def ptx_cp_async_bulk_tensor_shared_to_global(dim, src_ptr, tensormap, *coords):
     """TVM intrinsic to call cp.async.bulk.tensor.dim.global.shared::cta.tile.bulk_group
 
     Parameters
@@ -1930,7 +1954,7 @@ def cp_async_bulk_tensor_shared_to_global(dim, src_ptr, tensormap, *coords):
     """
     return call_intrin(
         "",
-        "tir.cp_async_bulk_tensor_shared_to_global",
+        "tir.ptx_cp_async_bulk_tensor_shared_to_global",
         dim,
         src_ptr,
         tensormap,
@@ -1938,7 +1962,7 @@ def cp_async_bulk_tensor_shared_to_global(dim, src_ptr, tensormap, *coords):
     )
 
 
-def cp_async_bulk_tensor_commit_group():
+def ptx_cp_async_bulk_commit_group():
     """TVM intrinsic to call cp.async.bulk.tensor.commit_group
 
     Returns
@@ -1946,10 +1970,10 @@ def cp_async_bulk_tensor_commit_group():
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.cp_async_bulk_tensor_commit_group")
+    return call_intrin("", "tir.ptx_cp_async_bulk_commit_group")
 
 
-def cp_async_bulk_tensor_wait_group(n, read=True):
+def ptx_cp_async_bulk_wait_group(n, read=True):
     """TVM intrinsic to call cp.async.bulk.tensor.wait_group
 
     Parameters
@@ -1965,10 +1989,10 @@ def cp_async_bulk_tensor_wait_group(n, read=True):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.cp_async_bulk_tensor_wait_group", n, read)
+    return call_intrin("", "tir.ptx_cp_async_bulk_wait_group", n, read)
 
 
-def barrier_cluster_arrive(sem="", aligned=True):
+def ptx_barrier_cluster_arrive(sem="", aligned=True):
     """TVM intrinsic to call barrier.cluster.arrive{.sem}{.aligned}
 
     Parameters
@@ -1979,10 +2003,10 @@ def barrier_cluster_arrive(sem="", aligned=True):
     aligned : bool
         Whether all threads in the warp must execute the same instruction.
     """
-    return call_intrin("", "tir.barrier_cluster_arrive", sem, aligned)
+    return call_intrin("", "tir.ptx_barrier_cluster_arrive", sem, aligned)
 
 
-def barrier_cluster_wait(acquire=False, aligned=True):
+def ptx_barrier_cluster_wait(acquire=False, aligned=True):
     """TVM intrinsic to call barrier.cluster.wait{.acquire}{.aligned}
 
     Parameters
@@ -1993,10 +2017,10 @@ def barrier_cluster_wait(acquire=False, aligned=True):
     aligned : bool
         Whether all threads in the warp must execute the same instruction.
     """
-    return call_intrin("", "tir.barrier_cluster_wait", acquire, aligned)
+    return call_intrin("", "tir.ptx_barrier_cluster_wait", acquire, aligned)
 
 
-def elect_sync(membermask=0xFFFFFFFF):
+def ptx_elect_sync(membermask=0xFFFFFFFF):
     """TVM intrinsic to call elect.sync
 
     Parameters
@@ -2004,10 +2028,10 @@ def elect_sync(membermask=0xFFFFFFFF):
     membermask : PrimExpr
         The mask of the member threads in the warp.
     """
-    return call_intrin("uint32", "tir.elect_sync", membermask)
+    return call_intrin("uint32", "tir.ptx_elect_sync", membermask)
 
 
-def fence_mbarrier_init_release_cluster():
+def ptx_fence_mbarrier_init_release_cluster():
     """TVM intrinsic to call fence.mbarrier_init.release.cluster;
 
     Returns
@@ -2015,7 +2039,7 @@ def fence_mbarrier_init_release_cluster():
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.fence_mbarrier_init_release_cluster")
+    return call_intrin("", "tir.ptx_fence_mbarrier_init_release_cluster")
 
 
 def ptx_fetch_register(bits, reg_name):
@@ -2037,7 +2061,7 @@ def ptx_fetch_register(bits, reg_name):
     return call_intrin("int" + str(bits), "tir.ptx_fetch_register", bits, reg_name)
 
 
-def encode_matrix_descriptor(desc, addr, ldo, sdo, swizzle):
+def ptx_encode_matrix_descriptor(desc, addr, ldo, sdo, swizzle):
     """TVM intrinsic to create shared memory descriptor for matrix
 
     Parameters
@@ -2057,11 +2081,11 @@ def encode_matrix_descriptor(desc, addr, ldo, sdo, swizzle):
     swizzle : int
         The swizzle value (CUtensorMapSwizzle_enum).
     """
-    return call_intrin("", "tir.encode_matrix_descriptor", desc, addr, ldo, sdo, swizzle)
+    return call_intrin("", "tir.ptx_encode_matrix_descriptor", desc, addr, ldo, sdo, swizzle)
 
 
-def wgmma_fence_operand(reg):
-    """TVM intrinsic to call wgmma.fence.operand
+def ptx_wgmma_noop_barrier(reg):
+    """TVM intrinsic to call "" : "+{format}"(reg)::"memory"
 
     Parameters
     ----------
@@ -2073,10 +2097,10 @@ def wgmma_fence_operand(reg):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.wgmma_fence_operand", reg)
+    return call_intrin("", "tir.ptx_wgmma_noop_barrier", reg)
 
 
-def wgmma_mma_async_ss(
+def ptx_wgmma_mma_async_ss(
     M, N, K, in_dtype, out_dtype, transA, transB, scaleA, scaleB, scaleD, descA, descB, *accums
 ):
     """TVM intrinsic to call wgmma.mma_async.sync.aligned.shape.dtype.atype.btype over 2 smem operators
@@ -2124,7 +2148,7 @@ def wgmma_mma_async_ss(
     """
     return call_intrin(
         "",
-        "tir.wgmma_mma_async_ss",
+        "tir.ptx_wgmma_mma_async_ss",
         M,
         N,
         K,
@@ -2141,7 +2165,7 @@ def wgmma_mma_async_ss(
     )
 
 
-def wgmma_mma_async_rs(
+def ptx_wgmma_mma_async_rs(
     M, N, K, in_dtype, out_dtype, transA, transB, scaleA, scaleB, scaleD, descB, *reg_list
 ):
     """TVM intrinsic to call wgmma.mma_async.sync.aligned.shape.dtype.atype.btype
@@ -2187,7 +2211,7 @@ def wgmma_mma_async_rs(
     """
     return call_intrin(
         "",
-        "tir.wgmma_mma_async_rs",
+        "tir.ptx_wgmma_mma_async_rs",
         M,
         N,
         K,
@@ -2203,7 +2227,7 @@ def wgmma_mma_async_rs(
     )
 
 
-def wgmma_arrive():
+def ptx_wgmma_fence():
     """TVM intrinsic to call wgmma.fence.sync.aligned
 
     Returns
@@ -2211,10 +2235,10 @@ def wgmma_arrive():
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.wgmma_arrive")
+    return call_intrin("", "tir.ptx_wgmma_fence")
 
 
-def wgmma_commit_group():
+def ptx_wgmma_commit_group():
     """TVM intrinsic to call wgmma.commit_group.sync.aligned
 
     Returns
@@ -2222,10 +2246,10 @@ def wgmma_commit_group():
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.wgmma_commit_group")
+    return call_intrin("", "tir.ptx_wgmma_commit_group")
 
 
-def wgmma_wait_group(n):
+def ptx_wgmma_wait_group(n):
     """TVM intrinsic to call wgmma.wait_group.sync.aligned
 
     Parameters
@@ -2238,10 +2262,10 @@ def wgmma_wait_group(n):
     call : PrimExpr
         The call expression.
     """
-    return call_intrin("", "tir.wgmma_wait_group", n)
+    return call_intrin("", "tir.ptx_wgmma_wait_group", n)
 
 
-def stmatrix_sync_aligned(num, trans, ptr, *regs):
+def ptx_stmatrix(num, trans, ptr, *regs):
     """TVM intrinsic to call stmatrix.sync.aligned.m8n8.num{.trans}.shared.b16 [p], r
 
     Parameters
@@ -2258,10 +2282,10 @@ def stmatrix_sync_aligned(num, trans, ptr, *regs):
     regs : list
         The registers to store.
     """
-    return call_intrin("", "tir.stmatrix_sync_aligned", num, trans, ptr, *regs)
+    return call_intrin("", "tir.ptx_stmatrix", num, trans, ptr, *regs)
 
 
-def setmaxnreg(inc: bool, reg_count):
+def ptx_setmaxnreg(inc: bool, reg_count):
     """TVM intrinsic to call setmaxnreg.action.sync.aligned.u32 imm-reg-count
 
     Parameters
@@ -2272,7 +2296,7 @@ def setmaxnreg(inc: bool, reg_count):
     reg_count : int
         The register count.
     """
-    return call_intrin("", "tir.setmaxnreg", inc, reg_count)
+    return call_intrin("", "tir.ptx_setmaxnreg", inc, reg_count)
 
 
 def make_filled_simdgroup_matrix(
@@ -4414,7 +4438,7 @@ def print_buffer(buffer_var, dtype, shape_size, *dims):
     return _ffi_api.print_buffer(buffer_var, dtype, shape_size, *dims)
 
 
-def cuda_timer_init(profiler_buffer, profiler_tag, profiler_write_offset):
+def timer_init_cuda(profiler_buffer, profiler_tag, profiler_write_offset):
     """TVM intrinsic for initializing the CUDA profiler, and store profiling result in a buffer.
 
     Parameters
@@ -4437,14 +4461,14 @@ def cuda_timer_init(profiler_buffer, profiler_tag, profiler_write_offset):
 
     return call_intrin(
         "handle",
-        "tir.cuda_timer_init",
+        "tir.timer_init_cuda",
         profiler_buffer,
         profiler_tag,
         profiler_write_offset,
     )
 
 
-def cuda_timer_start(event_type, profiler_buffer, profiler_tag, profiler_write_offset, profiler_write_stride):
+def timer_start_cuda(event_type, profiler_buffer, profiler_tag, profiler_write_offset, profiler_write_stride):
     """TVM intrinsic for starting the timer for profiling a specific event, and storing profiling result in a buffer.
 
     Parameters
@@ -4473,7 +4497,7 @@ def cuda_timer_start(event_type, profiler_buffer, profiler_tag, profiler_write_o
 
     return call_intrin(
         "handle",
-        "tir.cuda_timer_start",
+        "tir.timer_start_cuda",
         event_type.value,
         profiler_buffer,
         profiler_tag,
@@ -4482,7 +4506,7 @@ def cuda_timer_start(event_type, profiler_buffer, profiler_tag, profiler_write_o
     )
 
 
-def cuda_timer_end(event_type, profiler_buffer, profiler_tag, profiler_write_offset, profiler_write_stride):
+def timer_end_cuda(event_type, profiler_buffer, profiler_tag, profiler_write_offset, profiler_write_stride):
     """TVM intrinsic for ending the timer for profiling a specific event, and storing profiling result in a buffer.
 
     Parameters
@@ -4511,7 +4535,7 @@ def cuda_timer_end(event_type, profiler_buffer, profiler_tag, profiler_write_off
 
     return call_intrin(
         "handle",
-        "tir.cuda_timer_end",
+        "tir.timer_end_cuda",
         event_type.value,
         profiler_buffer,
         profiler_tag,
