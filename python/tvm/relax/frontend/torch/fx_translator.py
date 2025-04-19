@@ -772,6 +772,7 @@ class TorchFXImporter(BaseFXGraphImporter):
             "clone": lambda node: self.env[node.args[0]],
             "empty": self._empty,
             "empty_like": self._empty_like,
+            "eye": self._eye,
             "fill_": self._inplace_fill,
             "full": self._full,
             "index_select": self._index_select,
