@@ -45,13 +45,8 @@ from tvm.tir.exec_scope import ExecScope, ScopeIdDef, Var, WorldScope, KernelSco
 from tvm.tir.layout import (
     TLayout,
     TileLayout,
-    DeviceIterAttr,
-    DataIterAttr,
-    S,
     SwizzleLayout,
     ComposeLayout,
-    TrainiumLayout,
-    TrainiumPSUMLayout,
 )
 from tvm.ir.tensormap_type import (
     TensorMapInterleaveKind,
@@ -117,12 +112,12 @@ def _get_layout(
     assert isinstance(layout, str)
     shape = tuple(shape)
     if scope == "trn.sbuf":
-        layout = TrainiumLayout.from_annotation(layout, shape)
+        layout = TileLayout.trainium(layout, shape)
     elif scope == "trn.psum":
-        layout = TrainiumPSUMLayout.from_annotation(layout, shape)
+        layout = TileLayout.trainium(layout, shape).to_psum()
     else:
         assert layout == "default"
-        layout = TileLayout.from_tuple(shape)
+        layout = TileLayout(shape)
     return layout
 
 
@@ -2981,11 +2976,6 @@ __all__ += [
     "Var",
     "TLayout",
     "TileLayout",
-    "TrainiumLayout",
-    "TrainiumPSUMLayout",
-    "DeviceIterAttr",
-    "DataIterAttr",
-    "S",
     "SwizzleLayout",
     "ComposeLayout",
     "view",
