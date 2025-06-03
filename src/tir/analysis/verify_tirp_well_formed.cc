@@ -24,7 +24,6 @@
 
 #include <tvm/arith/analyzer.h>
 #include <tvm/ir/op.h>
-#include <tvm/runtime/registry.h>
 #include <tvm/tir/exec_scope.h>
 #include <tvm/tir/stmt.h>
 #include <tvm/tir/stmt_functor.h>
@@ -284,7 +283,7 @@ bool VerifyTIRpWellFormed(const IRModule& mod, bool assert_mode) {
   return true;
 }
 
-TVM_REGISTER_GLOBAL("tir.analysis.VerifyTIRpWellFormed")
+TVM_FFI_REGISTER_GLOBAL("tir.analysis.VerifyTIRpWellFormed")
     .set_body_typed([](const ObjectRef& obj, bool assert_mode) {
       if (auto n = obj.as<PrimFunc>()) {
         return VerifyTIRpWellFormed(n.value(), assert_mode);

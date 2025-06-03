@@ -19,7 +19,7 @@
 from typing import Union, Dict, Any
 
 import tvm
-from tvm._ffi import register_object
+from tvm.ffi import register_object
 from tvm.runtime import Object
 from tvm.tir import BufferRegion, Buffer, OpCall
 from tvm.tir.exec_scope import ExecScope
