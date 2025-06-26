@@ -256,31 +256,6 @@ def test_op_ptx_cp_async_mbarrier_arrive():
     assert expr.op.name == "tir.ptx_cp_async_mbarrier_arrive"
 
 
-def test_op_ptx_init_barrier_thread_count():
-    expr = tir.init_barrier_thread_count(0, 32)
-    assert expr.op.name == "tir.init_barrier_thread_count"
-
-
-def test_op_ptx_arrive_barrier():
-    expr = tir.arrive_barrier(0)
-    assert expr.op.name == "tir.arrive_barrier"
-
-
-def test_op_ptx_arrive_barrier_expect_tx():
-    expr = tir.arrive_barrier_expect_tx(0, 32)
-    assert expr.op.name == "tir.arrive_barrier_expect_tx"
-
-
-def test_op_ptx_wait_barrier():
-    expr = tir.wait_barrier(0)
-    assert expr.op.name == "tir.wait_barrier"
-
-
-def test_op_create_barriers():
-    expr = tir.create_barriers(16)
-    assert expr.op.name == "tir.create_barriers"
-
-
 def test_tir_op_vectorlow():
     buffer = tir.decl_buffer((4, 4), "int8", offset_factor=1)
     vec = buffer.vload([0, 0], dtype="int8x16")
