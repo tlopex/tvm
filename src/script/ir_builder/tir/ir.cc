@@ -856,9 +856,11 @@ Buffer DeclBuffer(ffi::Array<PrimExpr> shape, DataType dtype, ffi::String buffer
                   ffi::Optional<PrimExpr> elem_offset, ffi::String storage_scope, int align,
                   int offset_factor, ffi::String buffer_type,
                   ffi::Optional<ffi::Array<IntImm>> axis_separators,
+                  ffi::String logical_scope,
                   Optional<TLayout> layout) {
   Buffer buffer = BufferDecl(shape, dtype, buffer_name, data, strides, elem_offset, storage_scope,
-                             align, offset_factor, buffer_type, axis_separators, "", layout);
+                             align, offset_factor, buffer_type, axis_separators, logical_scope,
+                             layout);
   if (data.defined()) {
     // Alias an existing buffer: emit DeclBuffer statement
     AddToParent(tvm::tir::DeclBuffer(buffer));
@@ -901,6 +903,13 @@ TVM_STATIC_IR_FUNCTOR(Namer, vtable)
           Namer::Name(v.value(), name + "_s" + std::to_string(i));
         }
       }
+    });
+
+TVM_STATIC_IR_FUNCTOR(Namer, vtable)
+    .set_dispatch<tvm::tir::BufferLoadNode>([](const ObjectRef& node, ffi::String name) -> void {
+      using namespace tvm::tir;
+      BufferLoadNode* buffer = const_cast<BufferLoadNode*>(node.as<BufferLoadNode>());
+      Namer::Name(buffer->buffer, name);
     });
 
 TVM_STATIC_IR_FUNCTOR(Namer, vtable)

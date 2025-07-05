@@ -675,6 +675,23 @@ Buffer Buffer::with_data(Var data) const {
   return output;
 }
 
+bool Buffer::IsCell(bool alloc_or_decl) const {
+  // TODO(@bohan): logical scope is not considered
+  auto is_cell_layout = [](const TLayout& layout) -> bool {
+    auto tile_layout = layout.as<TileLayoutNode>();
+    if (!tile_layout) return false;
+    return tile_layout->shard.size() == 0 && tile_layout->replicate.size() == 0 &&
+           tile_layout->exclude.size() == 0;
+  };
+  return (*this)->shape.size() == 0 && (*this)->strides.size() == 0 &&
+         (*this)->axis_separators.size() == 0 &&
+         (!alloc_or_decl || tir::is_zero((*this)->elem_offset)) && (*this)->data_alignment == 64 &&
+         (*this)->offset_factor == 1 && (*this)->buffer_type == tir::BufferType::kDefault &&
+         (*this)->allocated_addr.size() == 0 &&
+         this->logical_scope() == tvm::tir::StorageToLogicalScope((*this).scope()) &&
+         is_cell_layout((*this)->layout.value_or(TileLayout()));
+}
+
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
   refl::GlobalDef()
@@ -706,7 +723,8 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def_method("tir.BufferLogicalScope", &Buffer::logical_scope)
       .def_method("tir.BufferWithAllocatedAddr", &Buffer::with_allocated_addr)
       .def_method("tir.BufferWithDtype", &Buffer::with_dtype)
-      .def_method("tir.BufferWithData", &Buffer::with_data);
+      .def_method("tir.BufferWithData", &Buffer::with_data)
+      .def_method("tir.BufferIsCell", &Buffer::IsCell);
 }
 
 }  // namespace tir
