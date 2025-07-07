@@ -1147,9 +1147,10 @@ class BufferLoad(PrimExprWithOp):
             predicate,
             span,  # type: ignore
         )
-        
+
     def is_event(self):
         return self.buffer.is_event_tensor()
+
 
 @tvm_ffi.register_object("tir.ProducerLoad")
 class ProducerLoad(PrimExprWithOp):
