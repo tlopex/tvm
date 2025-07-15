@@ -27,8 +27,6 @@ namespace tir {
 
 TVM_FFI_STATIC_INIT_BLOCK({
   ExecScopeNode::RegisterReflection();
-  WorldScopeNode::RegisterReflection();
-  KernelScopeNode::RegisterReflection();
   ExecScopeSliceNode::RegisterReflection();
   ScopePairNode::RegisterReflection();
   ScopeIdDefNode::RegisterReflection();
@@ -36,23 +34,15 @@ TVM_FFI_STATIC_INIT_BLOCK({
 
 /******** Definition of Execution Scope ********/
 // ExecScope
-ExecScope::ExecScope(String name) {
+ExecScope::ExecScope(String name, Array<ScopeIdDef> scope_id_def) {
   CHECK(Valid(name)) << "ValueError: Unknown scope name: " << name;
-  CHECK(name != "world" && name != "kernel") << "ValueError: Reserved scope name: " << name;
   auto n = make_object<ExecScopeNode>();
   n->name = std::move(name);
+  n->scope_id_def = std::move(scope_id_def);
   data_ = std::move(n);
 }
 
-ExecScope ExecScope::Create(String name) {
-  if (name == "world") {
-    return WorldScope(ScopeIdDef({}, {}, ScopePair("world", "kernel")));
-  } else if (name == "kernel") {
-    return KernelScope(Array<ScopeIdDef>({}));
-  } else {
-    return ExecScope(name);
-  }
-}
+ExecScope ExecScope::Create(String name) { return ExecScope(name); }
 
 bool ExecScope::Valid(const String& name) { return ScopeOrder.find(name) != ScopeOrder.end(); }
 
@@ -70,40 +60,14 @@ bool ExecScopeNode::Higher(const ExecScope& other) const { return Higher(other->
 
 TVM_REGISTER_NODE_TYPE(ExecScopeNode);
 
-TVM_FFI_REGISTER_GLOBAL("tir.ExecScope").set_body_typed([](String name) {
-  return ExecScope(name);
+TVM_FFI_STATIC_INIT_BLOCK({
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef().def("tir.ExecScope", [](String name) { return ExecScope(name); });
 });
 
-TVM_FFI_REGISTER_GLOBAL("tir.ExecScopeCreate").set_body_typed([](String name) {
-  return ExecScope::Create(name);
-});
-
-// WorldScope
-WorldScope::WorldScope(ScopeIdDef def) {
-  auto n = make_object<WorldScopeNode>();
-  n->name = "world";
-  n->scope_id_def = std::move(def);
-  data_ = std::move(n);
-}
-
-TVM_REGISTER_NODE_TYPE(WorldScopeNode);
-
-TVM_FFI_REGISTER_GLOBAL("tir.WorldScope").set_body_typed([](ScopeIdDef def) {
-  return WorldScope(def);
-});
-
-// KernelScope
-KernelScope::KernelScope(Array<ScopeIdDef> def) {
-  auto n = make_object<KernelScopeNode>();
-  n->name = "kernel";
-  n->scope_id_def = std::move(def);
-  data_ = std::move(n);
-}
-
-TVM_REGISTER_NODE_TYPE(KernelScopeNode);
-
-TVM_FFI_REGISTER_GLOBAL("tir.KernelScope").set_body_typed([](Array<ScopeIdDef> def) {
-  return KernelScope(def);
+TVM_FFI_STATIC_INIT_BLOCK({
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef().def("tir.ExecScopeCreate", [](String name) { return ExecScope::Create(name); });
 });
 
 // ExecScopeSlice
@@ -136,10 +100,13 @@ bool ExecScopeSliceNode::Is(const ExecScope& other) const {
 
 TVM_REGISTER_NODE_TYPE(ExecScopeSliceNode);
 
-TVM_FFI_REGISTER_GLOBAL("tir.ExecScopeSlice")
-    .set_body_typed([](Variant<Array<Range>, PrimExpr> slice, Optional<Array<PrimExpr>> extents,
-                       String parent,
-                       String cur) { return ExecScopeSlice(slice, extents, parent, cur); });
+TVM_FFI_STATIC_INIT_BLOCK({
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef().def(
+      "tir.ExecScopeSlice",
+      [](Variant<Array<Range>, PrimExpr> slice, Optional<Array<PrimExpr>> extents, String parent,
+         String cur) { return ExecScopeSlice(slice, extents, parent, cur); });
+});
 
 /******** Definition of Var ********/
 // ScopePair
@@ -152,8 +119,10 @@ ScopePair::ScopePair(String parent, String cur) {
 
 TVM_REGISTER_NODE_TYPE(ScopePairNode);
 
-TVM_FFI_REGISTER_GLOBAL("tir.ScopePair").set_body_typed([](String parent, String cur) {
-  return ScopePair(parent, cur);
+TVM_FFI_STATIC_INIT_BLOCK({
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef().def("tir.ScopePair",
+                        [](String parent, String cur) { return ScopePair(parent, cur); });
 });
 
 // ScopeIdDef
@@ -178,10 +147,13 @@ PrimExpr ScopeIdDef::fused_extent() const {
 
 TVM_REGISTER_NODE_TYPE(ScopeIdDefNode);
 
-TVM_FFI_REGISTER_GLOBAL("tir.ScopeIdDef")
-    .set_body_typed([](Array<Var> vars, Array<PrimExpr> extents, ScopePair scope) {
-      return ScopeIdDef(vars, extents, scope);
-    });
+TVM_FFI_STATIC_INIT_BLOCK({
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef().def("tir.ScopeIdDef",
+                        [](Array<Var> vars, Array<PrimExpr> extents, ScopePair scope) {
+                          return ScopeIdDef(vars, extents, scope);
+                        });
+});
 
 bool ScopeIdDefVerifier::Verify(const Array<ScopeIdDef>& defs) {
   id_set.clear();
@@ -241,8 +213,13 @@ bool IsStorageBuffer(const String& storage, const String& logical) {
 }
 
 String StorageToLogicalScope(const String& storage) {
-  ICHECK(StorageToLogical.count(storage)) << "Unknown storage type: " << storage;
-  return StorageToLogical.at(storage);
+  for (const auto& pair : StorageToLogical) {
+    if (std::string(storage).rfind(pair.first, 0) == 0) {  // C++ equivalent of startswith
+      return pair.second;
+    }
+  }
+  LOG(FATAL) << "Unknown storage type: " << storage;
+  return "";
 }
 
 /******** ScopeIdResolve related functions ********/

@@ -183,7 +183,7 @@ BlockFrame Warp(ffi::Optional<ffi::Array<PrimExpr>> scope_slice_extents,
 BlockFrame Thread(ffi::Optional<ffi::Array<PrimExpr>> scope_slice_extents,
                   ffi::String scope_slice_parent);
 
-tvm::tir::Var KernelId(PrimExpr extent);
+Array<tvm::tir::Var> KernelId(Array<PrimExpr> extents, String parent);
 
 ffi::Array<tvm::tir::Var> CtaId(ffi::Array<PrimExpr> extents, ffi::String parent);
 

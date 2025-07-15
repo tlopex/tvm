@@ -7196,7 +7196,12 @@ def timer_init_cuda(profiler_buffer, profiler_tag, profiler_write_offset, num_gr
 
 
 def timer_start_cuda(
-    event_type, profiler_buffer, profiler_tag, profiler_write_offset, profiler_write_stride, leader_cond
+    event_type,
+    profiler_buffer,
+    profiler_tag,
+    profiler_write_offset,
+    profiler_write_stride,
+    leader_cond,
 ):
     """TVM intrinsic for starting the timer for profiling a specific event, and storing profiling result in a buffer.
 
@@ -7240,7 +7245,12 @@ def timer_start_cuda(
 
 
 def timer_end_cuda(
-    event_type, profiler_buffer, profiler_tag, profiler_write_offset, profiler_write_stride, leader_cond
+    event_type,
+    profiler_buffer,
+    profiler_tag,
+    profiler_write_offset,
+    profiler_write_stride,
+    leader_cond,
 ):
     """TVM intrinsic for ending the timer for profiling a specific event, and storing profiling result in a buffer.
 
@@ -7406,6 +7416,17 @@ def cuda_atomic_cas(ptr, old_val, new_val):
     """
     old_val = tir.convert(old_val)
     return call_intrin(old_val.dtype, "tir.cuda_atomic_cas", ptr, old_val, new_val)
+
+
+def thread_return():
+    """TVM intrinsic to call thread_return()
+
+    Returns
+    -------
+    call : PrimExpr
+        The call expression.
+    """
+    return call_intrin("", "tir.thread_return")
 
 
 ########################################################

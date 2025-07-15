@@ -42,19 +42,12 @@ from tvm.target.codegen import llvm_lookup_intrinsic_id
 from tvm.tir import Buffer, BufferRegion, IndexMap, PrimExpr
 from tvm.tir import op as _tir_op
 from tvm.tir import type_annotation
-from tvm.tir.exec_scope import ExecScope, ScopeIdDef, Var, WorldScope, KernelScope
+from tvm.tir.exec_scope import ExecScope, ScopeIdDef, Var
 from tvm.tir.layout import (
     TLayout,
     TileLayout,
     SwizzleLayout,
     ComposeLayout,
-)
-from tvm.ir.tensormap_type import (
-    TensorMapInterleaveKind,
-    TensorMapSwizzleKind,
-    TensorMapL2PromotionKind,
-    TensorMapOOBFillKind,
-    TensorMapType,
 )
 
 # import tir.expr for direct ir construction to pass structural_equal comparison
@@ -609,8 +602,22 @@ def thread(
     return _ffi_api.Thread(extents, parent)  # type: ignore[attr-defined] # pylint: disable=no-member
 
 
-def kernel_id(extent: Union[PrimExpr, int]) -> Var:
-    return _ffi_api.KernelId(extent)  # type: ignore[attr-defined] # pylint: disable=no-member
+def scope_id(
+    extents: List[Union[PrimExpr, int]],
+    parent: str,
+    cur: str,
+) -> List[Var]:
+    ret = _ffi_api.ScopeId(extents, parent, "T.scope_id", cur)  # type: ignore[attr-defined] # pylint: disable=no-member
+    if len(ret) == 1:
+        return ret[0]
+    return ret
+
+
+def kernel_id(extents: List[Union[PrimExpr, int]], parent: str = "world") -> List[Var]:
+    ret = _ffi_api.KernelId(extents, parent)  # type: ignore[attr-defined] # pylint: disable=no-member
+    if len(ret) == 1:
+        return ret[0]
+    return ret
 
 
 def cluster_id(extents: List[Union[PrimExpr, int]], parent: str) -> List[Var]:
@@ -1763,6 +1770,11 @@ def func_gen(name: str):
 
 def static_assert(x: Any, message: str = ""):
     assert x, message
+
+
+def add_to_parent(stmt: tir.Stmt) -> None:
+    """Add a statement to the parent frame."""
+    _ffi_api.AddToParent(stmt)  # type: ignore[attr-defined] # pylint: disable=no-member
 
 
 # pylint: disable=invalid-name
@@ -3084,8 +3096,7 @@ __all__ += [
     "warpgroup_id",
     "warp_id",
     "thread_id",
-    "WorldScope",
-    "KernelScope",
+    "scope_id",
     "ExecScope",
     "ScopeIdDef",
     "Var",
@@ -3103,4 +3114,5 @@ __all__ += [
     "decl_cell",
     "shared_cell",
     "local_cell",
+    "add_to_parent",
 ]
