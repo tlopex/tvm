@@ -27,6 +27,7 @@
 #include <tvm/ffi/reflection/registry.h>
 #include <tvm/node/script_printer.h>
 #include <tvm/tir/async_structs.h>
+#include <tvm/tir/event.h>
 #include <tvm/tir/exec_scope.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/layout.h>
@@ -984,6 +985,10 @@ class SBlockNode : public StmtNode {
   Array<BufferGet> buffer_gets;
   // Pipelines in the block
   Array<Pipeline> pipelines;
+  // Events in the block
+  Array<BaseEvent> events;
+  // Event tensors in the block
+  Array<EventTensor> event_tensors;
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
@@ -1000,7 +1005,9 @@ class SBlockNode : public StmtNode {
         .def_ro("exec_scope", &SBlockNode::exec_scope)
         .def_ro("buffer_views", &SBlockNode::buffer_views)
         .def_ro("buffer_gets", &SBlockNode::buffer_gets)
-        .def_ro("pipelines", &SBlockNode::pipelines);
+        .def_ro("pipelines", &SBlockNode::pipelines)
+        .def_ro("events", &SBlockNode::events, refl::AttachFieldFlag::SEqHashDef())
+        .def_ro("event_tensors", &SBlockNode::event_tensors, refl::AttachFieldFlag::SEqHashDef());
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tir.SBlock", SBlockNode, StmtNode);
 };
@@ -1020,7 +1027,9 @@ class SBlock : public Stmt {
       ffi::Map<ffi::String, ffi::Any> annotations = ffi::Map<ffi::String, ffi::Any>(),
       Span span = Span(), ffi::Optional<ExecScope> exec_scope = std::nullopt,
       ffi::Array<BufferView> buffer_views = ffi::Array<BufferView>(),
-      ffi::Array<Pipeline> pipelines = ffi::Array<Pipeline>());
+      ffi::Array<Pipeline> pipelines = ffi::Array<Pipeline>(),
+      ffi::Array<BaseEvent> events = ffi::Array<BaseEvent>(),
+      ffi::Array<EventTensor> event_tensors = ffi::Array<EventTensor>());
 
   TVM_DLL explicit SBlock(ffi::String name_hint, Stmt body,
                          ffi::Optional<ExecScope> exec_scope = std::nullopt,
@@ -1028,6 +1037,8 @@ class SBlock : public Stmt {
                          ffi::Array<BufferView> buffer_views = ffi::Array<BufferView>(),
                          ffi::Array<BufferGet> buffer_gets = ffi::Array<BufferGet>(),
                          ffi::Array<Pipeline> pipelines = ffi::Array<Pipeline>(),
+                         ffi::Array<BaseEvent> events = ffi::Array<BaseEvent>(),
+                         ffi::Array<EventTensor> event_tensors = ffi::Array<EventTensor>(),
                          Span span = Span());
 
   TVM_FFI_DEFINE_OBJECT_REF_METHODS_NULLABLE(SBlock, Stmt, SBlockNode);
