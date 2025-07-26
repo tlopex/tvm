@@ -79,52 +79,6 @@ ffi::Optional<PrimExpr> FindReturnValue(const tir::Stmt& node) {
   return call->args[0];
 }
 
-ExprDoc PipelineDecl(const tir::Pipeline& pipeline, const String& method, const ObjectPath& p,
-                     const IRDocsifier& d) {
-  return TIRp(d, method)->Call({
-      LiteralDoc::Str(pipeline->thread_scope->name, p->Attr("thread_scope")),
-      LiteralDoc::Int(pipeline->depth, p->Attr("depth")),
-      LiteralDoc::Boolean(pipeline->separate_pc, p->Attr("separate_pc")),
-      LiteralDoc::Str(pipeline->name_hint, p->Attr("name_hint")),
-      d->AsDoc<DictDoc>(pipeline->workspace, p->Attr("workspace")),
-      d->AsDoc<DictDoc>(pipeline->schedule_config, p->Attr("schedule_config")),
-  });
-}
-
-template <typename T>
-Doc HandlePipeline(const T& pipeline, const String& method, const ObjectPath& p,
-                   const IRDocsifier& d) {
-  if (!d->IsVarDefined(pipeline)) {
-    if (Optional<Frame> opt_f = FindLowestVarDef(pipeline, d)) {
-      ExprDoc lhs = DefinePipeline(pipeline, opt_f.value(), d);
-      ExprDoc rhs = PipelineDecl(pipeline, method, p, d);
-      opt_f.value()->stmts.push_back(AssignDoc(lhs, rhs, std::nullopt));
-    } else {
-      LOG(WARNING) << "Didn't find pipeline definition for: " << pipeline->name_hint;
-    }
-  }
-  if (Optional<ExprDoc> doc = d->GetVarDoc(pipeline)) {
-    return doc.value();
-  }
-  LOG(FATAL) << "IndexError: Variable is not defined in the environment: " << pipeline;
-}
-
-TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
-    .set_dispatch<tir::Pipeline>("",
-                                 [](tir::Pipeline pipeline, ObjectPath p, IRDocsifier d) -> Doc {
-                                   return HandlePipeline(pipeline, "Pipeline", p, d);
-                                 });
-
-TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
-    .set_dispatch<tir::CopyPipeline>("",
-                                     [](tir::CopyPipeline pipeline, ObjectPath p,
-                                        IRDocsifier d) -> Doc {
-                                       return HandlePipeline(pipeline, "CopyPipeline", p, d);
-                                     });
-
-TVM_SCRIPT_REPR(tir::CopyPipelineNode, ReprPrintTIR);
-TVM_SCRIPT_REPR(tir::PipelineNode, ReprPrintTIR);
-
 ExprDoc EventDecl(const tir::BaseEvent& event, const String& method, const ObjectPath& p,
                   const IRDocsifier& d) {
   if (const auto* sem_event = event.as<tir::SemaphoreEventNode>()) {
@@ -248,7 +202,6 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
 
           static const auto& tirp_op_map = Op::GetAttrMap<Bool>("TIsTIRpOp");
           static const auto& schedule_op_map = Op::GetAttrMap<Bool>("TIsScheduleOp");
-          static const auto& pipeline_op_map = Op::GetAttrMap<Bool>("TIsPipelineOp");
           static const auto& compose_op_map = Op::GetAttrMap<Bool>("TIsComposeOp");
           static const auto& event_op_map = Op::GetAttrMap<Bool>("TIsEventOp");
           static const auto& async_op_map = Op::GetAttrMap<Bool>("TIsAsyncOp");
@@ -265,12 +218,6 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
             return OpCallDoc(
                 TIRp(d, name), args, d->AsDoc<DictDoc>(op_call->workspace, p->Attr("workspace")),
                 d->AsDoc<DictDoc>(op_call->schedule_config, p->Attr("schedule_config")));
-          } else if (bool(pipeline_op_map.get(op, tvm::Bool(false)))) {
-            // Pipeline ops
-            ICHECK(op_call->args[0].as<tir::PipelineNode>()) << "First argument must be a Pipeline";
-            // pipeline_method_name
-            std::string method = std::string(name).substr(9);
-            return print_member_function_call(method);
           } else if (bool(compose_op_map.get(op, tvm::Bool(false)))) {
             // Compose ops
             With<TIRFrame> f(d, op_call);

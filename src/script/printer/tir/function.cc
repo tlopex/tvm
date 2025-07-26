@@ -77,7 +77,6 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
       IdDoc func_name = IdDoc(FindFunctionName(d, func).value_or("main"));
       d->SetCommonPrefix(func, [](const ObjectRef& obj) {
         return obj->IsInstance<tir::VarNode>() || obj->IsInstance<tir::BufferNode>() ||
-               obj->IsInstance<tir::PipelineNode>() || obj->IsInstance<tir::CopyPipelineNode>() ||
                obj->IsInstance<tir::BaseEventNode>() || obj->IsInstance<tir::EventTensorNode>();
       });
       int n_args = func->params.size();

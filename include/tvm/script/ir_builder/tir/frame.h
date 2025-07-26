@@ -21,7 +21,6 @@
 
 #include <tvm/script/ir_builder/base.h>
 #include <tvm/script/ir_builder/ir/frame.h>
-#include <tvm/tir/async_structs.h>
 #include <tvm/tir/event.h>
 #include <tvm/tir/exec_scope.h>
 #include <tvm/tir/stmt.h>
@@ -170,7 +169,6 @@ class SBlockFrameNode : public TIRFrameNode {
 
   Array<tvm::tir::BufferView> buffer_views;
   Array<tvm::tir::BufferGet> buffer_gets;
-  Array<tvm::tir::Pipeline> pipelines;
   Array<tvm::tir::BaseEvent> events;
   Array<tvm::tir::EventTensor> event_tensors;
 
@@ -193,7 +191,6 @@ class SBlockFrameNode : public TIRFrameNode {
         .def_ro("scope_slice_extents", &SBlockFrameNode::scope_slice_extents)
         .def_ro("buffer_views", &SBlockFrameNode::buffer_views)
         .def_ro("buffer_gets", &SBlockFrameNode::buffer_gets)
-        .def_ro("pipelines", &SBlockFrameNode::pipelines)
         .def_ro("events", &SBlockFrameNode::events)
         .def_ro("event_tensors", &SBlockFrameNode::event_tensors);
   }

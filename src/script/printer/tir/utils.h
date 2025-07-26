@@ -103,19 +103,6 @@ inline IdDoc DefineBuffer(const tir::Buffer& buffer, const Frame& frame, const I
 }
 
 /*!
- * \brief Defines a pipeline in the IRDocsifier at the given frame,
- * and returns the corresponding IdDoc
- * \param pipeline The pipeline to define
- * \param frame The frame to define the pipeline in
- * \param d The IRDocsifier
- * \return The IdDoc corresponding to the pipeline
- */
-inline IdDoc DefinePipeline(const tir::Pipeline& pipeline, const Frame& frame,
-                            const IRDocsifier& d) {
-  return d->Define(pipeline, frame, pipeline->name_hint.empty() ? "pipeline" : pipeline->name_hint);
-}
-
-/*!
  * \brief Defines a event in the IRDocsifier at the given frame,
  * and returns the corresponding IdDoc
  * \param event The event to define
@@ -219,7 +206,6 @@ inline std::string ReprPrintTIR(const ObjectRef& obj, const PrinterConfig& cfg) 
   IRDocsifier d(cfg);
   d->SetCommonPrefix(obj, [](const ObjectRef& obj) {
     return obj->IsInstance<tir::VarNode>() || obj->IsInstance<tir::BufferNode>() ||
-           obj->IsInstance<tir::PipelineNode>() || obj->IsInstance<tir::CopyPipelineNode>() ||
            obj->IsInstance<tir::BaseEventNode>() || obj->IsInstance<tir::EventTensorNode>();
   });
   With<TIRFrame> f(d, ObjectRef{nullptr});
@@ -265,17 +251,6 @@ enum class BufferVarDefinition {
 ExprDoc BufferDecl(const tir::Buffer& buffer, const ffi::String& method,
                    const ffi::Array<ExprDoc>& args, const AccessPath& p, const Frame& frame,
                    const IRDocsifier& d, BufferVarDefinition var_definitions);
-
-/*!
- * \brief Declare and define a pipeline
- * \param pipeline The pipeline to be defined
- * \param method The method used to declare the pipeline
- * \param p The object path
- * \param d The IRDocsifier
- * \return The ExprDoc corresponding to the pipeline declaration
- */
-ExprDoc PipelineDecl(const tir::Pipeline& pipeline, const String& method, const ObjectPath& p,
-                     const IRDocsifier& d);
 
 /*!
  * \brief Declare and define a event

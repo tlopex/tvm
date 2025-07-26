@@ -23,7 +23,6 @@
 #include <tvm/ffi/container/variant.h>
 #include <tvm/script/ir_builder/base.h>
 #include <tvm/script/ir_builder/tir/frame.h>
-#include <tvm/tir/async_structs.h>
 #include <tvm/tir/exec_scope.h>
 #include <tvm/tir/layout.h>
 #include <tvm/tir/op.h>
@@ -39,7 +38,6 @@ using tvm::ffi::Variant;
 using tvm::runtime::Tensor;
 using tvm::tir::Buffer;
 using tvm::tir::ExecScope;
-using tvm::tir::Pipeline;
 using tvm::tir::TLayout;
 using tvm::tir::Var;
 
@@ -242,16 +240,6 @@ Buffer SBlockAllocBuffer(ffi::Array<PrimExpr> shape, DataType dtype = DataType::
                          ffi::Optional<ffi::Array<IntImm>> axis_separators = std::nullopt,
                          ffi::String logical_scope = "", ffi::Optional<TLayout> layout = std::nullopt,
                          ffi::Array<Integer> allocated_addr = {});
-
-/*!
- * \brief The pipeline allocation function.
- * \param thread_scope The thread scope of the pipeline.
- * \param depth The depth of the pipeline.
- * \param specialize whether the pipeline has specialized producer/consumer threads.
- * \param name_hint The name hint of the pipeline.
- */
-Pipeline AllocPipeline(ExecScope thread_scope, size_t depth, bool specialize,
-                       ffi::String name_hint = "");
 
 namespace axis {
 /*!
