@@ -169,8 +169,8 @@ class SBlockFrameNode : public TIRFrameNode {
 
   Array<tvm::tir::BufferView> buffer_views;
   Array<tvm::tir::BufferGet> buffer_gets;
-  Array<tvm::tir::BaseEvent> events;
-  Array<tvm::tir::EventTensor> event_tensors;
+  Array<tvm::tir::BulkGroupEvent> bulk_events;
+  Array<tvm::tir::SemaphoreEventTensor> sem_event_tensors;
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
@@ -191,8 +191,8 @@ class SBlockFrameNode : public TIRFrameNode {
         .def_ro("scope_slice_extents", &SBlockFrameNode::scope_slice_extents)
         .def_ro("buffer_views", &SBlockFrameNode::buffer_views)
         .def_ro("buffer_gets", &SBlockFrameNode::buffer_gets)
-        .def_ro("events", &SBlockFrameNode::events)
-        .def_ro("event_tensors", &SBlockFrameNode::event_tensors);
+        .def_ro("bulk_events", &SBlockFrameNode::bulk_events)
+        .def_ro("sem_event_tensors", &SBlockFrameNode::sem_event_tensors);
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("script.ir_builder.tir.SSBlockFrame", SBlockFrameNode,
                                     TIRFrameNode);

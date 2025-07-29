@@ -110,15 +110,9 @@ inline IdDoc DefineBuffer(const tir::Buffer& buffer, const Frame& frame, const I
  * \param d The IRDocsifier
  * \return The IdDoc corresponding to the event
  */
-inline IdDoc DefineEvent(const tir::BaseEvent& event, const Frame& frame, const IRDocsifier& d) {
-  if (const auto* sem_event = event.as<tir::SemaphoreEventNode>()) {
-    return d->Define(event, frame, sem_event->name.empty() ? "sem_event" : sem_event->name);
-  } else if (const auto* bulk_event = event.as<tir::BulkGroupEventNode>()) {
-    return d->Define(event, frame, bulk_event->name.empty() ? "bulk_event" : bulk_event->name);
-  } else {
-    LOG(FATAL) << "Unknown event type: " << event;
-    return IdDoc("");
-  }
+inline IdDoc DefineEvent(const tir::BulkGroupEvent& event, const Frame& frame,
+                         const IRDocsifier& d) {
+  return d->Define(event, frame, event->name.empty() ? "bulk_event" : event->name);
 }
 
 /*!
@@ -129,10 +123,10 @@ inline IdDoc DefineEvent(const tir::BaseEvent& event, const Frame& frame, const 
  * \param d The IRDocsifier
  * \return The IdDoc corresponding to the event tensor
  */
-inline IdDoc DefineEventTensor(const tir::EventTensor& event_tensor, const Frame& frame,
+inline IdDoc DefineEventTensor(const tir::SemaphoreEventTensor& event_tensor, const Frame& frame,
                                const IRDocsifier& d) {
   return d->Define(event_tensor, frame,
-                   event_tensor->name().empty() ? "event_tensor" : event_tensor->name());
+                   event_tensor->name.empty() ? "sem_event_tensor" : event_tensor->name);
 }
 
 /*!
@@ -206,7 +200,8 @@ inline std::string ReprPrintTIR(const ObjectRef& obj, const PrinterConfig& cfg) 
   IRDocsifier d(cfg);
   d->SetCommonPrefix(obj, [](const ObjectRef& obj) {
     return obj->IsInstance<tir::VarNode>() || obj->IsInstance<tir::BufferNode>() ||
-           obj->IsInstance<tir::BaseEventNode>() || obj->IsInstance<tir::EventTensorNode>();
+           obj->IsInstance<tir::BulkGroupEventNode>() ||
+           obj->IsInstance<tir::SemaphoreEventTensorNode>();
   });
   With<TIRFrame> f(d, ObjectRef{nullptr});
   (*f)->AddDispatchToken(d, "tir");
@@ -260,7 +255,7 @@ ExprDoc BufferDecl(const tir::Buffer& buffer, const ffi::String& method,
  * \param d The IRDocsifier
  * \return The ExprDoc corresponding to the event declaration
  */
-ExprDoc EventDecl(const tir::BaseEvent& event, const String& method, const ObjectPath& p,
+ExprDoc EventDecl(const tir::BulkGroupEvent& event, const String& method, const ObjectPath& p,
                   const IRDocsifier& d);
 
 /*!
@@ -271,7 +266,7 @@ ExprDoc EventDecl(const tir::BaseEvent& event, const String& method, const Objec
  * \param d The IRDocsifier
  * \return The ExprDoc corresponding to the event tensor declaration
  */
-ExprDoc EventTensorDecl(const tir::EventTensor& event_tensor, const String& method,
+ExprDoc EventTensorDecl(const tir::SemaphoreEventTensor& event_tensor, const String& method,
                         const ObjectPath& p, const IRDocsifier& d);
 
 /*!
