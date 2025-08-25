@@ -61,8 +61,6 @@ TVM_FFI_STATIC_INIT_BLOCK({
   refl::GlobalDef().def("tir.OpCallCopyHandle", [](const OpCall& op) { return OpCall(op); });
 });
 
-TVM_REGISTER_NODE_TYPE(OpCallNode);
-
 }  // namespace tirp
 }  // namespace tir
 }  // namespace tvm

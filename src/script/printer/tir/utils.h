@@ -255,7 +255,7 @@ ExprDoc BufferDecl(const tir::Buffer& buffer, const ffi::String& method,
  * \param d The IRDocsifier
  * \return The ExprDoc corresponding to the event declaration
  */
-ExprDoc EventDecl(const tir::BulkGroupEvent& event, const String& method, const ObjectPath& p,
+ExprDoc EventDecl(const tir::BulkGroupEvent& event, const String& method, const AccessPath& p,
                   const IRDocsifier& d);
 
 /*!
@@ -267,7 +267,7 @@ ExprDoc EventDecl(const tir::BulkGroupEvent& event, const String& method, const 
  * \return The ExprDoc corresponding to the event tensor declaration
  */
 ExprDoc EventTensorDecl(const tir::SemaphoreEventTensor& event_tensor, const String& method,
-                        const ObjectPath& p, const IRDocsifier& d);
+                        const AccessPath& p, const IRDocsifier& d);
 
 /*!
  * \brief Declare and define a buffer as annotation

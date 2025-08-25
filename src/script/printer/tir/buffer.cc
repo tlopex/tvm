@@ -411,19 +411,19 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
     });
 
 TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
-    .set_dispatch<tir::Axis>("", [](tir::Axis axis, ObjectPath p, IRDocsifier d) -> Doc {
+    .set_dispatch<tir::Axis>("", [](tir::Axis axis, AccessPath p, IRDocsifier d) -> Doc {
       return LiteralDoc::Str(axis->name, p->Attr("name"));
     });
 
 TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
-    .set_dispatch<tir::Iter>("", [](tir::Iter iter, ObjectPath p, IRDocsifier d) -> Doc {
+    .set_dispatch<tir::Iter>("", [](tir::Iter iter, AccessPath p, IRDocsifier d) -> Doc {
       return TIR(d, "Iter")->Call({d->AsDoc<ExprDoc>(iter->extent, p->Attr("extent")),
                                    d->AsDoc<ExprDoc>(iter->stride, p->Attr("stride")),
                                    d->AsDoc<ExprDoc>(iter->axis->name, p->Attr("axis"))},
                                   {}, {});
     });
 
-Doc PrintTileLayout(tir::TileLayout layout, IRDocsifier d, ObjectPath p) {
+Doc PrintTileLayout(tir::TileLayout layout, IRDocsifier d, AccessPath p) {
   Array<String> keys;
   Array<ExprDoc> values;
 
@@ -463,13 +463,13 @@ Doc PrintTileLayout(tir::TileLayout layout, IRDocsifier d, ObjectPath p) {
 
 TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
     .set_dispatch<tir::TileLayout>("",
-                                   [](tir::TileLayout layout, ObjectPath p, IRDocsifier d) -> Doc {
+                                   [](tir::TileLayout layout, AccessPath p, IRDocsifier d) -> Doc {
                                      return PrintTileLayout(layout, d, p);
                                    });
 
 TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
     .set_dispatch<tir::ComposeLayout>(
-        "", [](tir::ComposeLayout layout, ObjectPath p, IRDocsifier d) -> Doc {
+        "", [](tir::ComposeLayout layout, AccessPath p, IRDocsifier d) -> Doc {
           auto layoutA = d->AsDoc<ExprDoc>(layout->layout_A, p);
           auto layoutB = d->AsDoc<ExprDoc>(layout->layout_B, p);
           return TIR(d, "ComposeLayout")->Call({layoutA, layoutB}, {}, {});
@@ -477,7 +477,7 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
 
 TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)  //
     .set_dispatch<tir::SwizzleLayout>(
-        "", [](tir::SwizzleLayout layout, ObjectPath p, IRDocsifier d) -> Doc {
+        "", [](tir::SwizzleLayout layout, AccessPath p, IRDocsifier d) -> Doc {
           return TIR(d, "SwizzleLayout")
               ->Call(
                   {

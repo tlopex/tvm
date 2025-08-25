@@ -248,8 +248,6 @@ void OpCall(tvm::tir::tirp::OpCall op_call) { AddToParent(op_call); }
 
 BlockFrame BlockFrameSlice(BlockFrame block, Variant<Array<Range>, PrimExpr> slice) {
   TVM_FFI_ICHECK(block->exec_scope.defined()) << "InternalError: Block frame must have an execution scope";
-  TVM_FFI_ICHECK(block->scope_slice_parent.defined())
-      << "InternalError: Block frame must have an execution scope slice parent";
   TVM_FFI_ICHECK(!block->exec_scope->IsInstance<tvm::tir::ExecScopeSliceNode>())
       << "InternalError: Block frame already has an execution scope slice";
   block->exec_scope =
