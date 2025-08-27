@@ -331,6 +331,9 @@ class TileLayoutNode : public TLayoutNode {
   /*! \brief Get the scope pair of the layout */
   Optional<Tuple<ExecScope, ExecScope>> GetScope() const;
 
+  /*! \brief Get the default layout for the shape */
+  static TileLayout DefaultLayout(Array<PrimExpr> shape);
+
   static constexpr const char* _type_key = "tir.TileLayout";
   TVM_DECLARE_FINAL_OBJECT_INFO(TileLayoutNode, TLayoutNode);
 };
