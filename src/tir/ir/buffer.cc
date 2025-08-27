@@ -469,12 +469,6 @@ ffi::String Buffer::scope() const {
   return ptr_type->storage_scope;
 }
 
-String Buffer::logical_scope() const {
-  const auto* ptr_type = (*this)->data->type_annotation.as<PointerTypeNode>();
-  TVM_FFI_ICHECK(ptr_type) << "Buffer variable is not of pointer type";
-  return ptr_type->logical_scope;
-}
-
 Buffer Buffer::MakeStrideView() const {
   if ((*this)->strides.size() != 0) return *this;
   if ((*this)->shape.size() == 0) return *this;
@@ -692,7 +686,6 @@ bool Buffer::IsCell(bool alloc_or_decl) const {
          (!alloc_or_decl || tir::is_zero((*this)->elem_offset)) && (*this)->data_alignment == 64 &&
          (*this)->offset_factor == 1 && (*this)->buffer_type == tir::BufferType::kDefault &&
          (*this)->allocated_addr.size() == 0 &&
-         this->logical_scope() == tvm::tir::StorageToLogicalScope((*this).scope()) &&
          is_cell_layout((*this)->layout.value_or(TileLayout()));
 }
 
@@ -725,7 +718,6 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def_method("tir.BufferVLoad", &Buffer::vload)
       .def_method("tir.BufferVStore", &Buffer::vstore)
       .def_method("tir.BufferStorageScope", &Buffer::scope)
-      .def_method("tir.BufferLogicalScope", &Buffer::logical_scope)
       .def_method("tir.BufferWithAllocatedAddr", &Buffer::with_allocated_addr)
       .def_method("tir.BufferWithDtype", &Buffer::with_dtype)
       .def_method("tir.BufferWithData", &Buffer::with_data)
