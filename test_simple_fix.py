@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 import torch.nn.functional as F
 
@@ -6,7 +8,96 @@ from tvm import relax, tir
 from tvm.script import ir as I
 from tvm.script import relax as R
 from tvm.script import tir as T
-from tvm.relax.base_py_module import BasePyModule
+
+
+class BasePyModule:
+    def __init__(
+        self,
+        ir_mod: tvm.IRModule,
+        device: tvm.runtime.Device,
+        target: Optional[tvm.target.Target] = None,
+    ):
+        self.compiled_tir_funcs = {}
+        self.extern_funcs = {}
+        self.tir_func_names = []
+        self.relax_func_names = []
+        self.relax_vm = None
+
+        # Compile all the TIR functions in the class.
+        if target is None:
+            target = tvm.target.Target.from_device(device)
+
+        # Apply pass that updates all TIR functions to be public, with global symbols attached.
+        # ir_mod = VisibilityUpdater()(ir_mod)
+
+        for gv, func in ir_mod.functions_items():
+            if isinstance(func, tir.PrimFunc):
+                self.tir_func_names.append(gv.name_hint)
+            elif isinstance(func, relax.Function):
+                self.relax_func_names.append(gv.name_hint)
+
+        # Compile the IRModule Relax and TIR functions in the IRModule.
+        # TIR scheduling will be done with dlight rules in the relax pipeline.
+        exec = tvm.compile(
+            ir_mod,
+            target=target,
+            relax_pipeline=relax.get_default_pipeline(target),
+            tir_pipeline=tir.get_default_tir_pipeline(target),
+        )
+        self.relax_vm = relax.VirtualMachine(exec, device)
+
+        # Register the wrapped function to the class,
+        # so that it can be called like a normal python function
+        # with torch tensor arguments and return values.
+        for func_name in self.relax_func_names:
+
+            def _wrap_relax_func(*args):
+                # Convert args to tvm ndarray with dlpack...
+                # args = ...
+                out = self.relax_vm[func_name](*args)
+                # Convert out to torch tensor...
+                # out = ...
+                return out
+
+            setattr(self, func_name, _wrap_relax_func)
+
+        # Lookup compiled TIR functions from the VM
+        for func_name in self.tir_func_names:
+            self.compiled_tir_funcs[func_name] = self.relax_vm[func_name]
+
+    def call_tir(self, tir_func, args, out_sinfo):
+        out = (
+            [torch.empty(out_sinfo.shape, dtype=out_sinfo.dtype)]
+            if not isinstance(out_sinfo, list)
+            else [torch.empty(sinfo.shape, dtype=sinfo.dtype) for sinfo in out_sinfo]
+        )
+
+        if not isinstance(tir_func, tir.PrimFunc):
+            raise ValueError(f"Input function {tir_func} is not a tir.PrimFunc")
+        func = self.compiled_tir_funcs[tir_func.__name__]
+
+        # logic that converts args and out to tvm ndarray with dlpack...
+
+        func(*args, *out)
+        return out
+
+    def call_dps_packed(self, func_name, args, out_sinfo):
+        out = (
+            [torch.empty(out_sinfo.shape, dtype=out_sinfo.dtype)]
+            if not isinstance(out_sinfo, list)
+            else [torch.empty(sinfo.shape, dtype=sinfo.dtype) for sinfo in out_sinfo]
+        )
+
+        if func_name not in self.extern_funcs:
+            func = tvm.get_global_func(func_name)
+            self.extern_funcs[func_name] = func
+        else:
+            func = self.extern_funcs[func_name]
+
+        # logic that converts args and out to tvm ndarray with dlpack...
+
+        func(*args, *out)
+        return out
 
 
 @I.ir_module

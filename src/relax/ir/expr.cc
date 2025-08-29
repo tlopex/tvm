@@ -745,6 +745,27 @@ TVM_FFI_STATIC_INIT_BLOCK({
           return WithoutAttr(Downcast<relax::Function>(std::move(func)), key);
         }
         return std::nullopt;
+      })
+      .def("relax.ExternFuncWithAttr",
+           [](relax::ExternFunc func, String key, ObjectRef value) -> relax::ExternFunc {
+             // Use the global WithAttr function to modify attributes
+             auto new_attrs = WithAttr(func->attrs, key, value);
+             auto new_extern_func = relax::ExternFunc(func->global_symbol, 
+                                                    func->span);
+             // Use CopyOnWrite to modify the attrs field
+             auto write_ptr = new_extern_func.CopyOnWrite();
+             write_ptr->attrs = new_attrs;
+             return new_extern_func;
+           })
+      .def("relax.ExternFuncWithoutAttr", [](relax::ExternFunc func, String key) -> relax::ExternFunc {
+        // Use the global WithoutAttr function to remove attributes
+        auto new_attrs = WithoutAttr(func->attrs, key);
+        auto new_extern_func = relax::ExternFunc(func->global_symbol, 
+                                               func->span);
+        // Use CopyOnWrite to modify the attrs field
+        auto write_ptr = new_extern_func.CopyOnWrite();
+        write_ptr->attrs = new_attrs;
+        return new_extern_func;
       });
 });
 

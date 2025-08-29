@@ -116,6 +116,24 @@ def ir_module(mod: Optional[Type] = None, check_well_formed: bool = True) -> IRM
                         if hasattr(self.original_class, method_name):
                             method = getattr(self.original_class, method_name)
                             instance.add_python_function(method_name, method)
+                            
+                            # Also update the ExternFunc with the actual source code
+                            try:
+                                import inspect
+                                source_code = inspect.getsource(method)
+                                print(f"DEBUG: Got source code for {method_name}: {source_code[:100]}...")
+                                # Find the ExternFunc in the IRModule and update its raw_string attribute
+                                for gv, func in instance_ir_mod.functions_items():
+                                    if (gv.name_hint == method_name and 
+                                        hasattr(func, 'attrs') and 
+                                        func.attrs.get('is_pyfunc', False)):
+                                        # Update the raw_string attribute
+                                        updated_func = func.with_attr("raw_string", source_code)
+                                        instance_ir_mod[gv] = updated_func
+                                        print(f"DEBUG: Updated ExternFunc {method_name} with raw_string")
+                                        break
+                            except Exception as e:
+                                print(f"Warning: Could not get source for {method_name}: {e}")
 
                     return instance
 

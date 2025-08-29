@@ -100,12 +100,15 @@ class BasePyModule:
         self._wrap_relax_functions()
 
     def _collect_function_names(self):
-        """Collect names of TIR and Relax functions from IRModule."""
+        """Collect names of TIR, Relax, and Python functions from IRModule."""
         for global_var, func in self.ir_mod.functions_items():
             if isinstance(func, tir.PrimFunc):
                 self.tir_func_names.append(global_var.name_hint)
             elif isinstance(func, relax.Function):
                 self.relax_func_names.append(global_var.name_hint)
+            elif isinstance(func, relax.ExternFunc) and func.attrs.get('is_pyfunc', False):
+                # This is a Python function decorated with @I.pyfunc
+                self.pyfuncs[global_var.name_hint] = None  # Will be filled later
 
     def _compile_functions(self):
         """Compile TIR and Relax functions using JIT compilation."""
@@ -360,7 +363,13 @@ class BasePyModule:
             "tir": self.tir_func_names,
             "relax": self.relax_func_names,
             "extern": list(self.extern_funcs.keys()),
+            "python": list(self.pyfuncs.keys()),
         }
+    
+    @property
+    def _pyfunc_methods(self) -> List[str]:
+        """Get the list of Python function method names."""
+        return list(self.pyfuncs.keys())
 
     def add_python_function(self, name: str, func: callable):
         """Add a Python function to the module."""

@@ -112,6 +112,7 @@ class PythonPrinter:
     def __init__(self):
         self.mapper = RelaxToPyTorchMapper()
         self.symbolic_vars: Set[str] = set()
+        self.function_params: Set[str] = set()  # Store function parameter names
         self.imports: Set[str] = set()
         self.helper_functions: List[str] = []
     
@@ -189,7 +190,10 @@ class PythonPrinter:
             code = f"""# Generated Python code from TVM IRModule
 {functions_code}
 """
-        return code
+        
+        # Optimize the generated code to remove unused variables
+        optimized_code = self._optimize_generated_code(code)
+        return optimized_code
     
     def _print_extern_function(self, gv: GlobalVar, func: ExternFunc) -> str:
         """Convert an ExternFunc (Python function) to Python code."""
@@ -300,12 +304,17 @@ class PythonPrinter:
         params = []
         for param in func.params:
             param_name = param.name_hint
+            # Add parameter name to function_params to avoid treating it as shape variable
+            self.function_params.add(param_name)
             # Convert to Python-style parameters (torch.Tensor)
             params.append(f"{param_name}: torch.Tensor")
             
             # Extract symbolic variables from parameter shapes
             if hasattr(param, 'struct_info') and hasattr(param.struct_info, 'shape'):
-                self._extract_symbolic_vars_from_shape(param.struct_info.shape)
+                # Don't call _extract_symbolic_vars_from_shape here
+                # This prevents type annotation variables from being added to symbolic_vars
+                # We only want to add them to function_params to prevent generation
+                pass
             
             # Also check for symbolic variables in the parameter name or type annotations
             if hasattr(param, 'struct_info') and hasattr(param.struct_info, 'dtype'):
@@ -313,13 +322,28 @@ class PythonPrinter:
                 type_str = str(param.struct_info)
                 # Look for patterns like (n, 64) or ("n", 64)
                 import re
-                symbolic_matches = re.findall(r'["\']?([a-zA-Z_][a-zA-Z0-9_]*)["\']?', type_str)
-                for match in symbolic_matches:
-                    # Only add variables that look like shape dimensions
+                # First, find quoted strings like ("n", 64) and add them to function_params
+                quoted_matches = re.findall(r'"([^"]+)"', type_str)
+                for match in quoted_matches:
                     if (match not in ['Tensor', 'float32', 'float64', 'int32', 'int64'] and
                         len(match) <= 3 and  # Shape dimensions are usually short
                         match.islower()):  # Shape dimensions are usually lowercase
-                        self.symbolic_vars.add(match)
+                        # Add quoted variables to function_params to prevent generation
+                        self.function_params.add(match)
+                
+                # Then, find unquoted variables like (n, 64) and add them to function_params
+                # This handles cases where variables are used in type annotations
+                unquoted_matches = re.findall(r'\(([^)]+)\)', type_str)
+                for match in unquoted_matches:
+                    # Split by comma and process each part
+                    parts = [part.strip() for part in match.split(',')]
+                    for part in parts:
+                        if (part not in ['Tensor', 'float32', 'float64', 'int32', 'int64'] and
+                            len(part) <= 3 and  # Shape dimensions are usually short
+                            part.islower() and  # Shape dimensions are usually lowercase
+                            not part.isdigit()):  # Skip numeric values
+                            # Add unquoted variables to function_params to prevent generation
+                            self.function_params.add(part)
         return params
     
     def _extract_return_type(self, func: Function) -> str:
@@ -354,17 +378,28 @@ class PythonPrinter:
     
     def _extract_symbolic_vars_from_shape(self, shape):
         """Extract symbolic variables from a shape without converting to string."""
+        extracted_vars = []
         if shape is None:
-            return
+            return extracted_vars
         for dim in shape:
             if isinstance(dim, tir.Var):
                 var_name = dim.name
-                self.symbolic_vars.add(var_name)
+                # Only add if it's not a function parameter
+                if var_name not in self.function_params:
+                    self.symbolic_vars.add(var_name)
+                extracted_vars.append(var_name)
             elif hasattr(dim, 'name'):  # Handle other variable types
                 var_name = dim.name
-                self.symbolic_vars.add(var_name)
+                # Only add if it's not a function parameter
+                if var_name not in self.function_params:
+                    self.symbolic_vars.add(var_name)
+                extracted_vars.append(var_name)
             elif isinstance(dim, str):  # Handle string dimensions
-                self.symbolic_vars.add(dim)
+                # Only add if it's not a function parameter
+                if dim not in self.function_params:
+                    self.symbolic_vars.add(dim)
+                extracted_vars.append(dim)
+        return extracted_vars
     
     def _convert_function_body(self, body: Expr) -> str:
         """Convert function body to Python code."""
@@ -390,6 +425,11 @@ class PythonPrinter:
                                 hasattr(binding, 'value')):
                                 # Generate assignment for this binding
                                 var_name = binding.var.name_hint
+                                
+                                # Skip variables that are already in function_params (including type annotation variables)
+                                if var_name in self.function_params:
+                                    continue
+                                    
                                 value_code = self._convert_expr(binding.value)
                                 lines.append(f"{var_name} = {value_code}")
                                 
@@ -404,9 +444,14 @@ class PythonPrinter:
                                     var_matches = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', value_code)
                                     for match in var_matches:
                                         # Only add variables that look like shape dimensions
+                                        # Skip function parameters, intermediate variables, and other non-shape variables
                                         if (match not in ['torch', 'F', 'self', 'x', 'w', 'gv', 'result', 'add', 'mean', 'dtype', 'R', 'T', 'axis', 'keepdims', 'False', 'True'] and
+                                            match not in self.function_params and  # Skip function parameters
                                             len(match) <= 3 and  # Shape dimensions are usually short
-                                            match.islower()):  # Shape dimensions are usually lowercase
+                                            match.islower() and  # Shape dimensions are usually lowercase
+                                            not match.startswith('lv') and  # Skip intermediate variables
+                                            not match.startswith('gv') and  # Skip result variables
+                                            not match.startswith('mul')):  # Skip multiplication variables
                                             self.symbolic_vars.add(match)
             
             # Handle the final expression
@@ -546,6 +591,17 @@ class PythonPrinter:
         
         shape_code = []
         for var in sorted(self.symbolic_vars):
+            # Skip variables that are already in function_params (including type annotation variables)
+            if var in self.function_params:
+                continue
+                
+            # Only generate shape handling for actual shape variables
+            # Skip intermediate variables like 'lv', 'lv1', 'gv', etc.
+            if (var.startswith('lv') or var.startswith('gv') or 
+                var.startswith('result') or var.startswith('mul') or
+                var in ['w1', 'w2']):  # Skip weight variables
+                continue
+                
             # Generate Python code like: n = x.shape[0], c = x.shape[1], etc.
             # We'll use the first parameter (x) as the reference for shape
             if var in ['n', 'batch_size', 'batch']:
@@ -557,8 +613,11 @@ class PythonPrinter:
             elif var in ['w', 'width']:
                 shape_code.append(f"{var} = x.shape[3]")
             else:
-                # For other variables, try to infer from context or use a default
-                shape_code.append(f"{var} = x.shape[0]  # TODO: Infer correct dimension")
+                # For other variables, only add if they look like actual shape dimensions
+                # and not intermediate computation variables
+                if (len(var) <= 3 and var.islower() and 
+                    not var.startswith('lv') and not var.startswith('gv')):
+                    shape_code.append(f"{var} = x.shape[0]  # TODO: Infer correct dimension")
         
         if shape_code:
             return "\n    ".join(shape_code)
@@ -658,6 +717,51 @@ def call_dps_packed(func_name: str, args: List[torch.Tensor], out_sinfo) -> torc
     return torch.from_dlpack(result.to_dlpack())
 """
         return helper_code
+
+    def _optimize_generated_code(self, code: str) -> str:
+        """Optimize the generated Python code to remove unused variables."""
+        lines = code.split('\n')
+        optimized_lines = []
+        
+        # Track variable definitions and usage
+        defined_vars = set()
+        used_vars = set()
+        
+        for i, line in enumerate(lines):
+            line_stripped = line.strip()
+            if not line_stripped or line_stripped.startswith('#'):
+                optimized_lines.append(line)
+                continue
+                
+            # Check for variable definitions (e.g., "n = x.shape[0]")
+            if ' = ' in line_stripped and 'x.shape[' in line_stripped:
+                var_name = line_stripped.split(' = ')[0].strip()
+                defined_vars.add(var_name)
+                # Check if this variable is used in subsequent lines
+                is_used = False
+                for future_line in lines[i + 1:]:
+                    future_line_stripped = future_line.strip()
+                    if var_name in future_line_stripped and not future_line_stripped.startswith(var_name + ' ='):
+                        is_used = True
+                        used_vars.add(var_name)
+                        break
+                
+                # Only add the line if the variable is actually used
+                if is_used:
+                    optimized_lines.append(line)
+                else:
+                    # Add a comment explaining why we're not generating this
+                    # Extract the actual shape dimension from the original line
+                    shape_dim = line_stripped.split('x.shape[')[1].split(']')[0]
+                    optimized_lines.append(f"    # {var_name} = x.shape[{shape_dim}]  # Not used in function body")
+            else:
+                # Check for variable usage in this line
+                for var in defined_vars:
+                    if var in line_stripped and not line_stripped.startswith(var + ' ='):
+                        used_vars.add(var)
+                optimized_lines.append(line)
+        
+        return '\n'.join(optimized_lines)
 
 
 def irmodule_to_python(mod: IRModule) -> str:

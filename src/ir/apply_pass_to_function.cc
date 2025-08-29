@@ -40,6 +40,16 @@ BaseFunc BaseFuncWithAttr(BaseFunc func, const std::string& attr_key, Any attr_v
     return WithAttr(tir.value(), attr_key, attr_value);
   } else if (auto relax = func.as<relax::Function>()) {
     return WithAttr(relax.value(), attr_key, attr_value);
+  } else if (auto extern_func = func.as<relax::ExternFunc>()) {
+    // For ExternFunc, we need to create a new one with the attribute
+    // Use the global WithAttr function to modify attributes
+    auto new_attrs = WithAttr(extern_func.value()->attrs, attr_key, attr_value);
+    auto new_extern_func = relax::ExternFunc(extern_func.value()->global_symbol, 
+                                           extern_func.value()->span);
+    // Use CopyOnWrite to modify the attrs field
+    auto write_ptr = new_extern_func.CopyOnWrite();
+    write_ptr->attrs = new_attrs;
+    return new_extern_func;
   } else {
     return func;
   }
@@ -50,6 +60,16 @@ BaseFunc BaseFuncWithoutAttr(BaseFunc func, const std::string& attr_key) {
     return WithoutAttr(tir.value(), attr_key);
   } else if (auto relax = func.as<relax::Function>()) {
     return WithoutAttr(relax.value(), attr_key);
+  } else if (auto extern_func = func.as<relax::ExternFunc>()) {
+    // For ExternFunc, we need to create a new one without the attribute
+    // Use the global WithoutAttr function to remove attributes
+    auto new_attrs = WithoutAttr(extern_func.value()->attrs, attr_key);
+    auto new_extern_func = relax::ExternFunc(extern_func.value()->global_symbol, 
+                                           extern_func.value()->span);
+    // Use CopyOnWrite to modify the attrs field
+    auto write_ptr = new_extern_func.CopyOnWrite();
+    write_ptr->attrs = new_attrs;
+    return new_extern_func;
   } else {
     return func;
   }

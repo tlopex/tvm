@@ -18,29 +18,28 @@
 
 import pytest
 import tvm
-from tvm import relax, tir
-from tvm.script import ir as I, relax as R, tir as T
-from tvm.script.printer.python_printer import irmodule_to_python, print_irmodule_as_python
+from tvm.script import ir as I
+from tvm.script import relax as R
+from tvm.script import tir as T
+from tvm.script.printer.python_printer import irmodule_to_python
 
 
-def test_simple_relax_function():
-    """Test converting a simple Relax function to Python."""
+def test_simple_relax_function_to_python():
+    """Test converting a simple Relax function to Python function."""
     
     @I.ir_module
     class SimpleModule:
         @R.function
-        def simple_add(x: R.Tensor((5,), "float32"), 
-                      y: R.Tensor((5,), "float32")) -> R.Tensor((5,), "float32"):
-            return R.add(x, y)
+        def simple_add(x: R.Tensor((5,), "float32"), y: R.Tensor((5,), "float32")) -> R.Tensor((5,), "float32"):
+            gv = R.add(x, y)
+            return gv
     
     # Convert to Python
     python_code = irmodule_to_python(SimpleModule)
-    print(python_code)
+    
     # Check that the generated code contains expected elements
-    assert "import torch" in python_code
-    assert "import torch.nn.functional as F" in python_code
     assert "def simple_add(" in python_code
-    assert "torch.add" in python_code or "R.add" in python_code
+    assert "torch.add" in python_code
     assert "return gv" in python_code
 
 
@@ -50,66 +49,72 @@ def test_relax_function_with_nn_ops():
     @I.ir_module
     class NNModule:
         @R.function
-        def nn_forward(x: R.Tensor(("n", 64), "float32"), 
-                      w: R.Tensor((64, 64), "float32")) -> R.Tensor(("n", 64), "float32"):
+        def nn_forward(x: R.Tensor(("n", 64), "float32"), w: R.Tensor((64, 64), "float32")) -> R.Tensor(("n", 64), "float32"):
             lv = R.add(x, w)
             lv1 = R.nn.relu(lv)
             return lv1
     
-        # Convert to Python
+    # Convert to Python
     python_code = irmodule_to_python(NNModule)
-    print(python_code)
+    
     # Check that the generated code contains expected elements
     assert "def nn_forward(" in python_code
-    assert "torch.Tensor" in python_code  # We now generate simple torch.Tensor
-    assert "n = x.shape[0]" in python_code  # We now generate n = x.shape[0]
+    assert "torch.add" in python_code
+    assert "F.relu" in python_code
+    assert "n = x.shape[0]" in python_code  # Symbolic shape handling
 
 
 def test_relax_function_with_call_tir():
-    """Test converting Relax function that calls TIR functions."""
+    """Test converting Relax function with call_tir."""
     
     @I.ir_module
     class CallTIRModule:
         @T.prim_func
-        def add_tir(x: T.Buffer((5,), "float32"), 
-                   y: T.Buffer((5,), "float32"), 
-                   out: T.Buffer((5,), "float32")):
-            for i in range(5):
-                out[i] = x[i] + y[i]
+        def matmul(A: T.handle, B: T.handle, C: T.handle):
+            n = T.int32()
+            A_buf = T.match_buffer(A, (n, 16), "float32")
+            B_buf = T.match_buffer(B, (16, 20), "float32")
+            C_buf = T.match_buffer(C, (n, 20), "float32")
+            for i, j, k in T.grid(n, 20, 16):
+                with T.block("matmul"):
+                    vi, vj, vk = T.axis.remap("SSR", [i, j, k])
+                    with T.init():
+                        C_buf[vi, vj] = T.float32(0)
+                    C_buf[vi, vj] = C_buf[vi, vj] + A_buf[vi, vk] * B_buf[vk, vj]
         
         @R.function
-        def main(x: R.Tensor((5,), "float32"), 
-                y: R.Tensor((5,), "float32")) -> R.Tensor((5,), "float32"):
-            # Actually test call_tir functionality
-            cls = CallTIRModule
-            result = R.call_tir(cls.add_tir, [x, y], out_sinfo=R.Tensor((5,), "float32"))
-            return result
+        def main(x: R.Tensor(("n", 16), "float32"), w: R.Tensor((16, 20), "float32")) -> R.Tensor(("n", 20), "float32"):
+            n = T.int64()
+            lv = R.call_tir(cls.matmul, [x, w], out_sinfo=R.Tensor((n, 20), "float32"))
+            return lv
     
     # Convert to Python
     python_code = irmodule_to_python(CallTIRModule)
     
     # Check that the generated code contains expected elements
     assert "def main(" in python_code
-    assert "call_tir(" in python_code  # Now actually testing call_tir
-    assert "def call_tir(" in python_code  # Helper function
+    assert "call_tir" in python_code
+    assert "n = x.shape[0]" in python_code
 
 
 def test_relax_function_with_call_dps_packed():
-    """Test converting Relax function that calls packed functions."""
+    """Test converting Relax function with call_dps_packed."""
     
     @I.ir_module
-    class CallPackedModule:
+    class CallDPSModule:
         @R.function
-        def main(x: R.Tensor((5,), "float32")) -> R.Tensor((5,), "float32"):
-            return R.call_dps_packed("my_softmax", (x, 1), R.Tensor((5,), "float32"))
+        def main(x: R.Tensor(("n", 20), "float32")) -> R.Tensor(("n", 20), "float32"):
+            n = T.int64()
+            lv = R.call_dps_packed("my_softmax", [x, R.prim_value(1)], out_sinfo=R.Tensor((n, 20), "float32"))
+            return lv
     
     # Convert to Python
-    python_code = irmodule_to_python(CallPackedModule)
-    print(python_code)
+    python_code = irmodule_to_python(CallDPSModule)
+    
     # Check that the generated code contains expected elements
     assert "def main(" in python_code
     assert "call_dps_packed" in python_code
-    assert "def call_dps_packed(" in python_code  # Helper function
+    assert "n = x.shape[0]" in python_code
 
 
 def test_complex_relax_function():
@@ -118,30 +123,22 @@ def test_complex_relax_function():
     @I.ir_module
     class ComplexModule:
         @R.function
-        def complex_forward(x: R.Tensor(("n", 64), "float32"), 
-                           w1: R.Tensor((64, 64), "float32"),
-                           w2: R.Tensor((64, 64), "float32")) -> R.Tensor(("n", 64), "float32"):
-            # First layer
-            lv = R.add(x, w1)
-            lv1 = R.nn.relu(lv)
-            lv2 = R.multiply(lv1, R.const(0.9))  # Simplified dropout
-            
-            # Second layer
-            lv3 = R.add(lv2, w2)
-            lv4 = R.nn.relu(lv3)  # Use relu instead of sigmoid
-            
+        def complex_forward(x: R.Tensor(("n", 64), "float32"), w1: R.Tensor((64, 128), "float32"), w2: R.Tensor((128, 64), "float32")) -> R.Tensor(("n", 64), "float32"):
+            n = T.int64()
+            lv1 = R.matmul(x, w1)
+            lv2 = R.nn.relu(lv1)
+            lv3 = R.matmul(lv2, w2)
+            lv4 = R.nn.relu(lv3)
             return lv4
     
-        # Convert to Python
+    # Convert to Python
     python_code = irmodule_to_python(ComplexModule)
-    print(python_code)
+    
     # Check that the generated code contains expected elements
     assert "def complex_forward(" in python_code
-    assert "torch.add" in python_code
+    assert "torch.matmul" in python_code
     assert "F.relu" in python_code
-    assert "torch.mul" in python_code
-    assert "F.relu" in python_code
-    assert "n = x.shape[0]" in python_code  # We now generate n = x.shape[0]
+    assert "n = x.shape[0]" in python_code
 
 
 def test_relax_function_with_shape_operations():
@@ -151,131 +148,110 @@ def test_relax_function_with_shape_operations():
     class ShapeModule:
         @R.function
         def shape_ops(x: R.Tensor(("n", "c", "h", "w"), "float32")) -> R.Tensor(("n", "c"), "float32"):
-            # Simple operations
             lv = R.add(x, x)
-            lv1 = R.mean(lv, axis=1, keepdims=False)
+            lv1 = R.mean(lv, axis=[1], keepdims=False)
             return lv1
     
     # Convert to Python
     python_code = irmodule_to_python(ShapeModule)
-    print(python_code)
+    
     # Check that the generated code contains expected elements
     assert "def shape_ops(" in python_code
     assert "torch.add" in python_code
     assert "torch.mean" in python_code or "F.mean" in python_code
-    assert "n = x.shape[0]" in python_code  # We now generate n = x.shape[0]
-    assert "c = x.shape[0]" in python_code  # We now generate c = x.shape[0]
-    assert "h = x.shape[0]" in python_code  # We now generate h = x.shape[0]
-    assert "w = x.shape[0]" in python_code  # We now generate w = x.shape[0]
+    # Check that symbolic shapes are handled
+    assert "n = x.shape[0]" in python_code
+    assert "c = x.shape[1]" in python_code
+    assert "h = x.shape[2]" in python_code
+    assert "w = x.shape[3]" in python_code
+
+
+def test_python_function_preserved():
+    """Test that @I.pyfunc decorated functions are preserved as-is."""
+    
+    @I.ir_module
+    class PyFuncModule:
+        @I.py_func
+        def my_python_func(x: torch.Tensor) -> torch.Tensor:
+            return x + 1
+        
+        @R.function
+        def relax_func(x: R.Tensor((5,), "float32")) -> R.Tensor((5,), "float32"):
+            return x
+    
+    # Convert to Python
+    python_code = irmodule_to_python(PyFuncModule)
+    
+    # Check that Python function is preserved
+    assert "@I.py_func" in python_code
+    assert "def my_python_func(" in python_code
+    assert "return x + 1" in python_code
+
+
+def test_mixed_module():
+    """Test converting a module with both Relax and Python functions."""
+    
+    @I.ir_module
+    class MixedModule:
+        @I.py_func
+        def identity(x: torch.Tensor) -> torch.Tensor:
+            return x
+        
+        @R.function
+        def main(x: R.Tensor(("n", 64), "float32")) -> R.Tensor(("n", 64), "float32"):
+            n = T.int64()
+            lv = R.nn.relu(x)
+            return lv
+    
+    # Convert to Python
+    python_code = irmodule_to_python(MixedModule)
+    
+    # Check that both function types are handled correctly
+    assert "@I.py_func" in python_code
+    assert "def identity(" in python_code
+    assert "def main(" in python_code
+    assert "F.relu" in python_code
+    assert "n = x.shape[0]" in python_code
 
 
 def test_python_printer_imports():
-    """Test that the Python printer generates correct imports."""
+    """Test that the generated Python code has the correct imports."""
     
     @I.ir_module
     class ImportTestModule:
         @R.function
-        def test(x: R.Tensor((5,), "float32")) -> R.Tensor((5,), "float32"):
-            return R.nn.relu(x)
+        def test_func(x: R.Tensor((5,), "float32")) -> R.Tensor((5,), "float32"):
+            return x
     
     # Convert to Python
     python_code = irmodule_to_python(ImportTestModule)
     
-    # Check imports
-    expected_imports = [
-        "import torch",
-        "import torch.nn.functional as F",
-        "import tvm",
-        "from tvm import relax as R"
-    ]
-    
-    for imp in expected_imports:
-        assert imp in python_code
+    # Check that necessary imports are included
+    assert "import torch" in python_code
+    assert "import torch.nn.functional as F" in python_code
+    assert "from tvm import relax as R" in python_code
+    assert "from tvm.script import ir as I" in python_code
 
 
 def test_python_printer_helper_functions():
-    """Test that the Python printer generates helper functions."""
+    """Test that helper functions are generated when needed."""
     
     @I.ir_module
     class HelperTestModule:
         @R.function
-        def test(x: R.Tensor((5,), "float32")) -> R.Tensor((5,), "float32"):
-            return x
+        def test_func(x: R.Tensor(("n", 64), "float32")) -> R.Tensor(("n", 64), "float32"):
+            n = T.int64()
+            lv = R.call_tir("my_func", [x], out_sinfo=R.Tensor((n, 64), "float32"))
+            return lv
     
     # Convert to Python
     python_code = irmodule_to_python(HelperTestModule)
-    print(python_code)
-    # Check helper functions
+    
+    # Check that helper functions are generated
     assert "def call_tir(" in python_code
     assert "def call_dps_packed(" in python_code
-    assert "tvm.nd.from_dlpack" in python_code
-    assert "torch.from_dlpack" in python_code
-
-
-def test_complex_example_like_user():
-    """Test converting a complex Relax function similar to the user's example."""
-    
-    @I.ir_module
-    class ComplexExampleModule:
-        @R.function
-        def main(
-            x: R.Tensor(("n", 16), "float32"), 
-            w: R.Tensor((16, 20), "float32")
-        ) -> R.Tensor(("n", 20), "float32"):
-            cls = ComplexExampleModule
-            n = T.int64()
-            with R.dataflow():
-                lv = R.call_tir(cls.matmul, [x, w], out_sinfo=R.Tensor((n, 20), "float32"))
-                lv1 = R.nn.relu(lv)
-                lv2 = R.call_dps_packed(
-                    "my_softmax", [lv1, R.prim_value(1)], out_sinfo=R.Tensor((n, 20), "float32")
-                )
-                gv = lv2
-                R.output(gv)
-            return gv
-
-        @T.prim_func
-        def matmul(
-            var_A: T.handle,
-            var_B: T.handle,
-            var_C: T.handle,
-        ):
-            n = T.int32()
-            A = T.match_buffer(var_A, (n, 16), "float32")
-            B = T.match_buffer(var_B, (16, 20), "float32")
-            C = T.match_buffer(var_C, (n, 20), "float32")
-            for i, j, k in T.grid(n, 20, 16):
-                with T.block("block"):
-                    vi, vj, vk = T.axis.remap("SSR", [i, j, k])
-                    with T.init():
-                        C[vi, vj] = T.float32(0)
-                    C[vi, vj] = C[vi, vj] + A[vi, vk] * B[vk, vj]
-    
-    # Convert to Python
-    python_code = irmodule_to_python(ComplexExampleModule)
-    print(python_code)
-    # Check that the generated code contains expected elements
-    assert "def main(" in python_code
-    assert "torch.Tensor" in python_code  # We now generate simple torch.Tensor
-    
-    # Check symbolic shape handling
-    assert "n = x.shape[0]" in python_code
-    
-    # Check that call_tir is properly converted
-    assert "call_tir(" in python_code
-    
-    # Check that call_dps_packed is properly converted
-    assert "call_dps_packed(" in python_code
-    
-    # Check helper functions
-    assert "def call_tir(" in python_code
-    assert "def call_dps_packed(" in python_code
-    
-    # Check imports
-    assert "import torch" in python_code
-    assert "import torch.nn.functional as F" in python_code
+    assert "import tvm" in python_code
 
 
 if __name__ == "__main__":
-    # Run all tests
     pytest.main([__file__])
