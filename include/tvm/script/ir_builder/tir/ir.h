@@ -132,23 +132,6 @@ Buffer MatchBuffer(ObjectRef param, ffi::Array<PrimExpr> shape,
                    ffi::Optional<TLayout> layout = std::nullopt);
 
 /*!
- * \brief The buffer view statement.
- * \param buffer The physical buffer storing data.
- * \param layout The target layout of the logical buffer.
- * \param shape The target shape of the logical buffer.
- * \return The logical buffer for given layout and shape.
- */
-Buffer BufferView(tvm::tir::Buffer buffer, tvm::tir::TLayout layout, Array<PrimExpr> shape);
-
-/*!
- * \brief The buffer get statement.
- * \param buffer The logical buffer viewed by physical buffer.
- * \param shape The target shape of the physical buffer.
- * \return The physical buffer storing underlying data.
- */
-Buffer BufferGet(tvm::tir::Buffer buffer, Array<PrimExpr> shape);
-
-/*!
  * \brief The block declaration statement.
  * \param name The name of the block.
  * \param no_realize The flag whether to construct SBlockRealize or SBlock.

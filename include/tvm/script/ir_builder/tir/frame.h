@@ -167,8 +167,6 @@ class SBlockFrameNode : public TIRFrameNode {
   String scope_slice_parent;
   Optional<Array<PrimExpr>> scope_slice_extents;
 
-  Array<tvm::tir::BufferView> buffer_views;
-  Array<tvm::tir::BufferGet> buffer_gets;
   Array<tvm::tir::BulkGroupEvent> bulk_events;
   Array<tvm::tir::SemaphoreEventTensor> sem_event_tensors;
 
@@ -189,8 +187,6 @@ class SBlockFrameNode : public TIRFrameNode {
         .def_ro("exec_scope", &SBlockFrameNode::exec_scope)
         .def_ro("scope_slice_parent", &SBlockFrameNode::scope_slice_parent)
         .def_ro("scope_slice_extents", &SBlockFrameNode::scope_slice_extents)
-        .def_ro("buffer_views", &SBlockFrameNode::buffer_views)
-        .def_ro("buffer_gets", &SBlockFrameNode::buffer_gets)
         .def_ro("bulk_events", &SBlockFrameNode::bulk_events)
         .def_ro("sem_event_tensors", &SBlockFrameNode::sem_event_tensors);
   }
