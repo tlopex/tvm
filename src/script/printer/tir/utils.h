@@ -110,8 +110,8 @@ inline IdDoc DefineBuffer(const tir::Buffer& buffer, const Frame& frame, const I
  * \param d The IRDocsifier
  * \return The IdDoc corresponding to the event
  */
-inline IdDoc DefineEvent(const tir::BulkGroupEvent& event, const Frame& frame,
-                         const IRDocsifier& d) {
+inline IdDoc DefineBulkEvent(const tir::BulkGroupEvent& event, const Frame& frame,
+                             const IRDocsifier& d) {
   return d->Define(event, frame, event->name.empty() ? "bulk_event" : event->name);
 }
 
@@ -123,8 +123,8 @@ inline IdDoc DefineEvent(const tir::BulkGroupEvent& event, const Frame& frame,
  * \param d The IRDocsifier
  * \return The IdDoc corresponding to the event tensor
  */
-inline IdDoc DefineEventTensor(const tir::SemaphoreEventTensor& event_tensor, const Frame& frame,
-                               const IRDocsifier& d) {
+inline IdDoc DefineSemaphoreEventTensor(const tir::SemaphoreEventTensor& event_tensor,
+                                        const Frame& frame, const IRDocsifier& d) {
   return d->Define(event_tensor, frame,
                    event_tensor->name.empty() ? "sem_event_tensor" : event_tensor->name);
 }
@@ -255,7 +255,7 @@ ExprDoc BufferDecl(const tir::Buffer& buffer, const ffi::String& method,
  * \param d The IRDocsifier
  * \return The ExprDoc corresponding to the event declaration
  */
-ExprDoc EventDecl(const tir::BulkGroupEvent& event, const String& method, const AccessPath& p,
+ExprDoc BulkGroupEventDecl(const tir::BulkGroupEvent& event, const String& method, const AccessPath& p,
                   const IRDocsifier& d);
 
 /*!
@@ -266,7 +266,7 @@ ExprDoc EventDecl(const tir::BulkGroupEvent& event, const String& method, const 
  * \param d The IRDocsifier
  * \return The ExprDoc corresponding to the event tensor declaration
  */
-ExprDoc EventTensorDecl(const tir::SemaphoreEventTensor& event_tensor, const String& method,
+ExprDoc SemaphoreEventTensorDecl(const tir::SemaphoreEventTensor& event_tensor, const String& method,
                         const AccessPath& p, const IRDocsifier& d);
 
 /*!
