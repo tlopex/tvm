@@ -68,6 +68,8 @@ class SimplePyFuncModule(BasePyModule):
     def main_relax(
         x: R.Tensor((5,), "float32"), y: R.Tensor((5,), "float32")
     ) -> R.Tensor((5,), "float32"):
+        # Note: This TVMScript is for testing purposes only and cannot compile properly.
+        # It serves as a dummy function to test the printer's handling of Relax functions.
         return R.add(x, y)
 
 
@@ -421,10 +423,47 @@ class ErrorHandlingPyFuncModule(BasePyModule):
 
 
 if __name__ == "__main__":
-    # This allows the file to be run directly for debugging
+    # This allows the file to be run directly for debugging and testing the printer
     # In normal pytest usage, these classes are automatically tested by TVMScript
     print("All test modules defined successfully!")
     print("TVMScript will automatically validate these modules during testing.")
+    print("\n" + "="*60)
+    print("Testing printer functionality directly:")
+    print("="*60)
+    
+    # Test the printer functionality by actually calling script() and show() methods
+    device = tvm.cpu()
+    
+    try:
+        # Test SimplePyFuncModule printer
+        print("\n1. Testing SimplePyFuncModule printer:")
+        module = BasePyModule(SimplePyFuncModule, device)
+        
+        print("\n   script() output:")
+        script_output = module.script()
+        print(script_output[:500] + "..." if len(script_output) > 500 else script_output)
+        
+        print("\n   show() method:")
+        module.show()
+        
+    except Exception as e:
+        print(f"   Error testing SimplePyFuncModule printer: {e}")
+    
+    try:
+        # Test ComplexPyFuncModule printer
+        print("\n2. Testing ComplexPyFuncModule printer:")
+        complex_module = BasePyModule(ComplexPyFuncModule, device)
+        
+        print("\n   script() output (first 300 chars):")
+        complex_script = complex_module.script()
+        print(complex_script[:300] + "..." if len(complex_script) > 300 else complex_script)
+        
+    except Exception as e:
+        print(f"   Error testing ComplexPyFuncModule printer: {e}")
+    
+    print("\n" + "="*60)
+    print("Printer testing completed!")
+    print("="*60)
 
 
 # Pytest test functions to verify the classes work correctly
@@ -448,8 +487,9 @@ def test_simple_pyfunc_module_creation():
     assert hasattr(module, "add_tir")
     assert hasattr(module, "multiply_tir")
 
-    # Note: Relax functions may not be available due to TVMScript compilation issues
-    # This is acceptable for testing as the focus is on Python functions
+    # Note: Relax functions may not be available due to TVMScript compilation issues.
+    # This is acceptable for testing as the focus is on Python functions and printer functionality.
+    # The Relax functions in this test file are dummy functions designed only for printer testing.
     print("Note: Relax functions may not be available due to TVMScript compilation")
 
 
@@ -613,8 +653,9 @@ def test_relax_functions():
     device = tvm.cpu()
     module = BasePyModule(ir_mod, device)
 
-    # Note: Relax functions may not be available due to TVMScript compilation issues
-    # This is acceptable for testing as the focus is on Python functions
+    # Note: Relax functions may not be available due to TVMScript compilation issues.
+    # This is acceptable for testing as the focus is on Python functions and printer functionality.
+    # The Relax functions in this test file are dummy functions designed only for printer testing.
     print("Note: Relax functions may not be available due to TVMScript compilation")
 
     # We can still check that the module was created successfully
