@@ -99,7 +99,7 @@ jobs:
 #          python -m pytest -v tests/python/contrib/test_rpc_server_device.py
 
   Windows:
-    if: ${{ github.repository == 'apache/tvm' }}
+    if: ${{ github.repository == 'tlopex/tvm' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
