@@ -580,20 +580,15 @@ class RelaxExpressionConverter:
         try:
             # First, try to get the TIR function from the current IRModule
             tir_function = None
-            print(f"Debug: Looking for TIR function {func_name} in IRModule")
             if self.ir_module:
                 # Look for the TIR function in the current IRModule
                 for global_var, func in self.ir_module.functions.items():
-                    print(f"Debug: Found function {global_var.name_hint}, type: {type(func)}")
                     if global_var.name_hint == func_name and hasattr(func, "body"):
-                        print(f"Debug: Found TIR function {func_name}, attempting to compile")
                         try:
                             # Compile the TIR function
                             target = tvm.target.Target("llvm")
                             with tvm.target.Target(target):
                                 tir_function = tvm.compile(func, target=target)
-                            print(f"Debug: Successfully compiled TIR function {func_name}")
-                            print(f"Debug: About to break from compilation loop")
                             break
                         except (RuntimeError, ValueError, TypeError) as compile_e:
                             print(
@@ -602,9 +597,7 @@ class RelaxExpressionConverter:
                             continue
 
             # If not found in current module, try global registry
-            print(f"Debug: TIR function after compilation: {tir_function}")
             if tir_function is None:
-                print(f"Debug: TIR function not found in module, trying global registry")
                 tir_function = tvm.get_global_func(func_name)
 
             if tir_function is None:
@@ -616,79 +609,56 @@ class RelaxExpressionConverter:
                 else:
                     return converted_args[0] if converted_args else torch.tensor([])
 
-            print(f"Debug: TIR function found, proceeding with execution")
-            print(f"Debug: TIR function type: {type(tir_function)}")
-
             # Convert PyTorch tensors to TVM NDArrays via DLPack
-            print(f"Debug: Starting DLPack conversion")
             tvm_args = []
             for i, arg in enumerate(converted_args):
-                print(f"Debug: Converting arg {i}: {type(arg)}")
                 try:
                     if isinstance(arg, torch.Tensor):
                         # Convert PyTorch tensor to TVM NDArray via DLPack
-                        print(f"Debug: Converting PyTorch tensor to DLPack...")
                         tvm_arg = tvm.runtime.from_dlpack(torch.to_dlpack(arg))
                         tvm_args.append(tvm_arg)
-                        print(f"Debug: Converted to TVM NDArray: {tvm_arg.shape}")
                     else:
                         tvm_args.append(arg)
-                        print(f"Debug: Kept as is: {arg}")
                 except Exception as e:
-                    print(f"Debug: Error converting arg {i}: {e}")
                     import traceback
                     traceback.print_exc()
                     # Fallback: use the original tensor
                     tvm_args.append(arg)
 
             # For call_tir, we need to allocate output tensor
-            print(f"Debug: Processing output shape, out_sinfo: {out_sinfo}")
             output_shape = None
             if out_sinfo and hasattr(out_sinfo, "shape"):
                 output_shape = out_sinfo.shape
-                print(f"Debug: Got shape from out_sinfo: {output_shape}")
             elif converted_args:
                 # Use the shape of the first input tensor
                 first_arg = converted_args[0]
                 if isinstance(first_arg, torch.Tensor):
                     output_shape = first_arg.shape
-                    print(f"Debug: Got shape from first input: {output_shape}")
 
             if output_shape is None:
                 # Fallback: use the shape of the first input tensor
                 if converted_args and isinstance(converted_args[0], torch.Tensor):
                     output_shape = converted_args[0].shape
-                    print(f"Debug: Using fallback shape from first input: {output_shape}")
                 else:
                     output_shape = (64,)  # Default shape
-                    print(f"Debug: Using default shape: {output_shape}")
 
             # Allocate output tensor
-            print(f"Debug: Allocating output tensor with shape: {output_shape}")
             output_tensor = tvm.runtime.empty(output_shape, dtype="float32")
             tvm_args.append(output_tensor)
-            print(f"Debug: Created tvm_args with {len(tvm_args)} arguments")
 
             # Call the TIR function
-            print(f"Debug: Calling TIR function {func_name} with {len(tvm_args)} arguments")
-            print(f"Debug: Output tensor shape: {output_tensor.shape}")
-            print(f"Debug: Input tensors: {[arg.shape if hasattr(arg, 'shape') else arg for arg in tvm_args[:-1]]}")
-            print(f"Debug: About to call TIR function...")
             try:
                 tir_function(*tvm_args)
-                print(f"Debug: TIR function {func_name} executed successfully")
                 # The result is in the output_tensor we allocated
                 # Convert result back to PyTorch tensor via DLPack
                 try:
                     result = torch.from_dlpack(output_tensor.to_dlpack())
-                    print(f"Debug: Converted result: {result}")
                     return result
                 except AttributeError:
                     # Fallback: convert to numpy then to PyTorch
                     import numpy as np
                     numpy_result = output_tensor.numpy()
                     result = torch.from_numpy(numpy_result)
-                    print(f"Debug: Converted result via numpy: {result}")
                     return result
             except Exception as e:
                 print(f"Warning: TIR function {func_name} execution failed: {e}")
@@ -744,7 +714,6 @@ class RelaxExpressionConverter:
                 else:
                     converted_arg = torch.tensor([])  # Fallback
             converted_args.append(converted_arg)
-        print(f"Debug: Packed function converted args: {converted_args}")
 
         try:
             # Get the packed function from TVM
@@ -754,8 +723,6 @@ class RelaxExpressionConverter:
                 # Fallback: return the first argument
                 return converted_args[0] if converted_args else torch.tensor([])
 
-            print(f"Debug: Calling packed function {func_name} with {len(converted_args)} arguments")
-            
             # Convert PyTorch tensors to TVM NDArrays via DLPack
             tvm_args = []
             for arg in converted_args:
@@ -767,25 +734,20 @@ class RelaxExpressionConverter:
                     tvm_args.append(arg)
 
             # Call the packed function
-            print(f"Debug: Calling packed function with args: {tvm_args}")
             result = packed_function(*tvm_args)
-            print(f"Debug: Packed function {func_name} returned: {result}")
 
             # Convert result back to PyTorch tensor via DLPack
             if isinstance(result, tvm.runtime.Tensor):
                 try:
                     pytorch_result = torch.from_dlpack(result.to_dlpack())
-                    print(f"Debug: Converted to PyTorch via DLPack: {pytorch_result}")
                     return pytorch_result
                 except AttributeError:
                     # Fallback: convert to numpy then to PyTorch
                     import numpy as np
                     numpy_result = result.numpy()
                     pytorch_result = torch.from_numpy(numpy_result)
-                    print(f"Debug: Converted to PyTorch via numpy: {pytorch_result}")
                     return pytorch_result
             else:
-                print(f"Debug: Result is not Tensor, returning as is: {result}")
                 return result
 
         except (RuntimeError, ValueError, TypeError) as error:
