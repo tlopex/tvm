@@ -163,9 +163,9 @@ class SBlockFrameNode : public TIRFrameNode {
   bool no_realize;
 
   // TIR+ signature
-  Optional<tvm::tir::ExecScope> exec_scope;
-  String scope_slice_parent;
-  Optional<Array<PrimExpr>> scope_slice_extents;
+  ffi::Optional<tvm::tir::ExecScope> exec_scope;
+  ffi::String scope_slice_parent;
+  ffi::Optional<ffi::Array<PrimExpr>> scope_slice_extents;
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
@@ -639,9 +639,9 @@ class DeclBufferFrame : public TIRFrame {
 class ComposeOpFrameNode : public TIRFrameNode {
  public:
   /*! \brief The workspace of the compose op. */
-  Map<String, tvm::tir::Buffer> workspace;
+  ffi::Map<ffi::String, tvm::tir::Buffer> workspace;
   /*! \brief The schedule config of the compose op. */
-  Map<String, ffi::Any> schedule_config;
+  ffi::Map<ffi::String, ffi::Any> schedule_config;
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
@@ -656,8 +656,9 @@ class ComposeOpFrameNode : public TIRFrameNode {
 
 class ComposeOpFrame : public TIRFrame {
  public:
-  explicit ComposeOpFrame(ObjectPtr<ComposeOpFrameNode> data) : TIRFrame(data) {
+  explicit ComposeOpFrame(ObjectPtr<ComposeOpFrameNode> data) : TIRFrame(ffi::UnsafeInit{}) {
     TVM_FFI_ICHECK(data != nullptr);
+    data_ = std::move(data);
   }
   TVM_FFI_DEFINE_OBJECT_REF_METHODS_NOTNULLABLE(ComposeOpFrame, TIRFrame, ComposeOpFrameNode);
 };
@@ -680,8 +681,9 @@ class AllocBufferFrameNode : public TIRFrameNode {
 
 class AllocBufferFrame : public TIRFrame {
  public:
-  explicit AllocBufferFrame(ObjectPtr<AllocBufferFrameNode> data) : TIRFrame(data) {
+  explicit AllocBufferFrame(ObjectPtr<AllocBufferFrameNode> data) : TIRFrame(ffi::UnsafeInit{}) {
     TVM_FFI_ICHECK(data != nullptr);
+    data_ = std::move(data);
   }
   TVM_FFI_DEFINE_OBJECT_REF_METHODS_NOTNULLABLE(AllocBufferFrame, TIRFrame, AllocBufferFrameNode);
 };
@@ -706,11 +708,13 @@ class AllocBulkGroupEventFrameNode : public TIRFrameNode {
 
 class AllocBulkGroupEventFrame : public TIRFrame {
  public:
-  explicit AllocBulkGroupEventFrame(ObjectPtr<AllocBulkGroupEventFrameNode> data) : TIRFrame(data) {
+  explicit AllocBulkGroupEventFrame(ObjectPtr<AllocBulkGroupEventFrameNode> data)
+      : TIRFrame(ffi::UnsafeInit{}) {
     TVM_FFI_ICHECK(data != nullptr);
+    data_ = std::move(data);
   }
   TVM_FFI_DEFINE_OBJECT_REF_METHODS_NOTNULLABLE(AllocBulkGroupEventFrame, TIRFrame,
-                                                 AllocBulkGroupEventFrameNode);
+                                                AllocBulkGroupEventFrameNode);
 };
 
 class AllocSemaphoreEventTensorFrameNode : public TIRFrameNode {
@@ -735,11 +739,12 @@ class AllocSemaphoreEventTensorFrameNode : public TIRFrameNode {
 class AllocSemaphoreEventTensorFrame : public TIRFrame {
  public:
   explicit AllocSemaphoreEventTensorFrame(ObjectPtr<AllocSemaphoreEventTensorFrameNode> data)
-      : TIRFrame(data) {
+      : TIRFrame(ffi::UnsafeInit{}) {
     TVM_FFI_ICHECK(data != nullptr);
+    data_ = std::move(data);
   }
   TVM_FFI_DEFINE_OBJECT_REF_METHODS_NOTNULLABLE(AllocSemaphoreEventTensorFrame, TIRFrame,
-                                                 AllocSemaphoreEventTensorFrameNode);
+                                                AllocSemaphoreEventTensorFrameNode);
 };
 }  // namespace tir
 }  // namespace ir_builder

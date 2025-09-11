@@ -229,16 +229,16 @@ ExprDoc BufferDecl(const tir::Buffer& buffer, const ffi::String& method,
       if (buffer.scope() == "shared") {
         // shared_cell
         prefix = TIR(d, "shared_cell");
-        attrs = Map<String, ExprDoc>({{"dtype", dtype}});
+        attrs = ffi::Map<ffi::String, ExprDoc>({{"dtype", dtype}});
       } else if (buffer.scope() == "local") {
         // local_cell
         prefix = TIR(d, "local_cell");
-        attrs = Map<String, ExprDoc>({{"dtype", dtype}});
+        attrs = ffi::Map<ffi::String, ExprDoc>({{"dtype", dtype}});
       } else {
         // alloc_cell
         prefix = TIR(d, "alloc_cell");
         auto scope = d->AsDoc<ExprDoc>(buffer.scope(), p->Attr("scope"));
-        attrs = Map<String, ExprDoc>({{"dtype", dtype}, {"scope", scope}});
+        attrs = ffi::Map<ffi::String, ExprDoc>({{"dtype", dtype}, {"scope", scope}});
       }
     } else {
       if (buffer.scope() == "shared") {
@@ -259,7 +259,7 @@ ExprDoc BufferDecl(const tir::Buffer& buffer, const ffi::String& method,
       auto scope = d->AsDoc<ExprDoc>(buffer.scope(), p->Attr("scope"));
       auto elem_offset = d->AsDoc<ExprDoc>(buffer->elem_offset, p->Attr("elem_offset"));
       auto data = d->AsDoc<ExprDoc>(buffer->data, p->Attr("data"));
-      attrs = Map<String, ExprDoc>(
+      attrs = ffi::Map<ffi::String, ExprDoc>(
           {{"dtype", dtype}, {"scope", scope}, {"elem_offset", elem_offset}, {"data", data}});
     }
   }
@@ -340,7 +340,7 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
             ICHECK(store->indices.size() == 1 && tir::is_zero(store->indices[0]))
                 << "1-dim buffer with shape (1,) store with indices other than [0] is not "
                    "supported";
-            Optional<ExprDoc> doc = d->GetVarDoc(store->buffer);
+            ffi::Optional<ExprDoc> doc = d->GetVarDoc(store->buffer);
             ICHECK(doc.has_value())
                 << "buffer is not defined in the environment: " << store->buffer;
             return AssignDoc(doc.value(), value, std::nullopt);
@@ -369,7 +369,7 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
               !load->predicate.defined()) {
             ICHECK(load->indices.size() == 1 && tir::is_zero(load->indices[0]))
                 << "Cell buffer load with indices other than [0] is not supported";
-            Optional<ExprDoc> doc = d->GetVarDoc(load->buffer);
+            ffi::Optional<ExprDoc> doc = d->GetVarDoc(load->buffer);
             ICHECK(doc.has_value())
                 << "Cell buffer is not defined in the environment: " << load->buffer;
             return doc.value();
@@ -420,12 +420,12 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
     });
 
 Doc PrintTileLayout(tir::TileLayout layout, IRDocsifier d, AccessPath p) {
-  Array<String> keys;
-  Array<ExprDoc> values;
+  ffi::Array<ffi::String> keys;
+  ffi::Array<ExprDoc> values;
 
   // print shard, replicate, and exclude
   if (layout->shard.size() > 0) {
-    Array<ExprDoc> shard_e_docs, shard_sa_docs;
+    ffi::Array<ExprDoc> shard_e_docs, shard_sa_docs;
     for (const auto& iter : layout->shard) {
       shard_e_docs.push_back(d->AsDoc<ExprDoc>(iter->extent, p->Attr("extent")));
       shard_sa_docs.push_back(TupleDoc({d->AsDoc<ExprDoc>(iter->stride, p->Attr("stride")),
@@ -435,7 +435,7 @@ Doc PrintTileLayout(tir::TileLayout layout, IRDocsifier d, AccessPath p) {
     values.push_back(TupleDoc({ListDoc(shard_e_docs), ListDoc(shard_sa_docs)}));
   }
   if (layout->replicate.size() > 0) {
-    Array<ExprDoc> replicate_e_docs, replicate_sa_docs;
+    ffi::Array<ExprDoc> replicate_e_docs, replicate_sa_docs;
     for (const auto& iter : layout->replicate) {
       replicate_e_docs.push_back(d->AsDoc<ExprDoc>(iter->extent, p->Attr("extent")));
       replicate_sa_docs.push_back(TupleDoc({d->AsDoc<ExprDoc>(iter->stride, p->Attr("stride")),
@@ -445,7 +445,7 @@ Doc PrintTileLayout(tir::TileLayout layout, IRDocsifier d, AccessPath p) {
     values.push_back(TupleDoc({ListDoc(replicate_e_docs), ListDoc(replicate_sa_docs)}));
   }
   if (layout->exclude.size() > 0) {
-    Array<ExprDoc> exclude_docs;
+    ffi::Array<ExprDoc> exclude_docs;
     for (const auto& [axis, offset] : layout->exclude) {
       exclude_docs.push_back(TupleDoc({d->AsDoc<ExprDoc>(axis->name, p->Attr("axis")),
                                        d->AsDoc<ExprDoc>(offset, p->Attr("offset"))}));
