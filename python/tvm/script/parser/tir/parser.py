@@ -748,7 +748,7 @@ def visit_continue(self: Parser, node: doc.Continue) -> None:  # pylint:disable=
     node : doc.Continue
         The doc AST continue node.
     """
-    T.evaluate(tvm.tir.continue_loop())
+    T.Continue()
 
 
 @dispatch.register(token="tir", type_name="Break")
@@ -763,7 +763,7 @@ def visit_break(self: Parser, node: doc.Break) -> None:  # pylint:disable=unused
     node : doc.Break
         The doc AST break node.
     """
-    T.evaluate(tvm.tir.break_loop())
+    T.Break()
 
 
 @dispatch.register(token="tir", type_name="tvm_declare_function")
