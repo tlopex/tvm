@@ -640,8 +640,8 @@ class ComposeOpFrameNode : public TIRFrameNode {
  public:
   /*! \brief The workspace of the compose op. */
   ffi::Map<ffi::String, tvm::tir::Buffer> workspace;
-  /*! \brief The schedule config of the compose op. */
-  ffi::Map<ffi::String, ffi::Any> schedule_config;
+  /*! \brief The config of the compose op. */
+  ffi::Map<ffi::String, ffi::Any> config;
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;

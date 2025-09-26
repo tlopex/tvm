@@ -243,7 +243,7 @@ void ComposeOpFrameNode::ExitWithScope() {
     ops.push_back(ffi::GetRef<tvm::tir::tirp::OpCall>(op_call));
   }
   auto compose_op_op = tvm::Op::Get("tirp.compose_op");
-  AddToParent(tvm::tir::tirp::OpCall(compose_op_op, ops, workspace, schedule_config));
+  AddToParent(tvm::tir::tirp::OpCall(compose_op_op, ops, workspace, config));
 }
 
 void AllocBufferFrameNode::ExitWithScope() {
