@@ -32,7 +32,9 @@ namespace transform {
 
 Pass LowerTIRp() {
   return tvm::transform::Sequential({LowerTIRpResolveScopeIds(), LowerTIRpScheduleOps(),
-                                     LowerTIRpResolveScopeSlices(), LowerTIRpCleanup()},
+                                     LowerTIRpResolveScopeSlices(),
+                                     LowerTIRpDedupCuTensorMaps(),
+                                     LowerTIRpCleanup()},
                                     "tir.LowerTIRp");
 }
 
@@ -42,6 +44,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def("tir.transform.LowerTIRpResolveScopeIds", LowerTIRpResolveScopeIds)
       .def("tir.transform.LowerTIRpScheduleOps", LowerTIRpScheduleOps)
       .def("tir.transform.LowerTIRpResolveScopeSlices", LowerTIRpResolveScopeSlices)
+      .def("tir.transform.LowerTIRpDedupCuTensorMaps", LowerTIRpDedupCuTensorMaps)
       .def("tir.transform.LowerTIRpCleanup", LowerTIRpCleanup)
       .def("tir.transform.LowerTIRp", LowerTIRp);
 }
