@@ -642,6 +642,8 @@ class ComposeOpFrameNode : public TIRFrameNode {
   ffi::Map<ffi::String, tvm::tir::Buffer> workspace;
   /*! \brief The config of the compose op. */
   ffi::Map<ffi::String, ffi::Any> config;
+  /*! \brief The optional dispatch variant name of the compose op. */
+  ffi::Optional<ffi::String> dispatch{std::nullopt};
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
