@@ -1449,6 +1449,7 @@ def decl_buffer(
     axis_separators=None,
     layout="default",
     name=None,
+    allocated_addr=None,
 ) -> frame.DeclBufferFrame | Buffer:
     """Create a buffer declaration node.
 
@@ -1520,6 +1521,7 @@ def decl_buffer(
         buffer_type,
         axis_separators,
         _get_layout(layout, shape, scope),
+        allocated_addr,
     )
     if name is not None:
         decl_frame.add_callback(partial(decl_frame.__exit__, None, None, None))
