@@ -44,8 +44,6 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   DeclBufferFrameNode::RegisterReflection();
   ComposeOpFrameNode::RegisterReflection();
   AllocBufferFrameNode::RegisterReflection();
-  AllocBulkGroupEventFrameNode::RegisterReflection();
-  AllocSemaphoreEventTensorFrameNode::RegisterReflection();
 }
 
 void PrimFuncFrameNode::ExitWithScope() {
@@ -251,15 +249,6 @@ void AllocBufferFrameNode::ExitWithScope() {
   AddToParent(tvm::tir::AllocBuffer(buffer, AsStmt(stmts)));
 }
 
-void AllocBulkGroupEventFrameNode::ExitWithScope() {
-  TIRFrameNode::ExitWithScope();
-  AddToParent(tvm::tir::AllocBulkGroupEvent(bulk_group_event, AsStmt(stmts)));
-}
-
-void AllocSemaphoreEventTensorFrameNode::ExitWithScope() {
-  TIRFrameNode::ExitWithScope();
-  AddToParent(tvm::tir::AllocSemaphoreEventTensor(sem_event_tensor, AsStmt(stmts)));
-}
 }  // namespace tir
 }  // namespace ir_builder
 }  // namespace script

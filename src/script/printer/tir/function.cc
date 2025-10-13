@@ -77,9 +77,7 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
       (*f)->AddDispatchToken(d, "tir");
       IdDoc func_name = IdDoc(FindFunctionName(d, func).value_or("main"));
       d->SetCommonPrefix(func, [](const ObjectRef& obj) {
-        return obj->IsInstance<tir::VarNode>() || obj->IsInstance<tir::BufferNode>() ||
-               obj->IsInstance<tir::BulkGroupEventNode>() ||
-               obj->IsInstance<tir::SemaphoreEventTensorNode>();
+        return obj->IsInstance<tir::VarNode>() || obj->IsInstance<tir::BufferNode>();
       });
       int n_args = func->params.size();
       std::unordered_map<const tir::VarNode*, int> buffer_data_counter;

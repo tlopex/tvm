@@ -26,7 +26,6 @@
 
 #include <tvm/ffi/reflection/registry.h>
 #include <tvm/node/script_printer.h>
-#include <tvm/tir/event.h>
 #include <tvm/tir/exec_scope.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/layout.h>
@@ -852,62 +851,6 @@ class AllocBuffer : public Stmt {
 
   TVM_FFI_DEFINE_OBJECT_REF_METHODS_NULLABLE(AllocBuffer, Stmt, AllocBufferNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(AllocBufferNode);
-};
-
-class AllocBulkGroupEventNode : public StmtNode {
- public:
-  /*! \brief The allocated bulk group event. */
-  BulkGroupEvent bulk_group_event;
-  /*! \brief The body of the alloc bulk group event. */
-  Stmt body;
-
-  static void RegisterReflection() {
-    namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<AllocBulkGroupEventNode>()
-        .def_ro("bulk_group_event", &AllocBulkGroupEventNode::bulk_group_event,
-                refl::AttachFieldFlag::SEqHashDef())
-        .def_ro("body", &AllocBulkGroupEventNode::body)
-        .def_ro("span", &AllocBulkGroupEventNode::span);
-  }
-
-  TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tir.AllocBulkGroupEvent", AllocBulkGroupEventNode, StmtNode);
-};
-
-class AllocBulkGroupEvent : public Stmt {
- public:
-  TVM_DLL explicit AllocBulkGroupEvent(BulkGroupEvent bulk_group_event, Stmt body,
-                                       Span span = Span());
-  TVM_FFI_DEFINE_OBJECT_REF_METHODS_NULLABLE(AllocBulkGroupEvent, Stmt, AllocBulkGroupEventNode);
-  TVM_DEFINE_OBJECT_REF_COW_METHOD(AllocBulkGroupEventNode);
-};
-
-class AllocSemaphoreEventTensorNode : public StmtNode {
- public:
-  /*! \brief The allocated semaphore event tensor. */
-  SemaphoreEventTensor sem_event_tensor;
-  /*! \brief The body of the alloc semaphore event tensor. */
-  Stmt body;
-
-  static void RegisterReflection() {
-    namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<AllocSemaphoreEventTensorNode>()
-        .def_ro("sem_event_tensor", &AllocSemaphoreEventTensorNode::sem_event_tensor,
-                refl::AttachFieldFlag::SEqHashDef())
-        .def_ro("body", &AllocSemaphoreEventTensorNode::body)
-        .def_ro("span", &AllocSemaphoreEventTensorNode::span);
-  }
-
-  TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tir.AllocSemaphoreEventTensor", AllocSemaphoreEventTensorNode,
-                                    StmtNode);
-};
-
-class AllocSemaphoreEventTensor : public Stmt {
- public:
-  TVM_DLL explicit AllocSemaphoreEventTensor(SemaphoreEventTensor sem_event_tensor, Stmt body,
-                                             Span span = Span());
-  TVM_FFI_DEFINE_OBJECT_REF_METHODS_NULLABLE(AllocSemaphoreEventTensor, Stmt,
-                                             AllocSemaphoreEventTensorNode);
-  TVM_DEFINE_OBJECT_REF_COW_METHOD(AllocSemaphoreEventTensorNode);
 };
 
 /*!

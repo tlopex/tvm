@@ -22,7 +22,6 @@
 #include <tvm/ffi/reflection/registry.h>
 #include <tvm/ir/op.h>
 #include <tvm/script/ir_builder/tir/ir.h>
-#include <tvm/tir/event.h>
 #include <tvm/tir/exec_scope.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/layout.h>
@@ -35,12 +34,7 @@ namespace script {
 namespace ir_builder {
 namespace tir {
 
-using tvm::tir::BaseEvent;
-using tvm::tir::BulkGroupEvent;
 using tvm::tir::IterVar;
-using tvm::tir::kEventImpl;
-using tvm::tir::SemaphoreEventTensor;
-using tvm::tir::SemaphoreEventTensorItem;
 using tvm::tir::TLayout;
 
 Buffer BufferDecl(ffi::Array<PrimExpr> shape, DataType dtype, ffi::String buffer_name,
@@ -417,25 +411,6 @@ ffi::Variant<Buffer, AllocBufferFrame> SBlockAllocBuffer(
                   "'T.alloc_buffer' is called under T.sblock() or T.prim_func()";
   }
   return buffer;
-}
-
-AllocBulkGroupEventFrame AllocBulkGroupEvent(kEventImpl impl, ffi::Array<ffi::Any> state,
-                                             ffi::String name) {
-  BulkGroupEvent event = BulkGroupEvent(impl, state, name);
-  ObjectPtr<AllocBulkGroupEventFrameNode> n = ffi::make_object<AllocBulkGroupEventFrameNode>();
-  n->bulk_group_event = event;
-  return AllocBulkGroupEventFrame(n);
-}
-
-AllocSemaphoreEventTensorFrame AllocSemaphoreEventTensor(kEventImpl impl,
-                                                         ffi::Array<ffi::Any> state,
-                                                         ffi::Array<PrimExpr> shape,
-                                                         ffi::String name) {
-  SemaphoreEventTensor event_tensor = SemaphoreEventTensor(impl, state, shape, name);
-  ObjectPtr<AllocSemaphoreEventTensorFrameNode> n =
-      ffi::make_object<AllocSemaphoreEventTensorFrameNode>();
-  n->sem_event_tensor = event_tensor;
-  return AllocSemaphoreEventTensorFrame(n);
 }
 
 namespace axis {
@@ -855,23 +830,6 @@ PrimExpr Ptr(runtime::DataType dtype, ffi::String storage_scope = "global",
 using tvm::script::ir_builder::details::Namer;
 
 TVM_STATIC_IR_FUNCTOR(Namer, vtable)
-    .set_dispatch<tvm::tir::BulkGroupEventNode>([](const ObjectRef& node,
-                                                   ffi::String name) -> void {
-      tvm::tir::BulkGroupEventNode* bulk_event =
-          const_cast<tvm::tir::BulkGroupEventNode*>(node.as<tvm::tir::BulkGroupEventNode>());
-      bulk_event->name = name;
-    });
-
-TVM_STATIC_IR_FUNCTOR(Namer, vtable)
-    .set_dispatch<tvm::tir::SemaphoreEventTensorNode>([](const ObjectRef& node,
-                                                         ffi::String name) -> void {
-      tvm::tir::SemaphoreEventTensorNode* sem_event_tensor =
-          const_cast<tvm::tir::SemaphoreEventTensorNode*>(
-              node.as<tvm::tir::SemaphoreEventTensorNode>());
-      sem_event_tensor->name = name;
-    });
-
-TVM_STATIC_IR_FUNCTOR(Namer, vtable)
     .set_dispatch<tvm::tir::BufferNode>([](const ObjectRef& node, ffi::String name) -> void {
       tvm::tir::BufferNode* buffer =
           const_cast<tvm::tir::BufferNode*>(node.as<tvm::tir::BufferNode>());
@@ -964,8 +922,6 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def("script.ir_builder.tir.BlockAttrs", BlockAttrs)
       .def("script.ir_builder.tir.SBlockAllocBuffer", SBlockAllocBuffer)
       .def("script.ir_builder.tir.AllocBuffer", AllocBuffer)
-      .def("script.ir_builder.tir.AllocBulkGroupEvent", AllocBulkGroupEvent)
-      .def("script.ir_builder.tir.AllocSemaphoreEventTensor", AllocSemaphoreEventTensor)
       .def("script.ir_builder.tir.AxisSpatial", axis::Spatial)
       .def("script.ir_builder.tir.AxisReduce", axis::Reduce)
       .def("script.ir_builder.tir.AxisScan", axis::Scan)
