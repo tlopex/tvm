@@ -31,11 +31,10 @@ namespace tir {
 namespace transform {
 
 Pass LowerTIRp() {
-  return tvm::transform::Sequential({LowerTIRpResolveScopeIds(), LowerTIRpScheduleOps(),
-                                     LowerTIRpResolveScopeSlices(),
-                                     LowerTIRpDedupCuTensorMaps(),
-                                     LowerTIRpCleanup()},
-                                    "tir.LowerTIRp");
+  return tvm::transform::Sequential(
+      {LowerTIRpResolveScopeIds(), LowerTIRpScheduleOps(), tvm::transform::PrintIR(),
+       LowerTIRpResolveScopeSlices(), LowerTIRpDedupCuTensorMaps(), LowerTIRpCleanup()},
+      "tir.LowerTIRp");
 }
 
 TVM_FFI_STATIC_INIT_BLOCK() {
