@@ -326,6 +326,7 @@ class FlashInferPagedKVCache(PagedKVCache):  # pylint: disable=too-few-public-me
         prefill_chunk_size: tir.Var,
         page_size: tir.Var,
         support_sliding_window: tir.Var,
+        model_type: tir.Var,
         layer_partition: rx.ShapeExpr,
         num_hidden_layers: int,
         num_attention_heads: int,
@@ -467,6 +468,7 @@ class FlashInferPagedKVCache(PagedKVCache):  # pylint: disable=too-few-public-me
                     prefill_chunk_size,
                     page_size,
                     support_sliding_window,
+                    model_type,
                 ]
             ),
             layer_partition,
