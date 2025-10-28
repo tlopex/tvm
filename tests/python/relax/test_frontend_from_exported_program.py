@@ -835,12 +835,17 @@ def test_hardtanh():
         @R.function
         def main(
             inp_0: R.Tensor((1, 3, 10, 10), dtype="float32")
-        ) -> R.Tuple(R.Tensor((1, 3, 10, 10), dtype="float32"), R.Tensor((1, 3, 10, 10), dtype="float32")):
+        ) -> R.Tuple(
+            R.Tensor((1, 3, 10, 10), dtype="float32"), R.Tensor((1, 3, 10, 10), dtype="float32")
+        ):
             with R.dataflow():
                 lv: R.Tensor((1, 3, 10, 10), dtype="float32") = R.clip(
                     inp_0, R.prim_value(T.float64(-1.0)), R.prim_value(T.float64(1.0))
                 )
-                gv: R.Tuple(R.Tensor((1, 3, 10, 10), dtype="float32"), R.Tensor((1, 3, 10, 10), dtype="float32")) = (lv, lv)
+                gv: R.Tuple(
+                    R.Tensor((1, 3, 10, 10), dtype="float32"),
+                    R.Tensor((1, 3, 10, 10), dtype="float32"),
+                ) = (lv, lv)
                 R.output(gv)
             return gv
 
@@ -875,12 +880,18 @@ def test_softplus():
             x: R.Tensor((1, 3, 10, 10), dtype="float32")
         ) -> R.Tuple(R.Tensor((1, 3, 10, 10), dtype="float32")):
             with R.dataflow():
-                lv: R.Tensor((1, 3, 10, 10), dtype="float32") = R.multiply(x, R.const(1.0, "float32"))
+                lv: R.Tensor((1, 3, 10, 10), dtype="float32") = R.multiply(
+                    x, R.const(1.0, "float32")
+                )
                 lv1: R.Tensor((1, 3, 10, 10), dtype="float32") = R.exp(lv)
                 lv2: R.Tensor((1, 3, 10, 10), dtype="float32") = R.add(lv1, R.const(1.0, "float32"))
                 lv3: R.Tensor((1, 3, 10, 10), dtype="float32") = R.log(lv2)
-                lv4: R.Tensor((1, 3, 10, 10), dtype="float32") = R.divide(lv3, R.const(1.0, "float32"))
-                lv5: R.Tensor((1, 3, 10, 10), dtype="bool") = R.greater(lv, R.const(20.0, "float32"))
+                lv4: R.Tensor((1, 3, 10, 10), dtype="float32") = R.divide(
+                    lv3, R.const(1.0, "float32")
+                )
+                lv5: R.Tensor((1, 3, 10, 10), dtype="bool") = R.greater(
+                    lv, R.const(20.0, "float32")
+                )
                 lv6: R.Tensor((1, 3, 10, 10), dtype="float32") = R.where(lv5, x, lv4)
                 gv: R.Tuple(R.Tensor((1, 3, 10, 10), dtype="float32")) = (lv6,)
                 R.output(gv)
@@ -931,11 +942,16 @@ def test_leakyrelu():
         @R.function
         def main(
             input: R.Tensor((1, 3, 10, 10), dtype="float32")
-        ) -> R.Tuple(R.Tensor((1, 3, 10, 10), dtype="float32"), R.Tensor((1, 3, 10, 10), dtype="float32")):
+        ) -> R.Tuple(
+            R.Tensor((1, 3, 10, 10), dtype="float32"), R.Tensor((1, 3, 10, 10), dtype="float32")
+        ):
             # block 0
             with R.dataflow():
                 lv: R.Tensor((1, 3, 10, 10), dtype="float32") = R.nn.leakyrelu(input, alpha=0.02)
-                gv: R.Tuple(R.Tensor((1, 3, 10, 10), dtype="float32"), R.Tensor((1, 3, 10, 10), dtype="float32")) = (lv, lv)
+                gv: R.Tuple(
+                    R.Tensor((1, 3, 10, 10), dtype="float32"),
+                    R.Tensor((1, 3, 10, 10), dtype="float32"),
+                ) = (lv, lv)
                 R.output(gv)
             return gv
 
@@ -963,7 +979,9 @@ def test_logaddexp():
                 lv1: R.Tensor((1, 3, 10, 10), dtype="float32") = R.where(lv, input1, input2)
                 lv2: R.Tensor((1, 3, 10, 10), dtype="float32") = R.where(lv, input2, input1)
                 lv3: R.Tensor((1, 3, 10, 10), dtype="float32") = R.abs(input1)
-                lv4: R.Tensor((1, 3, 10, 10), dtype="bool") = R.not_equal(lv3, R.const(float("inf"), "float32"))
+                lv4: R.Tensor((1, 3, 10, 10), dtype="bool") = R.not_equal(
+                    lv3, R.const(float("inf"), "float32")
+                )
                 lv5: R.Tensor((1, 3, 10, 10), dtype="bool") = R.equal(input1, input1)
                 lv6: R.Tensor((1, 3, 10, 10), dtype="bool") = R.multiply(lv5, lv4)
                 lv7: R.Tensor((1, 3, 10, 10), dtype="bool") = R.logical_not(lv6)
@@ -971,7 +989,9 @@ def test_logaddexp():
                 lv9: R.Tensor((1, 3, 10, 10), dtype="bool") = R.logical_and(lv7, lv8)
                 lv10: R.Tensor((1, 3, 10, 10), dtype="float32") = R.subtract(lv2, lv1)
                 lv11: R.Tensor((1, 3, 10, 10), dtype="float32") = R.exp(lv10)
-                lv12: R.Tensor((1, 3, 10, 10), dtype="float32") = R.add(lv11, R.const(1.0, "float32"))
+                lv12: R.Tensor((1, 3, 10, 10), dtype="float32") = R.add(
+                    lv11, R.const(1.0, "float32")
+                )
                 lv13: R.Tensor((1, 3, 10, 10), dtype="float32") = R.log(lv12)
                 lv14: R.Tensor((1, 3, 10, 10), dtype="float32") = R.add(lv1, lv13)
                 lv15: R.Tensor((1, 3, 10, 10), dtype="float32") = R.where(lv9, input1, lv14)
