@@ -96,6 +96,26 @@ class TorchFXImporter(BaseFXGraphImporter):
         one = relax.const(1, x.struct_info.dtype)
         return self.block_builder.emit(relax.op.log(relax.op.add(x, one)))
 
+    def _sqrt(self, node: fx.Node) -> relax.Var:
+        x = self.env[node.args[0]]
+        dtype = x.struct_info.dtype
+
+        # Check if input is integer type and convert to float32 if needed
+        if dtype in ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]:
+            x = self.block_builder.emit(relax.op.astype(x, "float32"))
+
+        return self.block_builder.emit(relax.op.sqrt(x))
+
+    def _rsqrt(self, node: fx.Node) -> relax.Var:
+        x = self.env[node.args[0]]
+        dtype = x.struct_info.dtype
+
+        # Check if input is integer type and convert to float32 if needed
+        if dtype in ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]:
+            x = self.block_builder.emit(relax.op.astype(x, "float32"))
+
+        return self.block_builder.emit(relax.op.rsqrt(x))
+
     def _log_softmax_module(self, node: fx.Node) -> relax.Var:
         x = self.env[node.args[0]]
         module = self.named_modules[node.target]
@@ -632,7 +652,17 @@ class TorchFXImporter(BaseFXGraphImporter):
     ########## Creation ##########
 
     def _inplace_copy(self, node: fx.Node) -> relax.Var:
+        dest = self.env[node.args[0]]
         src = self.env[node.args[1]]
+
+        if src.struct_info.dtype != dest.struct_info.dtype:
+            src = self.block_builder.emit(relax.op.astype(src, dest.struct_info.dtype))
+
+        dest_shape = self.shape_of(dest)
+        src_shape = self.shape_of(src)
+        if dest_shape != src_shape:
+            src = self.block_builder.emit(relax.op.broadcast_to(src, dest_shape))
+
         self.env[node.args[0]] = src
         return src
 
@@ -709,12 +739,6 @@ class TorchFXImporter(BaseFXGraphImporter):
             elif node.args[1] == "shape":
                 return self.shape_of(self.env[node.args[0]])
         return getattr(self.env[node.args[0]], node.args[1])
-
-    def _sym_size_int(self, node: fx.Node) -> relax.Expr:
-        x = self.env[node.args[0]]
-        shape = self.shape_of(x)
-        idx = node.args[1]
-        return self.block_builder.emit(relax.const(shape[idx].value, "int32"))
 
     def create_input_vars(self, input_info: List[Tuple[Tuple[int], str]]) -> List[relax.Var]:
         inputs = list()
@@ -825,7 +849,7 @@ class TorchFXImporter(BaseFXGraphImporter):
             "relu": self._unary_op(relax.op.nn.relu),
             "relu6": self._unary_op(relax.op.nn.relu6),
             "round": self._round,
-            "rsqrt": self._unary_op(relax.op.rsqrt),
+            "rsqrt": self._rsqrt,
             "selu": self._unary_op(relax.op.nn.selu),
             "sigmoid": self._unary_op(relax.op.sigmoid),
             "sign": self._unary_op(relax.op.sign),
@@ -834,7 +858,7 @@ class TorchFXImporter(BaseFXGraphImporter):
             "sinh": self._unary_op(relax.op.sinh),
             "softmax": self._softmax,
             "softplus": self._softplus,
-            "sqrt": self._unary_op(relax.op.sqrt),
+            "sqrt": self._sqrt,
             "square": self._unary_op(relax.op.square),
             "tan": self._unary_op(relax.op.tan),
             "tanh": self._unary_op(relax.op.tanh),
