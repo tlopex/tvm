@@ -31,7 +31,7 @@
 #include <tvm/tir/expr_functor.h>
 #include <tvm/tir/function.h>
 #include <tvm/tir/stmt.h>
-#include <tvm/tir/tirp_stmt.h>
+#include <tvm/tir/tirx_stmt.h>
 
 #include <unordered_map>
 #include <utility>
@@ -100,7 +100,7 @@ class StmtFunctor<R(const Stmt& n, Args... args)> {
   virtual R VisitStmt_(const EvaluateNode* op, Args... args) STMT_FUNCTOR_DEFAULT;
   virtual R VisitStmt_(const SBlockNode* op, Args... args) STMT_FUNCTOR_DEFAULT;
   virtual R VisitStmt_(const SBlockRealizeNode* op, Args... args) STMT_FUNCTOR_DEFAULT;
-  virtual R VisitStmt_(const tirp::OpCallNode* op, Args... args) STMT_FUNCTOR_DEFAULT;
+  virtual R VisitStmt_(const tirx::OpCallNode* op, Args... args) STMT_FUNCTOR_DEFAULT;
   virtual R VisitStmt_(const AllocBufferNode* op, Args... args) STMT_FUNCTOR_DEFAULT;
   virtual R VisitStmtDefault_(const Object* op, Args...) {
     TVM_FFI_THROW(InternalError) << "Do not have a default for " << op->GetTypeKey();
@@ -126,7 +126,7 @@ class StmtFunctor<R(const Stmt& n, Args... args)> {
     IR_STMT_FUNCTOR_DISPATCH(BufferStoreNode);
     IR_STMT_FUNCTOR_DISPATCH(SBlockNode);
     IR_STMT_FUNCTOR_DISPATCH(SBlockRealizeNode);
-    IR_STMT_FUNCTOR_DISPATCH(tirp::OpCallNode);
+    IR_STMT_FUNCTOR_DISPATCH(tirx::OpCallNode);
     IR_STMT_FUNCTOR_DISPATCH(AllocBufferNode);
     vtable.Finalize();
     return vtable;
@@ -183,7 +183,7 @@ class TVM_DLL StmtVisitor : protected StmtFunctor<void(const Stmt&)> {
   void VisitStmt_(const EvaluateNode* op) override;
   void VisitStmt_(const SBlockNode* op) override;
   void VisitStmt_(const SBlockRealizeNode* op) override;
-  void VisitStmt_(const tirp::OpCallNode* op) override;
+  void VisitStmt_(const tirx::OpCallNode* op) override;
   void VisitStmt_(const AllocBufferNode* op) override;
 };
 
@@ -301,7 +301,7 @@ class TVM_DLL StmtMutator : protected StmtFunctor<Stmt(const Stmt&)> {
   Stmt VisitStmt_(const EvaluateNode* op) override;
   Stmt VisitStmt_(const SBlockNode* op) override;
   Stmt VisitStmt_(const SBlockRealizeNode* op) override;
-  Stmt VisitStmt_(const tirp::OpCallNode* op) override;
+  Stmt VisitStmt_(const tirx::OpCallNode* op) override;
   Stmt VisitStmt_(const AllocBufferNode* op) override;
   /*!
    * \brief Alternative advance method for SeqStmtNode.

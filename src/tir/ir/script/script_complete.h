@@ -31,7 +31,7 @@ namespace tvm {
 namespace tir {
 
 PrimFunc ScriptComplete(PrimFunc func, const ffi::Array<Buffer>& root_allocates,
-                        bool is_tirp = false);
+                        bool is_tirx = false);
 
 }  // namespace tir
 }  // namespace tvm

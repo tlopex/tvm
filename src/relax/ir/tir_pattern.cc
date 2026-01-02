@@ -24,7 +24,7 @@ namespace relax {
 
 TVM_FFI_STATIC_INIT_BLOCK() { MatchResultNode::RegisterReflection(); }
 
-MatchResult::MatchResult(TIRPattern pattern, ffi::Array<PrimExpr> symbol_values,
+MatchResult::MatchResult(TIRXattern pattern, ffi::Array<PrimExpr> symbol_values,
                          ffi::Array<tir::Buffer> matched_buffers) {
   auto n = ffi::make_object<MatchResultNode>();
   n->pattern = std::move(pattern);

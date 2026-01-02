@@ -30,7 +30,7 @@
 #include <tvm/tir/predicate.h>
 #include <tvm/tir/stmt.h>
 #include <tvm/tir/stmt_functor.h>
-#include <tvm/tir/tirp_op.h>
+#include <tvm/tir/tirx_op.h>
 
 #include <string>
 #include <unordered_map>

@@ -26,7 +26,7 @@
 #include <tvm/tir/exec_scope.h>
 #include <tvm/tir/layout.h>
 #include <tvm/tir/op.h>
-#include <tvm/tir/tirp_stmt.h>
+#include <tvm/tir/tirx_stmt.h>
 
 namespace tvm {
 namespace script {
@@ -70,7 +70,7 @@ Buffer BufferDecl(ffi::Array<PrimExpr> shape, DataType dtype, ffi::String buffer
  * \brief The primitive function statement.
  * \return The PrimFuncFrame.
  */
-PrimFuncFrame PrimFunc(bool is_private, bool is_tirp = false);
+PrimFuncFrame PrimFunc(bool is_private, bool is_tirx = false);
 
 /*!
  * \brief The PrimFunc variable arguments adding function.
@@ -144,7 +144,7 @@ SBlockFrame Block(ffi::String name, bool no_realize = false, ffi::String exec_sc
                   ffi::Optional<ffi::Array<PrimExpr>> scope_slice_extents = std::nullopt,
                   ffi::String scope_slice_parent = "");
 
-void OpCall(tvm::tir::tirp::OpCall op_call);
+void OpCall(tvm::tir::tirx::OpCall op_call);
 
 BlockFrame BlockFrameSlice(BlockFrame block, ffi::Variant<ffi::Array<Range>, PrimExpr> slice);
 
@@ -212,7 +212,7 @@ void BlockAttrs(ffi::Map<ffi::String, ffi::Any> attrs);
  * \param layout The layout of the buffer.
  * \param allocated_addr The allocated address of the buffer. Might be multi-dimensional.
  * \return The allocated buffer or the AllocBufferFrame if the function is called under
- * T.prim_func(tirp=True).
+ * T.prim_func(tirx=True).
  */
 ffi::Variant<Buffer, AllocBufferFrame> SBlockAllocBuffer(
     ffi::Array<PrimExpr> shape, DataType dtype = DataType::Float(32),
@@ -455,7 +455,7 @@ LaunchThreadFrame LaunchThread(Var var, PrimExpr extent);
 LaunchThreadFrame LaunchThread(ffi::String thread_tag, PrimExpr extent);
 
 /*!
- * \brief Compose TIRp op.
+ * \brief Compose TIRx op.
  * \param workspace The workspace of the compose op.
  * \param config The config of the compose op.
  * \param dispatch The optional dispatch variant name.

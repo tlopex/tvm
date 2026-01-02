@@ -25,7 +25,7 @@
 #include <tvm/tir/exec_scope.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/layout.h>
-#include <tvm/tir/tirp_op.h>
+#include <tvm/tir/tirx_op.h>
 
 #include "./utils.h"
 
@@ -70,7 +70,7 @@ Buffer BufferDecl(ffi::Array<PrimExpr> shape, DataType dtype, ffi::String buffer
                 axis_separators.value_or(ffi::Array<IntImm>()), Span(), layout, allocated_addr);
 }
 
-PrimFuncFrame PrimFunc(bool is_private, bool is_tirp) {
+PrimFuncFrame PrimFunc(bool is_private, bool is_tirx) {
   ObjectPtr<PrimFuncFrameNode> n = ffi::make_object<PrimFuncFrameNode>();
   n->name = std::nullopt;
   n->is_private = is_private;
@@ -80,7 +80,7 @@ PrimFuncFrame PrimFunc(bool is_private, bool is_tirp) {
   n->attrs = {};
   n->env_threads.clear();
   n->root_alloc_buffers.clear();
-  n->is_tirp = is_tirp;
+  n->is_tirx = is_tirx;
   return PrimFuncFrame(n);
 }
 
@@ -195,7 +195,7 @@ SBlockFrame Block(ffi::String name, bool no_realize, ffi::String exec_scope,
   return SBlockFrame(n);
 }
 
-void OpCall(tvm::tir::tirp::OpCall op_call) { AddToParent(op_call); }
+void OpCall(tvm::tir::tirx::OpCall op_call) { AddToParent(op_call); }
 
 BlockFrame BlockFrameSlice(BlockFrame block, ffi::Variant<ffi::Array<Range>, PrimExpr> slice) {
   TVM_FFI_ICHECK(block->exec_scope.defined()) << "InternalError: Block frame must have an execution scope";
@@ -394,7 +394,7 @@ ffi::Variant<Buffer, AllocBufferFrame> SBlockAllocBuffer(
                                      << "'T.alloc_buffer' is called under T.prim_func()";
   auto func_frame = opt_func_frame.value();
 
-  if (func_frame->is_tirp) {
+  if (func_frame->is_tirx) {
     ObjectPtr<AllocBufferFrameNode> n = ffi::make_object<AllocBufferFrameNode>();
     n->buffer = buffer;
     return AllocBufferFrame(n);
