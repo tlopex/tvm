@@ -27,6 +27,7 @@
 #include <tvm/target/target.h>
 #include <tvm/tir/function.h>
 #include <tvm/tir/op.h>
+#include <tvm/tir/stmt.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/tirx_op.h>
 #include <tvm/tir/transform.h>

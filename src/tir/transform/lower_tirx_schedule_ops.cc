@@ -27,6 +27,7 @@
 #include <tvm/tir/exec_scope.h>
 #include <tvm/tir/function.h>
 #include <tvm/tir/op.h>
+#include <tvm/tir/stmt.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/tirx_op.h>
 #include <tvm/tir/transform.h>
@@ -93,20 +94,22 @@ class TIRxOpScheduler : public StmtExprMutator {
     }
   }
 
+  Stmt VisitStmt_(const ExecScopeStmtNode* op) final {
+    exec_scope_stack_.push_back(op->exec_scope);
+    Stmt body = VisitStmt(op->body);
+    exec_scope_stack_.pop_back();
+    if (body.same_as(op->body)) {
+      return ffi::GetRef<Stmt>(op);
+    }
+    return ExecScopeStmt(op->exec_scope, body);
+  }
+
   Stmt VisitStmt_(const SBlockNode* op) final {
     bool is_first_block = false;
     std::swap(is_first_block, is_first_block_);
     SBlock block = ffi::GetRef<SBlock>(op);
     auto* n = block.CopyOnWrite();
-    // Get the exec_scope
-    if (op->exec_scope.defined()) {
-      exec_scope_stack_.push_back(op->exec_scope.value());
-    }
     n->body = VisitStmt(n->body);
-    // Pop the exec_scope
-    if (op->exec_scope.defined()) {
-      exec_scope_stack_.pop_back();
-    }
     if (is_first_block) {
       // Insert device init stmts and alloc buffers
       for (const auto& stmt : device_init_stmts_) {
@@ -240,27 +243,20 @@ class ScopeMerger : public StmtExprMutator {
     if (auto* n = stmt.as<SeqStmtNode>()) {
       std::vector<Stmt> seq;
       for (size_t i = 0; i < n->seq.size();) {
-        if (auto* realize = n->seq[i].as<SBlockRealizeNode>()) {
-          // Find a sequence of blocks with the same exec_scope
-          auto block = realize->block;
-          auto* new_block = block.CopyOnWrite();
-          std::vector<Stmt> new_body{block->body};
-          ICHECK(block->exec_scope.defined()) << "Internal Error: exec_scope is not defined";
-          auto scope = block->exec_scope.value();
+        if (auto* exec_scope_stmt = n->seq[i].as<ExecScopeStmtNode>()) {
+          // Find a sequence of ExecScopeStmts with the same exec_scope
+          std::vector<Stmt> new_body{exec_scope_stmt->body};
+          auto scope = exec_scope_stmt->exec_scope;
           for (i++; i < n->seq.size(); i++) {
-            if (auto* next_realize = n->seq[i].as<SBlockRealizeNode>()) {
-              const auto& next_block = next_realize->block;
-              ICHECK(next_block->exec_scope.defined())
-                  << "Internal Error: exec_scope is not defined";
-              if (scope->Is(next_block->exec_scope.value())) {
-                new_body.push_back(next_block->body);
+            if (auto* next_exec_scope = n->seq[i].as<ExecScopeStmtNode>()) {
+              if (scope->Is(next_exec_scope->exec_scope)) {
+                new_body.push_back(next_exec_scope->body);
                 continue;
               }
             }
             break;
           }
-          new_block->body = SeqStmt::Flatten(new_body);
-          seq.push_back(SBlockRealize({}, Bool(true), block));
+          seq.push_back(ExecScopeStmt(scope, SeqStmt::Flatten(new_body)));
         } else {
           seq.push_back(n->seq[i]);
           i++;
