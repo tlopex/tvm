@@ -46,6 +46,8 @@ namespace tir {
 using relax::FCodegen;
 using relax::MatchResult;
 using relax::TIRXattern;
+using s_tir::ExprComparator;
+using s_tir::TensorizeComparator;
 
 /*! \brief helper to match a for stmt to a pattern*/
 class ForMatcher : public TensorizeComparator {
