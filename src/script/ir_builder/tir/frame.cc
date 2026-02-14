@@ -103,18 +103,24 @@ void PrimFuncFrameNode::ExitWithScope() {
 
 void SBlockFrameNode::ExitWithScope() {
   TIRFrameNode::ExitWithScope();
+
+  ffi::Optional<PrimFuncFrame> frame = IRBuilder::Current()->FindFrame<PrimFuncFrame>();
+  ICHECK(frame.defined()) << "ValueError: Block must be defined within a PrimFunc";
+
+  // Hard-disable SBlock in tirx=True context
+  CHECK(!frame.value()->is_tirx)
+      << "ValueError: `T.sblock()` / `Tx.sblock()` is not allowed in tirx=True mode. "
+         "Use `with Tx.kernel/cta/warp/thread(...)` for execution scopes and "
+         "`T.attr(...)` for annotations instead.";
+
   ffi::Array<tvm::tir::Buffer> tir_alloc_buffers;
   for (const tvm::tir::Buffer& buffer : alloc_buffers) {
     tir_alloc_buffers.push_back(buffer);
   }
   ffi::Map<ffi::String, Any> attrs = annotations.value_or({});
 
-  ffi::Optional<PrimFuncFrame> frame = IRBuilder::Current()->FindFrame<PrimFuncFrame>();
-  ICHECK(frame.defined()) << "ValueError: Block must be defined within a PrimFunc";
-  if (!frame.value()->is_tirx) {
-    if (int detect_access = (!reads.defined()) | (!writes.defined() << 1)) {
-      attrs.Set("tir.script_parsing_detect_access", tvm::IntImm(DataType::Int(64), detect_access));
-    }
+  if (int detect_access = (!reads.defined()) | (!writes.defined() << 1)) {
+    attrs.Set("tir.script_parsing_detect_access", tvm::IntImm(DataType::Int(64), detect_access));
   }
   tvm::tir::SBlock block(iter_vars, reads.value_or(ffi::Array<tvm::tir::BufferRegion>()),
                          writes.value_or(ffi::Array<tvm::tir::BufferRegion>()), name, AsStmt(stmts),
@@ -134,11 +140,12 @@ void ExecScopeFrameNode::ExitWithScope() {
   TIRFrameNode::ExitWithScope();
   ICHECK(exec_scope.defined()) << "InternalError: ExecScopeFrame must have an execution scope";
   tvm::tir::Stmt body = AsStmt(stmts);
-  if (annotations.defined() && !annotations.value().empty()) {
-    // If annotations are present (e.g., tirx.scope_partition), wrap the body in an SBlock
-    ffi::Map<ffi::String, ffi::Any> attrs = annotations.value();
-    tvm::tir::SBlock block({}, {}, {}, "", body, std::nullopt, {}, {}, attrs, tvm::Span());
-    body = tvm::tir::SBlockRealize({}, Bool(true), block);
+  // Wrap body with AttrStmt nodes for each annotation (set by scope_attr)
+  if (annotations.defined()) {
+    for (const auto& kv : annotations.value()) {
+      PrimExpr val = kv.second.cast<PrimExpr>();
+      body = tvm::tir::AttrStmt(tvm::IntImm(DataType::Int(32), 0), kv.first, val, body);
+    }
   }
   AddToParent(tvm::tir::ExecScopeStmt(exec_scope.value(), body));
 }
