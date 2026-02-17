@@ -140,13 +140,6 @@ void ExecScopeFrameNode::ExitWithScope() {
   TIRFrameNode::ExitWithScope();
   ICHECK(exec_scope.defined()) << "InternalError: ExecScopeFrame must have an execution scope";
   tvm::tir::Stmt body = AsStmt(stmts);
-  // Wrap body with AttrStmt nodes for each annotation (set by scope_attr)
-  if (annotations.defined()) {
-    for (const auto& kv : annotations.value()) {
-      PrimExpr val = kv.second.cast<PrimExpr>();
-      body = tvm::tir::AttrStmt(tvm::IntImm(DataType::Int(32), 0), kv.first, val, body);
-    }
-  }
   AddToParent(tvm::tir::ExecScopeStmt(exec_scope.value(), body));
 }
 
