@@ -273,7 +273,7 @@ class AxisAttrMap : public AttrRegistryMap<Axis, ValueType> {
 
 // Define a macro to register the axis entry.
 #define TVM_AXIS_REGISTER_VAR_DEF \
-  static DMLC_ATTRIBUTE_UNUSED ::tvm::tir::AxisRegEntry& __make_##Axis
+  static TVM_ATTRIBUTE_UNUSED ::tvm::tir::AxisRegEntry& __make_##Axis
 
 #define TVM_REGISTER_AXIS(AxisName)                        \
   TVM_STR_CONCAT(TVM_AXIS_REGISTER_VAR_DEF, __COUNTER__) = \
