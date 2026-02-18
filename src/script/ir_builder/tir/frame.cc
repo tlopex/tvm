@@ -46,6 +46,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   DeclBufferFrameNode::RegisterReflection();
   ComposeOpFrameNode::RegisterReflection();
   AllocBufferFrameNode::RegisterReflection();
+  HintFrameNode::RegisterReflection();
 }
 
 void PrimFuncFrameNode::ExitWithScope() {
@@ -262,6 +263,20 @@ void ComposeOpFrameNode::ExitWithScope() {
 void AllocBufferFrameNode::ExitWithScope() {
   TIRFrameNode::ExitWithScope();
   AddToParent(tvm::tir::AllocBuffer(buffer, AsStmt(stmts)));
+}
+
+void HintFrameNode::ExitWithScope() {
+  TIRFrameNode::ExitWithScope();
+  // Always store attrs as a structured Map in the node field
+  ffi::Map<ffi::String, Any> full_attrs;
+  if (!message.empty()) {
+    full_attrs.Set("message", ffi::String(message));
+  }
+  for (const auto& [k, v] : attrs) {
+    full_attrs.Set(k, v);
+  }
+  AddToParent(tvm::tir::AttrStmt(
+      full_attrs, "tirx_hint", IntImm(DataType::Int(32), 1), AsStmt(stmts)));
 }
 
 }  // namespace tir
