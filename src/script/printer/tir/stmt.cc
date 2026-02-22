@@ -171,6 +171,7 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
 
 TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
     .set_dispatch<tir::Bind>("", [](tir::Bind stmt, AccessPath p, IRDocsifier d) -> Doc {
+      bool concise = AllowConciseScoping(d, stmt);
       // Step 1. Type annotation
       ICHECK(stmt->var->type_annotation.defined())
           << "Type annotation is required for variable: " << stmt->var->name_hint;
@@ -187,6 +188,12 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
       if (!d->IsVarDefined(stmt->var)) {
         TVM_FFI_ICHECK(!d->frames.empty());
         ExprDoc lhs = DefineVar(stmt->var, d->frames.back(), d);
+        if (concise) {
+          ExprDoc let_ann = type_doc.defined()
+                                ? ExprDoc(IndexDoc(TIR(d, "let"), {type_doc.value()}))
+                                : TIR(d, "let");
+          return AssignDoc(lhs, rhs, let_ann);
+        }
         return AssignDoc(lhs, rhs, type_doc);
       } else {
         ExprDoc lhs = d->AsDoc<ExprDoc>(stmt->var, p->Attr("var"));
@@ -243,8 +250,94 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
         });
 
 namespace {
+
+bool IsTIRxFunc(const IRDocsifier& d) {
+  for (Frame f : d->frames) {
+    if (const auto* tir_f = f.as<TIRFrameNode>()) {
+      if (auto func = tir_f->tir.as<tir::PrimFuncNode>()) {
+        if (func->attrs.defined() && func->attrs->dict.count(tvm::attr::kIsTIRx)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+bool IsScalarBuffer(const tir::Buffer& buffer) {
+  return buffer->shape.size() == 1 && tir::is_one(buffer->shape[0]);
+}
+
 Doc AllocBufferDoc(tir::AllocBuffer stmt, AccessPath p, IRDocsifier d) {
   bool concise = AllowConciseScoping(d, stmt);
+
+  // TIRX scalar: print as  x: T.dtype = init  or  x: T.dtype
+  if (concise && IsTIRxFunc(d) && IsScalarBuffer(stmt->buffer)) {
+    // Define the buffer and its data pointer in a frame
+    With<TIRFrame> f(d, stmt);
+    ExprDoc lhs = DefineBuffer(stmt->buffer, *f, d);
+    // Define the buffer's data pointer inline as buffer_name.data
+    if (!d->IsVarDefined(stmt->buffer->data)) {
+      tir::Buffer buf = stmt->buffer;
+      d->Define(stmt->buffer->data, *f, [d, buf, p]() {
+        return d->AsDoc<ExprDoc>(buf, p->Attr("buffer"))->Attr("data");
+      });
+    }
+    // Type annotation: T.dtype
+    ExprDoc type_ann = TIR(d, DType2Str(stmt->buffer->dtype));
+
+    // Check if the first body statement is a BufferStore to this buffer (init pattern)
+    tir::Stmt body = stmt->body;
+    ffi::Optional<ExprDoc> init_rhs = std::nullopt;
+    const tir::BufferStoreNode* init_store = nullptr;
+
+    if (const auto* seq = body.as<tir::SeqStmtNode>()) {
+      if (seq->seq.size() > 0) {
+        init_store = seq->seq[0].as<tir::BufferStoreNode>();
+      }
+    } else {
+      init_store = body.as<tir::BufferStoreNode>();
+    }
+
+    // Check that init value doesn't reference the buffer itself (self-referencing init)
+    auto init_refs_self = [&](const tir::BufferStoreNode* store) -> bool {
+      if (!store) return false;
+      bool found = false;
+      tir::PostOrderVisit(store->value, [&](const ObjectRef& node) {
+        if (const auto* load = node.as<tir::BufferLoadNode>()) {
+          if (load->buffer.same_as(stmt->buffer)) found = true;
+        }
+      });
+      return found;
+    };
+
+    if (init_store && init_store->buffer.same_as(stmt->buffer) &&
+        init_store->indices.size() == 1 && tir::is_zero(init_store->indices[0]) &&
+        !init_refs_self(init_store)) {
+      init_rhs = d->AsDoc<ExprDoc>(init_store->value, p->Attr("body")->Attr("value"));
+      // Process rest of body (skip the init store)
+      if (const auto* seq = body.as<tir::SeqStmtNode>()) {
+        for (int i = 1, n = seq->seq.size(); i < n; ++i) {
+          f->get()->allow_concise_scoping = (i == n - 1);
+          Doc doc = d->AsDoc(seq->seq[i], p->Attr("body")->Attr("seq")->ArrayItem(i));
+          if (const auto* block = doc.as<StmtBlockDocNode>()) {
+            (*f)->stmts.insert((*f)->stmts.end(), block->stmts.begin(), block->stmts.end());
+          } else {
+            (*f)->stmts.push_back(Downcast<StmtDoc>(doc));
+          }
+        }
+      }
+      // If body was just the single BufferStore, no more body to process
+    } else {
+      // No init pattern, process full body
+      AsDocBody(stmt->body, p->Attr("body"), f->get(), d);
+    }
+
+    ffi::Array<StmtDoc>* stmts = &(*f)->stmts;
+    stmts->insert(stmts->begin(), AssignDoc(lhs, init_rhs, type_ann));
+    return StmtBlockDoc(*stmts);
+  }
+
   ExprDoc rhs = BufferDecl(stmt->buffer, "alloc_buffer", {}, p->Attr("buffer"), d->frames.back(), d,
                            BufferVarDefinition::DataPointer);
   With<TIRFrame> f(d, stmt);
