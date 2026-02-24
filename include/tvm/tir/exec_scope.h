@@ -77,13 +77,19 @@ class ScopeIdDefNode : public Object {
   ffi::Array<PrimExpr> extents;
   /*! \brief The scope of the scope id */
   ScopePair scope;
+  /*!
+   * \brief Optional preferred extents (cluster→cta only).
+   * Maps to cudaLaunchAttributePreferredClusterDimension (CUDA 12.8+).
+   */
+  ffi::Optional<ffi::Array<PrimExpr>> preferred_extents;
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<ScopeIdDefNode>()
         .def_ro("def_ids", &ScopeIdDefNode::def_ids, refl::AttachFieldFlag::SEqHashDef())
         .def_ro("extents", &ScopeIdDefNode::extents)
-        .def_ro("scope", &ScopeIdDefNode::scope);
+        .def_ro("scope", &ScopeIdDefNode::scope)
+        .def_ro("preferred_extents", &ScopeIdDefNode::preferred_extents);
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
@@ -92,8 +98,10 @@ class ScopeIdDefNode : public Object {
 
 class ScopeIdDef : public ObjectRef {
  public:
-  TVM_DLL explicit ScopeIdDef(ffi::Array<Var> def_ids, ffi::Array<PrimExpr> extents,
-                              ScopePair scope);
+  TVM_DLL explicit ScopeIdDef(
+      ffi::Array<Var> def_ids, ffi::Array<PrimExpr> extents, ScopePair scope,
+      ffi::Optional<ffi::Array<PrimExpr>> preferred_extents =
+          ffi::Optional<ffi::Array<PrimExpr>>(std::nullopt));
 
   PrimExpr fused_extent() const;
 
@@ -249,12 +257,6 @@ class ExecScopeSlice : public ExecScope {
   TVM_FFI_DEFINE_OBJECT_REF_METHODS_NULLABLE(ExecScopeSlice, ExecScope, ExecScopeSliceNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(ExecScopeSliceNode);
 };
-
-/******** Helper functions ********/
-/*! \brief ExecScope order from highest to lowest */
-static const std::unordered_map<ffi::String, int> ScopeOrder = {
-    {"world", 0},     {"kernel", 1}, {"cluster", 2}, {"cta", 3},
-    {"warpgroup", 4}, {"warp", 5},   {"thread", 6}};
 
 }  // namespace tir
 }  // namespace tvm
