@@ -17,4 +17,5 @@
 # ruff: noqa: F403
 """TVM Script APIs of TVM Python Package for TIR"""
 
+from .ir_builder.tir.ir import meta_class, meta_var  # noqa: F401
 from .parser.tir import *  # pylint: disable=redefined-builtin,unused-wildcard-import,wildcard-import

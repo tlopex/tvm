@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+#include <tvm/runtime/logging.h>
 #include <tvm/script/ir_builder/ir/ir.h>
 #include <tvm/script/ir_builder/tir/frame.h>
 #include <tvm/tir/function.h>
@@ -275,8 +276,8 @@ void HintFrameNode::ExitWithScope() {
   for (const auto& [k, v] : attrs) {
     full_attrs.Set(k, v);
   }
-  AddToParent(tvm::tir::AttrStmt(
-      full_attrs, "tirx_hint", IntImm(DataType::Int(32), 1), AsStmt(stmts)));
+  AddToParent(
+      tvm::tir::AttrStmt(full_attrs, "tirx_hint", IntImm(DataType::Int(32), 1), AsStmt(stmts)));
 }
 
 }  // namespace tir
