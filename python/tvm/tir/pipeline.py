@@ -21,8 +21,6 @@
 import tvm
 from tvm import tir, tirx
 
-from . import backend
-
 
 def default_tir_pipeline():
     """The default tir pipeline used in tvm.tir.build"""
@@ -175,8 +173,7 @@ def trn_pipeline():
     @tvm.transform.module_pass(opt_level=0)
     def _pipeline(mod: tvm.ir.IRModule, _ctx: tvm.transform.PassContext) -> tvm.ir.IRModule:
         """The default lowering passes for TRN backend."""
-        pass_ctx = tvm.transform.PassContext.current()
-        config = pass_ctx.config
+        tvm.transform.PassContext.current()
         passes = [
             tirx.transform.PrivateBufferAlloc(),
             tirx.transform.NaiveAllocator(),
@@ -249,7 +246,7 @@ def get_tir_pipeline(name: str | None = None, **kwargs) -> tvm.transform.Pass:
         name = "s_tir"
     if name not in PIPELINE_MAP:
         raise ValueError(
-            f"Unknown pre-built pipeline {name}," f"candidates are {list(PIPELINE_MAP.keys())}"
+            f"Unknown pre-built pipeline {name},candidates are {list(PIPELINE_MAP.keys())}"
         )
     return PIPELINE_MAP[name](**kwargs)
 
