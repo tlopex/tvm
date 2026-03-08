@@ -133,6 +133,13 @@ std::string Join(std::string sep, llvm::ArrayRef<std::string> strings) {
 
 }  // namespace
 
+static const llvm::Target* CreateLLVMTargetInstance(const std::string triple, bool allow_missing);
+static std::unique_ptr<llvm::TargetMachine> CreateLLVMTargetMachine(
+    const llvm::Target* llvm_instance, const std::string& triple, const std::string& cpu,
+    const std::string& features, const llvm::TargetOptions& target_options,
+    const llvm::Reloc::Model& reloc_model, const llvm::CodeModel::Model& code_model,
+    const llvm::CodeGenOptLevel& opt_level);
+
 // LLVMInstance
 
 LLVMInstance::LLVMInstance() {
@@ -209,10 +216,18 @@ LLVMTargetInfo::LLVMTargetInfo(LLVMInstance& instance,
   }
   // llvm module target
   if (Downcast<ffi::String>(target.Get("kind").value()) == "llvm") {
-    // legalize -mcpu with the target -mtriple
-    auto arches = GetAllLLVMTargetArches();
-    bool has_arch =
-        std::any_of(arches.begin(), arches.end(), [&](const auto& var) { return var == cpu_; });
+    // Legalize -mcpu with the target -mtriple.
+    // Use LLVM's CPU parser directly instead of enumerating processor descriptions, because
+    // aliases like "apple-m1/m2" may be accepted by LLVM but not listed in descriptions.
+    bool has_arch = false;
+    auto llvm_instance = CreateLLVMTargetInstance(triple_, true);
+    std::unique_ptr<llvm::TargetMachine> target_machine =
+        CreateLLVMTargetMachine(llvm_instance, triple_, "", "", llvm::TargetOptions(),
+                                llvm::Reloc::PIC_, llvm::CodeModel::Small, defaults::opt_level);
+    const auto* mc_info = target_machine ? target_machine->getMCSubtargetInfo() : nullptr;
+    if (mc_info) {
+      has_arch = mc_info->isCPUStringValid(cpu_.c_str());
+    }
     if (!has_arch) {
       // Flag an error, but don't abort. This mimicks the behaviour of 'llc' to
       // give the code a chance to run with a less-specific target.

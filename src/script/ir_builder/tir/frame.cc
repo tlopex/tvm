@@ -45,7 +45,6 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   ElseFrameNode::RegisterReflection();
   ComposeOpFrameNode::RegisterReflection();
   DeclBufferFrameNode::RegisterReflection();
-  ComposeOpFrameNode::RegisterReflection();
   AllocBufferFrameNode::RegisterReflection();
   HintFrameNode::RegisterReflection();
 }
@@ -242,11 +241,10 @@ void ElseFrameNode::ExitWithScope() {
 void DeclBufferFrameNode::ExitWithScope() {
   TIRFrameNode::ExitWithScope();
   if (allocated) {
-    AddToParent(tvm::tir::DeclBuffer(buffer, AsStmt(stmts)));
+    AddToParent(tvm::tir::SeqStmt::Flatten(tvm::tir::DeclBuffer(buffer), AsStmt(stmts)));
   } else {
-    AddToParent(tvm::tir::Allocate(buffer->data, buffer->dtype, buffer->shape,
-                                   tvm::IntImm(DataType::Bool(), 1),
-                                   tvm::tir::DeclBuffer(buffer, AsStmt(stmts))));
+    // data is undefined in `decl_buffer(...)`, lower to `alloc_buffer(...)`.
+    AddToParent(tvm::tir::SeqStmt::Flatten(tvm::tir::AllocBuffer(buffer), AsStmt(stmts)));
   }
 }
 
@@ -265,7 +263,7 @@ void ComposeOpFrameNode::ExitWithScope() {
 
 void AllocBufferFrameNode::ExitWithScope() {
   TIRFrameNode::ExitWithScope();
-  AddToParent(tvm::tir::AllocBuffer(buffer, AsStmt(stmts)));
+  AddToParent(tvm::tir::SeqStmt::Flatten(tvm::tir::AllocBuffer(buffer), AsStmt(stmts)));
 }
 
 void HintFrameNode::ExitWithScope() {

@@ -75,12 +75,9 @@ def default_tir_pipeline():
             passes.append(tvm.s_tir.transform.InstrumentBoundCheckers())
         if bool(config.get("tir.ptx_ldg32", False)):
             passes.append(tvm.s_tir.transform.InjectPTXLDG32(True))
-        passes.append(
-            tir.transform.CommonSubexprElimTIR(
-                not bool(config.get("tir.disable_cse_tir", False)),
-                bool(config.get("tir.enable_equiv_terms_in_cse_tir", False)),
-            )
-        )
+        if not bool(config.get("tir.disable_cse_tir", False)):
+            passes.append(tir.transform.CommonSubexprElim())
+            passes.append(tir.transform.ConvertSSA())
         if bool(config.get("tir.instrument_lwp", False)):
             passes.append(tvm.s_tir.transform.InstrumentProfileIntrinsics())
         passes.extend(
@@ -146,21 +143,24 @@ def tirx_pipeline():
             tir.transform.NarrowDataType(32),
             tir.transform.VectorizeLoop(not bool(config.get("tir.disable_vectorize", False))),
             tir.transform.UnrollLoop(),
-            tir.transform.CommonSubexprElimTIR(
-                not bool(config.get("tir.disable_cse_tir", False)),
-                bool(config.get("tir.enable_equiv_terms_in_cse_tir", False)),
-            ),
-            tir.transform.Simplify(),
-            tir.transform.FP8ComputeLegalize(),
-            tir.transform.VerifyMemory(),
-            tir.transform.AnnotateEntryFunc(),
-            tir.transform.AnnotateDeviceRegions(),
-            tir.transform.SplitHostDevice(),
-            tir.transform.MakePackedAPI(),
-            tir.transform.FP8StorageLegalize(),
-            tir.transform.BF16StorageLegalize(),
-            tir.transform.LowerDeviceKernelLaunch(),
         ]
+        if not bool(config.get("tir.disable_cse_tir", False)):
+            passes.append(tir.transform.CommonSubexprElim())
+            passes.append(tir.transform.ConvertSSA())
+        passes.extend(
+            [
+                tir.transform.Simplify(),
+                tir.transform.FP8ComputeLegalize(),
+                tir.transform.VerifyMemory(),
+                tir.transform.AnnotateEntryFunc(),
+                tir.transform.AnnotateDeviceRegions(),
+                tir.transform.SplitHostDevice(),
+                tir.transform.MakePackedAPI(),
+                tir.transform.FP8StorageLegalize(),
+                tir.transform.BF16StorageLegalize(),
+                tir.transform.LowerDeviceKernelLaunch(),
+            ]
+        )
         mod = tvm.ir.transform.Sequential(passes)(mod)
         return mod
 

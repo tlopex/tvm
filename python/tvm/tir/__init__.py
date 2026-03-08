@@ -42,7 +42,29 @@ from .stmt import (
 from .stmt import SeqStmt
 from .stmt import IfThenElse, Evaluate, stmt_seq, stmt_list
 from .stmt import BufferRegion, MatchBufferRegion, SBlock, SBlockRealize, ExecScopeStmt
-from .stmt import OpCall, AllocBuffer
+from .stmt import OpCall
+
+
+def LetStmt(var, value, body=None, span=None):
+    """Backward-compatible LetStmt constructor.
+
+    New IR represents let as leaf `Bind`. This helper keeps the old
+    `LetStmt(var, value, body)` surface by lowering to `SeqStmt([Bind, body])`
+    while tagging the SeqStmt for stmt_functor compatibility dispatch.
+    """
+
+    if body is None:
+        return Bind(var, value, span)
+
+    bind = Bind(var, value, span)
+    let_seq = SeqStmt([bind, body], span)
+    # Python-side compatibility fields used by stmt_functor.
+    let_seq.var = var
+    let_seq.value = value
+    let_seq.body = body
+    let_seq._legacy_let = True
+    return let_seq
+
 
 from .function import PrimFunc, TensorIntrin, IndexMap
 
