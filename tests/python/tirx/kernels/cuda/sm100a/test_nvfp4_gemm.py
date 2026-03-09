@@ -26,7 +26,7 @@ import torch.nn.functional as F
 import tvm
 import tvm.testing
 
-sys.path.insert(0, "kernels/sm100")
+sys.path.insert(0, "3rdparty/tirx-kernels/kernels/gemm")
 nvfp4_test = pytest.importorskip("nvfp4_gemm")
 
 

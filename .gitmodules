@@ -16,3 +16,6 @@
 [submodule "3rdparty/flashinfer"]
 	path = 3rdparty/flashinfer
 	url = https://github.com/spectrometerHBH/flashinfer.git
+[submodule "3rdparty/tirx-kernels"]
+	path = 3rdparty/tirx-kernels
+	url = git@github.com:mlc-ai/tirx-kernels.git
