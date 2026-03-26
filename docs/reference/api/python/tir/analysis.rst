@@ -15,10 +15,7 @@
     specific language governing permissions and limitations
     under the License.
 
-
-tvm.tirx.transform
-------------------
-.. automodule:: tvm.tirx.transform
+tvm.tir.analysis
+=================
+.. automodule:: tvm.tir.analysis.analysis
    :members:
-   :exclude-members: Attrs
-   :imported-members:

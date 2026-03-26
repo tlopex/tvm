@@ -17,7 +17,7 @@
 
 tvm.te
 ------
-.. Exclude the ops imported from tirx.
+.. Exclude the ops imported from tir.
 
 .. automodule:: tvm.te
    :members:

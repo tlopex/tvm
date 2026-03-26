@@ -15,7 +15,9 @@
     specific language governing permissions and limitations
     under the License.
 
-tvm.tirx.stmt_functor
----------------------
-.. automodule:: tvm.tirx.stmt_functor
+tvm.tir
+--------
+.. automodule:: tvm.tir
    :members:
+   :imported-members:
+   :exclude-members: PrimExpr, const, StmtSRef, SBlockScope, ScheduleState, Schedule, ScheduleError

@@ -15,9 +15,10 @@
     specific language governing permissions and limitations
     under the License.
 
-tvm.tirx
---------
-.. automodule:: tvm.tirx
+
+tvm.tir.transform
+------------------
+.. automodule:: tvm.tir.transform
    :members:
+   :exclude-members: Attrs
    :imported-members:
-   :exclude-members: PrimExpr, const, StmtSRef, SBlockScope, ScheduleState, Schedule, ScheduleError
