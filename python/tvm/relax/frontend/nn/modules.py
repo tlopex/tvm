@@ -39,40 +39,126 @@ class IOEffect(Effect):
         self.effect = None
 
     def emit_init(self, name_hint, builder: rx.BlockBuilder) -> list[rx.DataflowVar]:
+        """Emit the initialization of the IO effect.
+
+        Parameters
+        ----------
+        name_hint : str
+            The name hint of the initialization binding Var.
+        builder : relax.BlockBuilder
+            The relax BlockBuilder to emit.
+
+        Returns
+        -------
+        result : List[relax.DataflowVar]
+            The emitted initialization bindings.
+        """
         return [builder.emit(rx.op.null_value(), f"{name_hint}.io")]
 
     def create(self, name_hint: str) -> list[rx.Var]:
+        """Create the implicit inputs to a relax.Function that represents the IO effect.
+
+        Parameters
+        ----------
+        name_hint : str
+            The name hint for the created relax variable.
+
+        Returns
+        -------
+        result : List[relax.Var]
+            The created implicit input variables.
+        """
         assert self.effect is None
         effect = rx.Var(f"{name_hint}.io", struct_info=rx.ObjectStructInfo())
         return [effect]
 
     def set_state(self, state_vars: list[rx.Var]) -> None:
+        """Set the variables that represent the IO effect.
+
+        Parameters
+        ----------
+        state_vars : List[relax.Var]
+            A single-element list containing the IO effect variable.
+        """
         (self.effect,) = state_vars
 
     def finalize(self) -> list[rx.Var]:
+        """Finalize the IO effect as the implicit return value of a relax.Function.
+
+        Returns
+        -------
+        result : List[relax.Var]
+            The finalized IO effect variable.
+        """
         result = self.effect
         self.effect = None
         return [result]
 
 
 class ReLU(Module):
-    """Module for ReLU activation layer."""
+    """Module for the Rectified Linear Unit (ReLU) activation layer.
+
+    Applies the element-wise function :math:`\\text{ReLU}(x) = \\max(0, x)`.
+    """
 
     def forward(self, x: Tensor):
+        """Forward method for ReLU activation.
+
+        Parameters
+        ----------
+        x : Tensor
+            The input tensor.
+
+        Returns
+        -------
+        result : Tensor
+            The output tensor after applying ReLU.
+        """
         return op.relu(x)
 
 
 class SiLU(Module):
-    """Module for SiLU activation layer."""
+    """Module for the Sigmoid Linear Unit (SiLU) activation layer.
+
+    Applies the element-wise function :math:`\\text{SiLU}(x) = x \\cdot \\sigma(x)`,
+    where :math:`\\sigma` is the sigmoid function.
+    """
 
     def forward(self, x: Tensor):
+        """Forward method for SiLU activation.
+
+        Parameters
+        ----------
+        x : Tensor
+            The input tensor.
+
+        Returns
+        -------
+        result : Tensor
+            The output tensor after applying SiLU.
+        """
         return op.silu(x)
 
 
 class GELU(Module):
-    """Module for GELU activation layer."""
+    """Module for the Gaussian Error Linear Unit (GELU) activation layer.
+
+    Applies the element-wise GELU activation function.
+    """
 
     def forward(self, x: Tensor):
+        """Forward method for GELU activation.
+
+        Parameters
+        ----------
+        x : Tensor
+            The input tensor.
+
+        Returns
+        -------
+        result : Tensor
+            The output tensor after applying GELU.
+        """
         return op.gelu(x)
 
 
@@ -95,8 +181,22 @@ class Identity(Module):
 
 
 class Linear(Module):
-    """
-    Module for linear layer.
+    """Module for linear layer.
+
+    Applies a linear transformation :math:`y = xW^T + b`.
+
+    Parameters
+    ----------
+    in_features : Union[int, str, tirx.PrimExpr]
+        Size of each input sample.
+    out_features : Union[int, str, tirx.PrimExpr]
+        Size of each output sample.
+    bias : bool
+        If True, adds a learnable bias to the output. Default is True.
+    dtype : Optional[str]
+        The data type of the weight and bias parameters. If None, uses the default dtype.
+    out_dtype : Optional[str]
+        The data type of the output. If None, matches the input dtype.
     """
 
     def __init__(
@@ -154,8 +254,28 @@ class Linear(Module):
 
 
 class Conv1D(Module):
-    """
-    Module for conv1d layer.
+    """Module for 1-D convolution layer.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of channels in the input.
+    out_channels : int
+        Number of channels produced by the convolution.
+    kernel_size : int
+        Size of the convolving kernel.
+    stride : int
+        Stride of the convolution. Default is 1.
+    padding : int
+        Zero-padding added to both sides of the input. Default is 0.
+    dilation : int
+        Spacing between kernel elements. Default is 1.
+    groups : int
+        Number of blocked connections from input to output channels. Default is 1.
+    bias : bool
+        If True, adds a learnable bias to the output. Default is True.
+    dtype : Optional[str]
+        The data type of the weight and bias parameters. If None, uses the default dtype.
     """
 
     def __init__(
@@ -212,8 +332,31 @@ class Conv1D(Module):
 
 
 class Conv2D(Module):
-    """
-    Module for conv2d layer.
+    """Module for 2-D convolution layer.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of channels in the input.
+    out_channels : int
+        Number of channels produced by the convolution.
+    kernel_size : Union[List[int], int]
+        Size of the convolving kernel. If int, uses the same value for both spatial
+        dimensions.
+    stride : int
+        Stride of the convolution. Default is 1.
+    padding : int
+        Zero-padding added to both sides of the input. Default is 0.
+    dilation : int
+        Spacing between kernel elements. Default is 1.
+    groups : int
+        Number of blocked connections from input to output channels. Default is 1.
+    bias : bool
+        If True, adds a learnable bias to the output. Default is True.
+    dtype : Optional[str]
+        The data type of the weight and bias parameters. If None, uses the default dtype.
+    data_layout : str
+        Layout of the input data. Default is "NCHW".
     """
 
     def __init__(  # pylint: disable=too-many-arguments
@@ -286,8 +429,31 @@ class Conv2D(Module):
 
 
 class Conv3D(Module):
-    """
-    Module for conv3d layer.
+    """Module for 3-D convolution layer.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of channels in the input.
+    out_channels : int
+        Number of channels produced by the convolution.
+    kernel_size : Union[List[int], int]
+        Size of the convolving kernel. If int, uses the same value for all three spatial
+        dimensions.
+    stride : Union[List[int], int]
+        Stride of the convolution. Default is 1.
+    padding : Union[List[int], int]
+        Zero-padding added to both sides of the input. Default is 0.
+    dilation : int
+        Spacing between kernel elements. Default is 1.
+    groups : int
+        Number of blocked connections from input to output channels. Default is 1.
+    bias : bool
+        If True, adds a learnable bias to the output. Default is True.
+    dtype : Optional[str]
+        The data type of the weight and bias parameters. If None, uses the default dtype.
+    data_layout : str
+        Layout of the input data. Default is "NCDHW".
     """
 
     def __init__(  # pylint: disable=too-many-arguments
@@ -360,8 +526,30 @@ class Conv3D(Module):
 
 
 class ConvTranspose1D(Module):
-    """
-    Module for ConvTranspose1D layer.
+    """Module for 1-D transposed convolution layer.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of channels in the input.
+    out_channels : int
+        Number of channels produced by the transposed convolution.
+    kernel_size : int
+        Size of the convolving kernel.
+    stride : int
+        Stride of the convolution. Default is 1.
+    padding : int
+        Zero-padding added to both sides of the input. Default is 0.
+    output_padding : int
+        Additional size added to one side of the output shape. Default is 0.
+    dilation : int
+        Spacing between kernel elements. Default is 1.
+    groups : int
+        Number of blocked connections from input to output channels. Default is 1.
+    bias : bool
+        If True, adds a learnable bias to the output. Default is True.
+    dtype : Optional[str]
+        The data type of the weight and bias parameters. If None, uses the default dtype.
     """
 
     def __init__(
@@ -427,8 +615,20 @@ class ConvTranspose1D(Module):
 
 
 class LayerNorm(Module):
-    """
-    Module for Layer Normalization
+    """Module for Layer Normalization.
+
+    Parameters
+    ----------
+    normalized_shape : int
+        Input shape from an expected input of size. The input is normalized over the
+        last dimension which is expected to be of this specific size.
+    eps : Optional[float]
+        A value added to the denominator for numerical stability. Default is 1e-5.
+    elementwise_affine : bool
+        If True, this module has learnable affine parameters (weight and bias).
+        Default is True.
+    dtype : Optional[str]
+        The data type of the weight and bias parameters. If None, uses the default dtype.
     """
 
     def __init__(
@@ -473,8 +673,20 @@ class LayerNorm(Module):
 
 
 class RMSNorm(Module):
-    """
-    Module for rms norm layer.
+    """Module for Root Mean Square (RMS) Normalization layer.
+
+    Parameters
+    ----------
+    hidden_size : int
+        The size of the hidden dimension used for the weight parameter.
+    axes : Union[int, List[int]]
+        The axes over which to compute the RMS normalization.
+    epsilon : float
+        A value added to the denominator for numerical stability. Default is 1e-5.
+    bias : bool
+        If True, adds a learnable bias to the output. Default is True.
+    dtype : Optional[str]
+        The data type of the weight and bias parameters. If None, uses the default dtype.
     """
 
     def __init__(
@@ -515,8 +727,21 @@ class RMSNorm(Module):
 
 
 class GroupNorm(Module):
-    """
-    Module for group norm layer.
+    """Module for Group Normalization layer.
+
+    Parameters
+    ----------
+    num_groups : int
+        Number of groups to separate the channels into.
+    num_channels : int
+        Number of channels expected in the input.
+    eps : float
+        A value added to the denominator for numerical stability. Default is 1e-5.
+    affine : bool
+        If True, this module has learnable affine parameters (weight and bias).
+        Default is True.
+    dtype : Optional[str]
+        The data type of the weight and bias parameters. If None, uses the default dtype.
     """
 
     def __init__(
@@ -563,8 +788,20 @@ class GroupNorm(Module):
 
 
 class KVCache(Effect):
-    """
-    Effect to implement KVCache.
+    """Effect to implement key-value cache for attention layers.
+
+    The KVCache stores past key and value tensors so that they can be reused
+    during autoregressive decoding without recomputation.
+
+    Parameters
+    ----------
+    init_seq_len : int
+        The initial sequence length to allocate for the cache.
+    unit_shape : Sequence[int]
+        The shape of a single cache entry excluding the sequence dimension,
+        typically ``[num_heads, head_dim]``.
+    dtype : Optional[str]
+        The data type of the cache. If None, uses the default dtype.
     """
 
     init_seq_len: int
@@ -630,6 +867,13 @@ class KVCache(Effect):
         return [cache]
 
     def set_state(self, state_vars: list[rx.Var]) -> None:
+        """Set the variables that represent the KVCache state.
+
+        Parameters
+        ----------
+        state_vars : List[relax.Var]
+            A single-element list containing the cache variable.
+        """
         (self.cache,) = state_vars
 
     def finalize(self) -> list[rx.Var]:
@@ -708,8 +952,18 @@ class KVCache(Effect):
 
 
 class Embedding(Module):
-    """
-    Module for embedding layer.
+    """Module for embedding layer.
+
+    A lookup table that retrieves embeddings from a fixed-size table.
+
+    Parameters
+    ----------
+    num : Union[int, str, tirx.PrimExpr]
+        Size of the embedding dictionary (number of embeddings).
+    dim : Union[int, str, tirx.PrimExpr]
+        The size of each embedding vector.
+    dtype : Optional[str]
+        The data type of the embedding weight. If None, uses the default dtype.
     """
 
     def __init__(
@@ -749,8 +1003,25 @@ class Embedding(Module):
 
 
 class TimestepEmbedding(Module):
-    """
-    Module for HF TimestepEmbedding layer.
+    """Module for HuggingFace-style timestep embedding layer.
+
+    Projects timestep encodings through linear layers with an activation function.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels (timestep encoding dimension).
+    time_embed_dim : int
+        Dimension of the timestep embedding output.
+    act_fn : str
+        Activation function name. Currently only "silu" is supported.
+    out_dim : Optional[int]
+        Output dimension. If None, defaults to ``time_embed_dim``.
+    post_act_fn : Optional[str]
+        Post-activation function name. If None, no post-activation is applied.
+    cond_proj_dim : Optional[int]
+        Dimension of the conditioning projection. If not None, a linear projection
+        is applied to the condition before adding it to the sample.
     """
 
     def __init__(
@@ -816,8 +1087,18 @@ class TimestepEmbedding(Module):
 
 
 class Timesteps(Module):
-    """
-    Module for HF timesteps layer.
+    """Module for HuggingFace-style sinusoidal timestep encoding.
+
+    Computes sinusoidal positional embeddings for diffusion model timesteps.
+
+    Parameters
+    ----------
+    num_channels : int
+        The number of channels in the output embedding.
+    flip_sin_to_cos : bool
+        If True, swap sine and cosine in the embedding. Default is False.
+    downscale_freq_shift : float
+        Frequency shift for the sinusoidal encoding. Default is 1.
     """
 
     def __init__(
@@ -828,6 +1109,18 @@ class Timesteps(Module):
         self.downscale_freq_shift = downscale_freq_shift
 
     def forward(self, x: Tensor):
+        """Forward method for timestep encoding.
+
+        Parameters
+        ----------
+        x : Tensor
+            The input timestep tensor.
+
+        Returns
+        -------
+        result : Tensor
+            The sinusoidal timestep embedding.
+        """
         return op.get_timestep_embedding(
             x,
             embedding_dim=self.num_channels,

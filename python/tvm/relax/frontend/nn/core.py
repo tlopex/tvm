@@ -113,17 +113,54 @@ class Tensor(_TensorOp):
 
     @staticmethod
     def from_const(data) -> "Tensor":
-        """Construct a tensor from numpy constants."""
+        """Construct a tensor from numpy constants.
+
+        Parameters
+        ----------
+        data : numpy.ndarray
+            The numpy constant data.
+
+        Returns
+        -------
+        result : Tensor
+            The constructed tensor.
+        """
         return Tensor(_expr=rx.const(data))
 
     @staticmethod
     def from_scalar(data: int | float, dtype: str) -> "Tensor":
-        """Construct a tensor from a scalar with dtype specified."""
+        """Construct a tensor from a scalar with dtype specified.
+
+        Parameters
+        ----------
+        data : Union[int, float]
+            The scalar value.
+        dtype : str
+            The data type of the resulting tensor.
+
+        Returns
+        -------
+        result : Tensor
+            The constructed scalar tensor.
+        """
         return Tensor(_expr=rx.const(data, dtype=dtype))
 
     @staticmethod
     def from_struct_info(struct_info: rx.TensorStructInfo, name: str = "tensor") -> "Tensor":
-        """Construct a nn.Tensor from relax TensorStructInfo"""
+        """Construct a nn.Tensor from relax TensorStructInfo.
+
+        Parameters
+        ----------
+        struct_info : relax.TensorStructInfo
+            The struct info that defines the shape and dtype of the tensor.
+        name : str
+            Name hint for the underlying relax.Var.
+
+        Returns
+        -------
+        result : Tensor
+            The constructed tensor.
+        """
         return Tensor(
             _expr=rx.Var(
                 name_hint=name,
@@ -278,7 +315,13 @@ class Parameter(Tensor):
         self._data = data
 
     def to(self, dtype: str | None = None) -> None:  # pylint: disable=invalid-name
-        """Change the dtype of the parameter if it is not bound to any concrete data"""
+        """Change the dtype of the parameter if it is not bound to any concrete data.
+
+        Parameters
+        ----------
+        dtype : Optional[str]
+            The target data type. If None, no conversion is performed.
+        """
         if dtype is not None:
             if self._data is not None:
                 raise ValueError(
@@ -318,19 +361,48 @@ class Effect:
         raise NotImplementedError
 
     def create(self, name_hint: str) -> list[rx.Var]:
-        """Create the implicit inputs to a relax.Function that represents the side effect"""
+        """Create the implicit inputs to a relax.Function that represents the side effect.
+
+        Parameters
+        ----------
+        name_hint : str
+            The name hint for the created relax variables.
+
+        Returns
+        -------
+        result : List[relax.Var]
+            The created implicit input variables.
+        """
         raise NotImplementedError
 
     def set_state(self, state_vars: list[rx.Var]) -> None:
-        """Set the variables that represents the effect"""
+        """Set the variables that represents the effect.
+
+        Parameters
+        ----------
+        state_vars : List[relax.Var]
+            The variables that represent the current state of the effect.
+        """
         raise NotImplementedError
 
     def finalize(self) -> list[rx.Var]:
-        """finalize the effect as the implicit return value of a relax.Function"""
+        """Finalize the effect as the implicit return value of a relax.Function.
+
+        Returns
+        -------
+        result : List[relax.Var]
+            The finalized variables to be used as implicit return values.
+        """
         raise NotImplementedError
 
     def to(self, dtype: str | None = None) -> None:  # pylint: disable=invalid-name
-        """Convert the effect to specific dtype. Usually it is no-op for most of the effects"""
+        """Convert the effect to specific dtype. Usually it is no-op for most of the effects.
+
+        Parameters
+        ----------
+        dtype : Optional[str]
+            The target data type. If None, no conversion is performed.
+        """
 
 
 class Module(SubroutineMixin):
@@ -432,7 +504,13 @@ class Module(SubroutineMixin):
         return self.forward(*args, **kwargs)  # pylint: disable=no-member
 
     def to(self, dtype: str | None = None) -> None:  # pylint: disable=invalid-name
-        """Convert the module to specific dtype recursively"""
+        """Convert the module to specific dtype recursively.
+
+        Parameters
+        ----------
+        dtype : Optional[str]
+            The target data type. If None, no conversion is performed.
+        """
         for _, item in self.__dict__.items():
             if hasattr(item, "to") and callable(item.to):
                 item.to(dtype=dtype)
@@ -492,7 +570,28 @@ class Module(SubroutineMixin):
         out_format: str = "torch",
         debug: bool = False,
     ) -> Any:
-        """Just-in-time compilation of a nn.model to an executable"""
+        """Just-in-time compile a nn.Module to an executable.
+
+        Parameters
+        ----------
+        spec : _spec.ModuleSpec
+            The module specification that defines the input shapes and dtypes.
+        device : Union[str, Device]
+            The device to compile and run on. Default is "cpu".
+        pipeline : Union[None, str, Pass]
+            The compilation pipeline to use. Default is "default_build".
+        out_format : str
+            The output format. Default is "torch", which wraps the result as a
+            TorchModule.
+        debug : bool
+            If True, the exported module will support effects such as printing.
+
+        Returns
+        -------
+        result : Any
+            The compiled executable module. When ``out_format`` is "torch",
+            returns a ``TorchModule``.
+        """
 
         def _compile(spec, device, pipeline, debug):
             # pylint: disable=import-outside-toplevel
@@ -529,7 +628,14 @@ class Module(SubroutineMixin):
 
 
 class ModuleDict(Module):
-    """Holds submodules in a dict."""
+    """Holds submodules in a dictionary.
+
+    Parameters
+    ----------
+    modules : Optional[OrderedDict[str, Module]]
+        An ordered dictionary of string keys to modules. If None, an empty
+        dictionary is created.
+    """
 
     def __init__(self, modules: OrderedDict[str, Module] | None = None):
         if modules is None:
@@ -550,36 +656,104 @@ class ModuleDict(Module):
         return len(self.modules)
 
     def keys(self) -> Iterator[str]:
+        """Return an iterator over the module keys.
+
+        Returns
+        -------
+        result : Iterator[str]
+            An iterator over the keys.
+        """
         return self.modules.keys()
 
     def values(self) -> Iterator[Module]:
+        """Return an iterator over the module values.
+
+        Returns
+        -------
+        result : Iterator[Module]
+            An iterator over the modules.
+        """
         return self.modules.values()
 
     def items(self) -> Iterator[tuple[str, Module]]:
+        """Return an iterator over the (key, module) pairs.
+
+        Returns
+        -------
+        result : Iterator[Tuple[str, Module]]
+            An iterator over (key, module) pairs.
+        """
         return self.modules.items()
 
     def get(self, key: str, default: Module | None = None) -> Module | None:
+        """Get a module by key, returning a default if the key is not found.
+
+        Parameters
+        ----------
+        key : str
+            The key to look up.
+        default : Optional[Module]
+            The default value to return if the key is not found.
+
+        Returns
+        -------
+        result : Optional[Module]
+            The module for the given key, or the default.
+        """
         return self.modules.get(key, default)
 
     def update(self, modules: dict[str, Module]) -> None:
+        """Update the dictionary with key-module pairs from another dictionary.
+
+        Parameters
+        ----------
+        modules : Dict[str, Module]
+            The dictionary of modules to merge in.
+        """
         self.modules.update(modules)
 
     def clear(self) -> None:
+        """Remove all modules from the dictionary."""
         self.modules.clear()
 
     def pop(self, key: str) -> Module:
+        """Remove and return the module for the given key.
+
+        Parameters
+        ----------
+        key : str
+            The key of the module to remove.
+
+        Returns
+        -------
+        result : Module
+            The removed module.
+        """
         return self.modules.pop(key)
 
     def __contains__(self, key: str) -> bool:
         return key in self.modules
 
     def to(self, dtype: str | None = None) -> None:  # pylint: disable=invalid-name
+        """Convert all modules in the dictionary to specific dtype recursively.
+
+        Parameters
+        ----------
+        dtype : Optional[str]
+            The target data type. If None, no conversion is performed.
+        """
         for module in self.modules.values():
             module.to(dtype=dtype)
 
 
 class ModuleList(Module):
-    """Holds submodules in a list."""
+    """Holds submodules in a list.
+
+    Parameters
+    ----------
+    modules : List[Module]
+        The list of modules to hold.
+    """
 
     def __init__(self, modules: list[Module]):
         self.modules = modules
@@ -597,15 +771,39 @@ class ModuleList(Module):
         return len(self.modules)
 
     def append(self, module: Module):
-        """Add a module to the end of the ModuleList"""
+        """Add a module to the end of the ModuleList.
+
+        Parameters
+        ----------
+        module : Module
+            The module to append.
+        """
         self.modules.append(module)
 
     def to(self, dtype: str | None = None) -> None:  # pylint: disable=invalid-name
+        """Convert all modules in the list to specific dtype recursively.
+
+        Parameters
+        ----------
+        dtype : Optional[str]
+            The target data type. If None, no conversion is performed.
+        """
         for module in self.modules:
             module.to(dtype=dtype)
 
     def forward(self, x):  # pylint: disable=invalid-name
-        """Feed-forward pass of the module"""
+        """Feed-forward pass that sequentially applies each module in the list.
+
+        Parameters
+        ----------
+        x : Tensor
+            The input tensor.
+
+        Returns
+        -------
+        result : Tensor
+            The output tensor after applying all modules sequentially.
+        """
         for module in self.modules:
             x = module(x)
         return x
