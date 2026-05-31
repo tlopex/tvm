@@ -109,6 +109,15 @@ runs:
       run: |
         conda create -q -p C:\opt\llvm -c conda-forge llvmdev=%LLVM_VERSION% zlib zstd-static libxml2-devel -y
 
+    # Inject the absolute path to the Windows CUDA sidecar into CIBW_ENVIRONMENT.
+    # The {project} placeholder is not expanded inside CIBW_ENVIRONMENT values, so
+    # compute the forward-slash host path here (the Windows analog of the Linux
+    # /project hardcode). before-all writes the DLL under build-wheel-cuda/lib/.
+    - name: Compute CUDA sidecar path (Windows)
+      if: runner.os == 'Windows' && inputs.include_cuda_runtime == '1'
+      shell: bash
+      run: echo "TVM_CUDA_EXTRA_LIB=$(cygpath -m "$(pwd)")/build-wheel-cuda/lib/tvm_runtime_cuda.dll" >> "$GITHUB_ENV"
+
     # ---- Build and test wheels ----
     - name: Build and test wheels
       uses: pypa/cibuildwheel@298ed2fb2c105540f5ed055e8a6ad78d82dd3a7e # v3.3.1
@@ -133,6 +142,13 @@ runs:
           bash {project}/ci/scripts/package/manylinux_build_libtvm_runtime_cuda.sh
           "${{ inputs.include_cuda_runtime }}"
           "${{ inputs.cuda_architectures }}"
+        # Windows mirror of the Linux hook: build tvm_runtime_cuda.dll on the host
+        # (there is no build container on Windows). cibuildwheel runs before-all
+        # through bash on Windows too, so the same bash entrypoint shape works.
+        CIBW_BEFORE_ALL_WINDOWS: >-
+          bash {project}/ci/scripts/package/windows_build_libtvm_runtime_cuda.sh
+          "${{ inputs.include_cuda_runtime }}"
+          "${{ inputs.cuda_architectures }}"
         CIBW_ENVIRONMENT: >-
           TVM_USE_LLVM="/opt/llvm/bin/llvm-config --link-static"
           CMAKE_PREFIX_PATH="/opt/llvm"
@@ -143,7 +159,7 @@ runs:
         CIBW_ENVIRONMENT_WINDOWS: >-
           TVM_USE_LLVM="C:/opt/llvm/Library/bin/llvm-config.exe --link-static"
           CMAKE_PREFIX_PATH="C:/opt/llvm/Library"
-          CMAKE_ARGS="-DUSE_LLVM='C:/opt/llvm/Library/bin/llvm-config.exe --link-static' -DCMAKE_PREFIX_PATH=C:/opt/llvm/Library"
+          CMAKE_ARGS="-DUSE_LLVM='C:/opt/llvm/Library/bin/llvm-config.exe --link-static' -DCMAKE_PREFIX_PATH=C:/opt/llvm/Library ${{ inputs.include_cuda_runtime == '1' && format('-DTVM_PACKAGE_EXTRA_LIBS={0}', env.TVM_CUDA_EXTRA_LIB) || '' }}"
           TVM_WHEEL_DIST_NAME="${{ inputs.distribution_name }}"
           TVM_WHEEL_DIST_VERSION="${{ inputs.distribution_version }}"
           TVM_BUILD_PARALLEL_LEVEL="${{ steps.env_vars.outputs.cpu_count }}"

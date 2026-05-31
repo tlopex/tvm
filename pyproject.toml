@@ -280,4 +280,4 @@ repair-wheel-command = 'DYLD_LIBRARY_PATH="/opt/llvm/lib${DYLD_LIBRARY_PATH:+:$D
 
 [tool.cibuildwheel.windows]
 before-build = 'python -m pip install delvewheel && python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml && python -m pip install -v {project}/3rdparty/tvm-ffi'
-repair-wheel-command = "delvewheel repair --analyze-existing --ignore-existing --add-path C:/opt/llvm/Library/bin --exclude tvm_ffi.dll --exclude libtvm_ffi.dll -w {dest_dir} {wheel}"
+repair-wheel-command = "delvewheel repair --analyze-existing --ignore-existing --add-path C:/opt/llvm/Library/bin --add-path C:/opt/cuda/Library/bin --exclude tvm_ffi.dll --exclude libtvm_ffi.dll --exclude tvm_runtime_cuda.dll --exclude nvcuda.dll --exclude cudart64_13.dll --exclude nvrtc64_130_0.dll -w {dest_dir} {wheel}"

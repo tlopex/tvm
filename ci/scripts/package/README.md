@@ -24,23 +24,25 @@ cannot provide itself.
 
 ## Build flow
 
-1. **(Linux CUDA wheels only)** the `CIBW_BEFORE_ALL_LINUX` hook runs
-   `manylinux_build_libtvm_runtime_cuda.sh`, which installs the CUDA toolkit inside the manylinux
-   container and builds `libtvm_runtime_cuda.so`.
+1. **(CUDA wheels only)** a `CIBW_BEFORE_ALL_*` hook builds the CUDA runtime
+   sidecar: on Linux `manylinux_build_libtvm_runtime_cuda.sh` installs the CUDA
+   toolkit inside the manylinux container and builds `libtvm_runtime_cuda.so`; on
+   Windows `windows_build_libtvm_runtime_cuda.sh` installs the CUDA toolkit via
+   conda and builds `tvm_runtime_cuda.dll`.
 2. `cibuildwheel` builds the main wheel with LLVM linked **statically** and CUDA
    off. The prebuilt CUDA runtime is installed into `tvm/lib/` by CMake via
    `TVM_PACKAGE_EXTRA_LIBS` — no post-build wheel rewriting.
 3. The wheel is repaired with the standard per-platform tool — `auditwheel`
    (Linux) / `delocate` (macOS) / `delvewheel` (Windows) — excluding `libtvm_ffi`
-   (provided by the `apache-tvm-ffi` package) and, on Linux, the bundled
-   `libtvm_runtime_cuda.so` and its CUDA driver dependencies.
+   (provided by the `apache-tvm-ffi` package) and, on the CUDA wheels, the bundled
+   CUDA runtime sidecar and the CUDA driver/runtime dependencies.
 4. The `tests/python/wheel` suite runs against the installed wheel via the
    `[tool.cibuildwheel]` `test-command`.
 
 The publish workflow builds four wheels — Linux x86_64 and aarch64 (with the
 CUDA runtime, in cibuildwheel's default `manylinux_2_28` image), macOS arm64, and
-Windows AMD64 — then optionally uploads them with `pypa/gh-action-pypi-publish`
-and verifies the uploaded package.
+Windows AMD64 (with the CUDA runtime) — then optionally uploads them with
+`pypa/gh-action-pypi-publish` and verifies the uploaded package.
 
 ## Where configuration lives
 
@@ -76,9 +78,12 @@ only describes this CI run → the workflow.
 - `.github/actions/build-wheel-for-publish` — installs the cached LLVM prefix and
   runs `cibuildwheel`.
 - `.github/actions/detect-env-vars` — shared environment detection (CPU count).
-- `manylinux_build_libtvm_runtime_cuda.sh` — builds the CUDA runtime sidecar
-  (run from `CIBW_BEFORE_ALL_LINUX`); the one build step `cibuildwheel` cannot
-  do, since its container ships no CUDA toolkit. No-op for CPU-only wheels.
+- `manylinux_build_libtvm_runtime_cuda.sh` — builds the Linux CUDA runtime
+  sidecar (run from `CIBW_BEFORE_ALL_LINUX`); the one build step `cibuildwheel`
+  cannot do, since its container ships no CUDA toolkit. No-op for CPU-only wheels.
+- `windows_build_libtvm_runtime_cuda.sh` — the Windows mirror (run from
+  `CIBW_BEFORE_ALL_WINDOWS`): installs the CUDA toolkit via conda and builds
+  `tvm_runtime_cuda.dll`. No-op for CPU-only wheels.
 - `set_wheel_dist.py` — overrides the wheel name/version before the build. This is
   a **fork/development convenience for TestPyPI validation only**; it is unused
   for a normal `tvm` release, and the workflow forbids the override when
