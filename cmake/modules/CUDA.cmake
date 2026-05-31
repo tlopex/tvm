@@ -67,6 +67,10 @@ if(USE_CUDA)
 
   add_library(tvm_runtime_cuda_objs OBJECT ${RUNTIME_CUDA_SRCS} ${VM_CUDA_BUILTIN_SRC_CC})
   target_link_libraries(tvm_runtime_cuda_objs PUBLIC tvm_ffi_header)
+  # These sources compile into tvm_runtime_cuda.dll, so their TVM_RUNTIME_DLL /
+  # TVM_FFI_DLL symbols must be dllexport on MSVC (e.g. GetCudaDeviceCount in
+  # cuda_device_api.cc). Mirror tvm_runtime_objs; a no-op on non-MSVC platforms.
+  target_compile_definitions(tvm_runtime_cuda_objs PRIVATE TVM_RUNTIME_EXPORTS TVM_FFI_EXPORTS)
   set_target_properties(tvm_runtime_cuda_objs PROPERTIES POSITION_INDEPENDENT_CODE ON)
   if(TVM_VISIBILITY_FLAG)
     target_compile_options(tvm_runtime_cuda_objs PRIVATE "${TVM_VISIBILITY_FLAG}")
