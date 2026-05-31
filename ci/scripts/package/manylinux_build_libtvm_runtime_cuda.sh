@@ -60,6 +60,13 @@ export PATH="/opt/python/cp310-cp310/bin:/usr/local/cuda/bin:${PATH}"
 nvcc --version
 
 rm -rf "${build_dir}"
+# CMAKE_CUDA_ARCHITECTURES and CMAKE_CUDA_COMPILER do not affect the resulting
+# libtvm_runtime_cuda.so: it is built only from .cc host sources (no .cu device
+# code), so nvcc is never invoked for it and no arch-specific code is baked in
+# (the .so's .text/.rodata are byte-identical across arch values and cuobjdump
+# reports no device code). We still pass an explicit arch as cheap forward-proofing:
+# if a future source adds real .cu device code to this runtime, an explicit value
+# keeps the build deterministic instead of falling back to nvcc's default arch.
 cmake -S "${repo_root}" -B "${build_dir}" \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTING=OFF \
