@@ -141,7 +141,6 @@ runs:
         # via -DTVM_PACKAGE_EXTRA_LIBS; no CUDA toolkit needed here.
         CIBW_ENVIRONMENT: >-
           CMAKE_PREFIX_PATH="/opt/llvm"
-          LIBRARY_PATH="/opt/llvm/lib"
           CMAKE_ARGS="-DUSE_LLVM='/opt/llvm/bin/llvm-config --link-static' -DCMAKE_PREFIX_PATH=/opt/llvm ${{ inputs.include_cuda_runtime == '1' && '-DTVM_PACKAGE_EXTRA_LIBS=/project/build-wheel-cuda/lib/libtvm_runtime_cuda.so' || '' }}"
           TVM_WHEEL_DIST_NAME="${{ inputs.distribution_name }}"
           TVM_WHEEL_DIST_VERSION="${{ inputs.distribution_version }}"
