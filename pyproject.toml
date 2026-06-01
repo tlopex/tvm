@@ -16,10 +16,6 @@
 # under the License.
 
 [build-system]
-# scikit-build-core>=0.11 for PEP 639 license expression / license-files
-# support. cmake and ninja are declared explicitly here (rather than left to
-# scikit-build-core's implicit fetch) so the full build toolchain lives in
-# pyproject.toml; cmake>=3.24 is required for ZLIB_USE_STATIC_LIBS.
 requires = ["scikit-build-core>=0.11", "cmake>=3.24", "ninja"]
 build-backend = "scikit_build_core.build"
 
@@ -47,11 +43,6 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-# Core runtime dependencies: the minimum needed to ``import tvm`` and build/run
-# modules. Model-importer frameworks are kept out of here (see
-# [project.optional-dependencies]). pytest is required at import time because
-# tvm.rpc loads tvm.testing, which pulls in pytest; until that import chain is
-# decoupled it must stay a core dependency.
 dependencies = [
   "apache-tvm-ffi>=0.1.11",
   "ml_dtypes",
@@ -61,28 +52,12 @@ dependencies = [
   "typing_extensions",
 ]
 
-# Optional runtime features. Each importer extra pulls in the third-party
-# framework needed to read models from that ecosystem; install only what you
-# need, e.g. ``pip install tvm[importer-onnx]``.
 [project.optional-dependencies]
-# Model importers -- only the Relax frontends that actually exist under
-# python/tvm/relax/frontend are listed (onnx, torch, tflite).
 importer-onnx = ["onnx", "onnxoptimizer", "onnxruntime"]
 importer-pytorch = ["torch", "torchvision"]
 importer-tflite = ["tflite"]
-
-# CoreML codegen backend (tvm.relax.backend.metal.coreml) emits a CoreML model;
-# this is a backend, not a model importer.
 coreml = ["coremltools"]
-
-# Meta-schedule auto-tuning cost model. (AutoTVM / auto-scheduler were removed
-# from the Relax-era TVM; meta_schedule is the current tuning stack.)
 meta-schedule = ["xgboost"]
-
-# ``all`` intentionally pulls in only TVM's own optional runtime feature (the
-# meta-schedule tuning stack). Model importers and codegen backends are heavy
-# third-party frameworks that depend on TVM rather than the reverse, so they are
-# NOT bundled here -- install them explicitly per ecosystem.
 all = ["xgboost"]
 
 [project.urls]
@@ -91,9 +66,6 @@ Documentation = "https://tvm.apache.org/docs/"
 Repository = "https://github.com/apache/tvm"
 "Bug Tracker" = "https://github.com/apache/tvm/issues"
 
-# Development-only dependency groups (PEP 735). These are NOT published in the
-# wheel metadata; install them for local development with e.g.
-# ``uv sync``, ``uv pip install --group dev``, or ``pip install --group dev``.
 [dependency-groups]
 test = [
   "pytest",
@@ -110,23 +82,8 @@ dev = [{ include-group = "test" }, { include-group = "lint" }]
 
 [tool.scikit-build]
 cmake.build-type = "Release"
-
-# Configure the wheel to be Python version-agnostic
 wheel.py-api = "py3"
-
-# Build configuration. Use a tagged subdirectory so wheel builds do not clobber
-# a developer's top-level ``build/`` (and its compile_commands.json used by
-# clangd), and so builds can be cached per wheel tag.
 build-dir = "build/{wheel_tag}"
-
-# Static CMake configuration shared by every wheel build. The dynamic bits
-# (the USE_LLVM config path, CMAKE_PREFIX_PATH, and the CUDA TVM_PACKAGE_EXTRA_LIBS
-# path) are layered on via CMAKE_ARGS by the publishing workflow. cmake>=3.24 is
-# required for ZLIB_USE_STATIC_LIBS (see [build-system]).
-cmake.define.TVM_BUILD_PYTHON_MODULE = "ON"
-cmake.define.USE_CUDA = "OFF"
-cmake.define.BUILD_TESTING = "OFF"
-cmake.define.ZLIB_USE_STATIC_LIBS = "ON"
 
 # Wheel configuration
 wheel.packages = ["python/tvm"]
@@ -173,6 +130,12 @@ sdist.exclude = [
 
 # Logging
 logging.level = "INFO"
+
+[tool.scikit-build.cmake.define]
+TVM_BUILD_PYTHON_MODULE = "ON"
+USE_CUDA = "OFF"
+BUILD_TESTING = "OFF"
+ZLIB_USE_STATIC_LIBS = "ON"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -248,25 +211,11 @@ docstring-code-format = false
 docstring-code-line-length = "dynamic"
 
 [tool.cibuildwheel]
-# TVM cannot build 32-bit or musl targets; skip them so a bare `cibuildwheel`
-# invocation (outside the publish matrix) fails fast instead of attempting them.
-# The workflow matrix selects the real per-platform targets via CIBW_BUILD.
 skip = "*-win32 *-manylinux_i686 *-musllinux*"
 build-verbosity = 1
-# Verify the installed wheel with a small pytest suite (post-install checks
-# such as the LLVM compile smoke test and the static-LLVM / CUDA-runtime
-# library checks). The wheel-specific expectations are passed through the
-# environment by the publishing workflow.
 test-requires = ["pytest", "numpy"]
 test-command = "pytest -v {project}/tests/python/wheel"
 
-# Per-platform build and repair steps live here (the standard cibuildwheel
-# location, mirroring tvm-ffi). The publishing workflow only layers the dynamic
-# environment (LLVM config path, CUDA runtime, dist name/version) on top.
-# set_wheel_dist.py applies the optional TestPyPI name/version override; the
-# vendored tvm-ffi is the build-time FFI dependency. auditwheel (manylinux
-# image) and delocate (cibuildwheel) are already present; only delvewheel must
-# be installed for the Windows repair.
 [tool.cibuildwheel.linux]
 before-build = 'if command -v dnf >/dev/null 2>&1; then dnf -y install libxml2-devel; fi && python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml && python -m pip install -v {project}/3rdparty/tvm-ffi'
 repair-wheel-command = "auditwheel repair --exclude libtvm_ffi.so --exclude libtvm_runtime_cuda.so --exclude 'libcuda.so.*' --exclude 'libcudart.so.*' --exclude 'libnvrtc.so.*' --exclude 'libnvrtc-builtins.so.*' -w {dest_dir} {wheel}"
