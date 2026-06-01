@@ -258,10 +258,7 @@ build-verbosity = 1
 # library checks). The wheel-specific expectations are passed through the
 # environment by the publishing workflow.
 test-requires = ["pytest", "numpy"]
-# Use the suite's own pytest.ini (-c) so it does not inherit the repository's
-# root pytest config/conftest, which loads tvm.testing.plugin and the full test
-# harness — too heavy for a wheel smoke check.
-test-command = "pytest -c {project}/tests/python/wheel/pytest.ini {project}/tests/python/wheel"
+test-command = "pytest -v {project}/tests/python/wheel"
 
 # Per-platform build and repair steps live here (the standard cibuildwheel
 # location, mirroring tvm-ffi). The publishing workflow only layers the dynamic

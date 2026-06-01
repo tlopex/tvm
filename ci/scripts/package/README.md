@@ -60,8 +60,7 @@ Windows AMD64 (with the CUDA runtime) — then optionally uploads them with
   publishing to PyPI.
 - `tests/python/wheel/` — post-install smoke checks (import `tvm`, a minimal LLVM
   compile, and that the bundled libraries are correct), each gated by a
-  `TVM_EXPECT_*` variable. `pytest.ini` isolates them from the repo's root test
-  config.
+  `TVM_EXPECT_*` variable.
 
 ## Testing
 
