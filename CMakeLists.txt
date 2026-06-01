@@ -596,6 +596,11 @@ set_property(TARGET tvm_compiler APPEND PROPERTY LINK_OPTIONS "${TVM_VISIBILITY_
 # See binutils bug ld/25754.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ${USE_LLVM} MATCHES ${IS_FALSE_PATTERN})
   set_property(TARGET tvm_compiler APPEND PROPERTY LINK_OPTIONS "-Wl,--no-relax")
+  # LLVM's --system-libs reports -lxml2, but TVM calls no libxml2 symbols. The
+  # manylinux toolchain does not default to --as-needed, so set it explicitly:
+  # the unused libxml2 is then not recorded as a NEEDED dependency, so auditwheel
+  # does not vendor it (and its deps) into the wheel.
+  set_property(TARGET tvm_compiler APPEND PROPERTY LINK_OPTIONS "-Wl,--as-needed")
 endif()
 
 # Place runtime/compiler/allvisible artifacts under build/lib/ to mirror the
