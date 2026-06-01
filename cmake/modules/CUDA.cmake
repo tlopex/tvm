@@ -78,7 +78,7 @@ if(USE_CUDA)
   add_library(tvm_runtime_cuda SHARED $<TARGET_OBJECTS:tvm_runtime_cuda_objs>)
   list(APPEND TVM_RUNTIME_BACKEND_LIBS tvm_runtime_cuda)
   target_link_libraries(tvm_runtime_cuda PUBLIC tvm_runtime ${CUDA_CUDART_LIBRARY} ${CUDA_CUDA_LIBRARY})
-  tvm_configure_runtime_module(tvm_runtime_cuda)
+  tvm_configure_target_library(tvm_runtime_cuda RUNTIME_MODULE)
 
   if(USE_NVTX)
     message(STATUS "Build with NVTX support")

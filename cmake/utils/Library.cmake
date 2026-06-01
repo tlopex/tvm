@@ -18,16 +18,26 @@
 # Helpers for configuring library targets.
 
 #######################################################
-# tvm_set_relative_rpath(target_name)
+# tvm_configure_target_library(target_name [RUNTIME_MODULE])
 #
-# Give a target a relative rpath ($ORIGIN / @loader_path) so that sibling
-# shared libraries in the same directory resolve each other regardless of the
-# install location (e.g. inside a Python wheel). No-op if the target does not
-# exist.
-function(tvm_set_relative_rpath target_name)
+# Configure a TVM library target. The target always gets a relative rpath
+# ($ORIGIN / @loader_path) so that sibling shared libraries in the same
+# directory resolve each other regardless of the install location (e.g. inside a
+# Python wheel).
+#
+# With the RUNTIME_MODULE option -- used for the optional runtime backend
+# libraries (tvm_runtime_cuda, tvm_runtime_vulkan, ...) -- the target is also
+# emitted into the build "lib" directory and installed; when building the Python
+# module it is additionally installed into the package "lib" directory. Targets
+# that manage their own output directory / install rules (tvm_compiler,
+# tvm_runtime, ...) omit the option and take only the rpath.
+#
+# No-op if the target does not exist.
+function(tvm_configure_target_library target_name)
   if(NOT TARGET ${target_name})
     return()
   endif()
+  cmake_parse_arguments(ARG "RUNTIME_MODULE" "" "" ${ARGN})
 
   if(APPLE)
     set_target_properties(${target_name} PROPERTIES
@@ -40,32 +50,16 @@ function(tvm_set_relative_rpath target_name)
       INSTALL_RPATH "\$ORIGIN"
     )
   endif()
-endfunction()
 
-#######################################################
-# tvm_configure_runtime_module(target_name)
-#
-# Apply the standard layout for an optional runtime backend library
-# (tvm_runtime_cuda, tvm_runtime_vulkan, ...): emit it into the build lib
-# directory, give it a wheel-relative rpath, and install it. When building the
-# Python module it is additionally installed into the package "lib" directory.
-# No-op if the target does not exist.
-#
-# Parameters:
-#   target_name: CMake target to configure
-function(tvm_configure_runtime_module target_name)
-  if(NOT TARGET ${target_name})
-    return()
-  endif()
-
-  set_target_properties(${target_name} PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-  )
-  tvm_set_relative_rpath(${target_name})
-  install(TARGETS ${target_name} DESTINATION lib${LIB_SUFFIX})
-  if(TVM_BUILD_PYTHON_MODULE)
-    install(TARGETS ${target_name} DESTINATION "lib")
+  if(ARG_RUNTIME_MODULE)
+    set_target_properties(${target_name} PROPERTIES
+      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+      ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+    )
+    install(TARGETS ${target_name} DESTINATION lib${LIB_SUFFIX})
+    if(TVM_BUILD_PYTHON_MODULE)
+      install(TARGETS ${target_name} DESTINATION "lib")
+    endif()
   endif()
 endfunction()

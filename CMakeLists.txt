@@ -527,17 +527,7 @@ if(TVM_VISIBILITY_FLAG)
   set_property(TARGET tvm_runtime_extra APPEND PROPERTY LINK_OPTIONS "${TVM_VISIBILITY_FLAG}")
 endif()
 
-set_target_properties(tvm_runtime_extra PROPERTIES
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-  ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-)
-tvm_set_relative_rpath(tvm_runtime_extra)
-
-install(TARGETS tvm_runtime_extra DESTINATION lib${LIB_SUFFIX})
-if(TVM_BUILD_PYTHON_MODULE)
-  install(TARGETS tvm_runtime_extra DESTINATION "lib")
-endif()
+tvm_configure_target_library(tvm_runtime_extra RUNTIME_MODULE)
 
 add_library(tvm_objs OBJECT ${COMPILER_SRCS})
 add_library(tvm_runtime_objs OBJECT ${RUNTIME_SRCS})
@@ -861,8 +851,8 @@ endif()
 # DSOs are installed next to each other, so apply it unconditionally rather than
 # only when building the Python wheel. (tvm_runtime_extra already gets its rpath
 # where it is defined above.)
-tvm_set_relative_rpath(tvm_compiler)
-tvm_set_relative_rpath(tvm_runtime)
+tvm_configure_target_library(tvm_compiler)
+tvm_configure_target_library(tvm_runtime)
 
 # Python package installation configuration
 # This section ensures that all necessary files are installed for the Python wheel
@@ -877,11 +867,11 @@ if(TVM_BUILD_PYTHON_MODULE)
 
   # Install third-party compiled dependencies into the same lib/ dir.
   if(TARGET fpA_intB_gemm)
-    tvm_set_relative_rpath(fpA_intB_gemm)
+    tvm_configure_target_library(fpA_intB_gemm)
     install(TARGETS fpA_intB_gemm DESTINATION "lib")
   endif()
   if(TARGET flash_attn)
-    tvm_set_relative_rpath(flash_attn)
+    tvm_configure_target_library(flash_attn)
     install(TARGETS flash_attn DESTINATION "lib")
   endif()
 

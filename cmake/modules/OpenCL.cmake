@@ -46,7 +46,7 @@ if(USE_OPENCL)
   add_library(tvm_runtime_opencl SHARED $<TARGET_OBJECTS:tvm_runtime_opencl_objs>)
   list(APPEND TVM_RUNTIME_BACKEND_LIBS tvm_runtime_opencl)
   target_link_libraries(tvm_runtime_opencl PUBLIC tvm_runtime ${_opencl_libs})
-  tvm_configure_runtime_module(tvm_runtime_opencl)
+  tvm_configure_target_library(tvm_runtime_opencl RUNTIME_MODULE)
 
   if(USE_OPENCL_ENABLE_HOST_PTR)
     add_definitions(-DOPENCL_ENABLE_HOST_PTR)
