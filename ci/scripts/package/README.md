@@ -22,8 +22,8 @@ The wheels are built by a standard `cibuildwheel` flow, configured in
 and `[tool.scikit-build]`). This directory holds the few helper scripts that flow
 invokes:
 
-- `manylinux_build_libtvm_runtime_cuda.sh` — `CIBW_BEFORE_ALL_LINUX` hook; builds
-  the `libtvm_runtime_cuda.so` sidecar inside the manylinux container.
+- `manylinux_build_libtvm_runtime_cuda.sh` — run by the `build_cuda_runtime` CI
+  stage; builds the `libtvm_runtime_cuda.so` sidecar inside the manylinux container.
 - `windows_build_libtvm_runtime_cuda.sh` — the Windows equivalent, building
   `tvm_runtime_cuda.dll`.
 - `set_wheel_dist.py` — optional wheel name/version override for TestPyPI validation.

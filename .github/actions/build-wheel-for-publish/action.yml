@@ -113,10 +113,9 @@ runs:
         copy /Y C:\opt\llvm\Library\lib\zstd_static.lib C:\opt\llvm\Library\lib\zstd.lib
         del /Q C:\opt\llvm\Library\bin\zstd.dll C:\opt\llvm\Library\bin\libzstd.dll
 
-    # Inject the absolute path to the Windows CUDA sidecar into CIBW_ENVIRONMENT.
     # The {project} placeholder is not expanded inside CIBW_ENVIRONMENT values, so
     # compute the forward-slash host path here (the Windows analog of the Linux
-    # /project hardcode). before-all writes the DLL under build-wheel-cuda/lib/.
+    # /project hardcode).
     - name: Compute CUDA sidecar path (Windows)
       if: runner.os == 'Windows' && inputs.include_cuda_runtime == '1'
       shell: bash
@@ -138,19 +137,8 @@ runs:
         # bind-mount the cached LLVM prefix into it. Ignored on macOS/Windows,
         # which build without a container.
         CIBW_CONTAINER_ENGINE: "docker; create_args: --volume /opt/llvm:/opt/llvm:ro"
-        # Build the CUDA runtime sidecar once per architecture inside the
-        # manylinux build container (no-op for CPU-only wheels). The CPU wheel
-        # build then bundles the resulting libtvm_runtime_cuda.so via
-        # -DTVM_PACKAGE_EXTRA_LIBS. Replaces the separate build-cuda docker job.
-        CIBW_BEFORE_ALL_LINUX: >-
-          bash {project}/ci/scripts/package/manylinux_build_libtvm_runtime_cuda.sh
-          "${{ inputs.include_cuda_runtime }}"
-        # Windows mirror of the Linux hook: build tvm_runtime_cuda.dll on the host
-        # (there is no build container on Windows). cibuildwheel runs before-all
-        # through bash on Windows too, so the same bash entrypoint shape works.
-        CIBW_BEFORE_ALL_WINDOWS: >-
-          bash {project}/ci/scripts/package/windows_build_libtvm_runtime_cuda.sh
-          "${{ inputs.include_cuda_runtime }}"
+        # Bundle the prebuilt CUDA sidecar (downloaded into build-wheel-cuda/lib/)
+        # via -DTVM_PACKAGE_EXTRA_LIBS; no CUDA toolkit needed here.
         CIBW_ENVIRONMENT: >-
           CMAKE_PREFIX_PATH="/opt/llvm"
           CMAKE_ARGS="-DUSE_LLVM='/opt/llvm/bin/llvm-config --link-static' -DCMAKE_PREFIX_PATH=/opt/llvm ${{ inputs.include_cuda_runtime == '1' && '-DTVM_PACKAGE_EXTRA_LIBS=/project/build-wheel-cuda/lib/libtvm_runtime_cuda.so' || '' }}"

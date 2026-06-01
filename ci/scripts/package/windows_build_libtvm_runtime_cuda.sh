@@ -16,23 +16,13 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# Build tvm_runtime_cuda.dll on a Windows runner. Invoked from cibuildwheel's
-# CIBW_BEFORE_ALL_WINDOWS hook (runs once on the host, before any wheel is built;
-# unlike Linux there is no build container on Windows). When a CUDA runtime is
-# requested it installs the pinned CUDA toolkit via conda and builds
-# tvm_runtime_cuda.dll into build-wheel-cuda/lib/, so the subsequent (CPU-only)
-# wheel build can bundle it via -DTVM_PACKAGE_EXTRA_LIBS. A no-op for CPU-only
-# wheels. This is the Windows mirror of manylinux_build_libtvm_runtime_cuda.sh.
+# Build tvm_runtime_cuda.dll on a Windows runner, run by the build_cuda_runtime CI
+# job (on the host; unlike Linux there is no build container on Windows). Installs
+# the pinned CUDA toolkit via conda and builds the sidecar into build-wheel-cuda/lib/
+# for the wheel build to bundle. Windows mirror of manylinux_build_libtvm_runtime_cuda.sh.
 #
-# Usage: windows_build_libtvm_runtime_cuda.sh <include_cuda_runtime: 0|1>
+# Usage: windows_build_libtvm_runtime_cuda.sh
 set -euxo pipefail
-
-include_cuda_runtime="${1:-0}"
-
-if [[ "${include_cuda_runtime}" != "1" ]]; then
-  echo "windows_build_libtvm_runtime_cuda: CUDA runtime not requested; nothing to do."
-  exit 0
-fi
 
 # Keep a unix-style path for bash file operations and a mixed (forward-slash)
 # path for CMake/cmd, which dislike the /c/... msys form.
@@ -43,8 +33,8 @@ build_dir="$(cygpath -m "${build_dir_unix}")"
 cuda_prefix_unix="/c/opt/cuda"
 cuda_prefix="C:/opt/cuda"
 
-# Locate conda: cibuildwheel's before-all bash is not a login shell, so conda may
-# not be on PATH even though the runner ships Miniconda (exposed via $CONDA).
+# Locate conda: this script runs under a non-login bash, so conda may not be on
+# PATH even though the runner ships Miniconda (exposed via $CONDA).
 conda_exe="$(command -v conda || true)"
 if [[ -z "${conda_exe}" ]]; then
   conda_exe="${CONDA:-/c/Miniconda}/Scripts/conda.exe"
@@ -70,9 +60,9 @@ export CUDA_PATH="${cuda_root}"
 python -m pip install -U pip cmake ninja
 "${nvcc_exe}" --version
 
-# nvcc needs the MSVC host compiler (cl.exe) on PATH, but cibuildwheel's before-all
-# bash is not a VS Developer shell. Locate VS via vswhere and run the cmake
-# configure+build inside vcvars64.
+# nvcc needs the MSVC host compiler (cl.exe) on PATH, but this bash is not a VS
+# Developer shell. Locate VS via vswhere and run the cmake configure+build inside
+# vcvars64.
 vswhere="C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
 vs_path="$("${vswhere}" -latest -products '*' \
   -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \

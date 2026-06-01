@@ -16,23 +16,12 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# Build libtvm_runtime_cuda.so inside a manylinux container. Invoked from
-# cibuildwheel's CIBW_BEFORE_ALL_LINUX hook (runs once per architecture, before
-# any wheel is built). When a CUDA runtime is requested it installs the pinned
-# CUDA toolkit and builds libtvm_runtime_cuda.so into build-wheel-cuda/, so the
-# subsequent (CPU-only) wheel build can bundle it via -DTVM_PACKAGE_EXTRA_LIBS.
-# A no-op for CPU-only wheels. This is the one build step cibuildwheel cannot do
-# itself, since its manylinux container ships no CUDA toolkit.
+# Build libtvm_runtime_cuda.so inside a manylinux container, run by the
+# build_cuda_runtime CI job. Installs the pinned CUDA toolkit and builds the
+# sidecar into build-wheel-cuda/lib/ for the wheel build to bundle.
 #
-# Usage: manylinux_build_libtvm_runtime_cuda.sh <include_cuda_runtime: 0|1>
+# Usage: manylinux_build_libtvm_runtime_cuda.sh
 set -euxo pipefail
-
-include_cuda_runtime="${1:-0}"
-
-if [[ "${include_cuda_runtime}" != "1" ]]; then
-  echo "manylinux_build_libtvm_runtime_cuda: CUDA runtime not requested; nothing to do."
-  exit 0
-fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 build_dir="${repo_root}/build-wheel-cuda"
@@ -52,8 +41,8 @@ rm -f "/tmp/${cuda_rpm}"
 dnf clean all
 
 # Build the CUDA runtime sidecar with CUDA on and LLVM off, so it does not need
-# the LLVM prefix; the main CPU wheel links LLVM statically. before-all runs
-# before CIBW_BEFORE_BUILD, so install the build tools here.
+# the LLVM prefix; the main CPU wheel links LLVM statically. The manylinux image
+# ships no cmake/ninja, so install the build tools here.
 export PATH="/opt/python/cp310-cp310/bin:/usr/local/cuda/bin:${PATH}"
 "${python_bin}" -m pip install -U pip cmake ninja
 nvcc --version
