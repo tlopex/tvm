@@ -238,9 +238,7 @@ jobs:
 
       - name: Verify the published package
         env:
-          TVM_EXPECT_LLVM_ENABLED: "1"
-          TVM_EXPECT_STATIC_LLVM: "1"
-          TVM_EXPECT_CUDA_RUNTIME: "1"
+          TVM_WHEEL_EXPECT_CUDA_RUNTIME: "1"
         run: |
           set -eux
           if [[ "${{ inputs.publish_repository }}" == "pypi" ]]; then
@@ -260,4 +258,5 @@ jobs:
             --index-url "${index_url}" --extra-index-url https://pypi.org/simple \
             "${name}==${version}"
           /tmp/verify-venv/bin/python -m pip install pytest numpy
-          /tmp/verify-venv/bin/python -m pytest -c tests/python/wheel/pytest.ini tests/python/wheel
+          /tmp/verify-venv/bin/python -m pytest -p no:tvm.testing.plugin -vvs tests/python/wheel
+          /tmp/verify-venv/bin/python -m pytest -vvs tests/python/all-platform-minimal-test

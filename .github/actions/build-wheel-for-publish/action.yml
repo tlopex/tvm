@@ -66,7 +66,7 @@ runs:
       id: llvm-cache
       with:
         path: ${{ runner.os == 'Windows' && 'C:/opt/llvm' || '/opt/llvm' }}
-        key: tvm-wheel-llvm-${{ env.LLVM_VERSION }}-${{ runner.os }}-${{ inputs.arch }}-v5
+        key: tvm-wheel-llvm-${{ env.LLVM_VERSION }}-${{ runner.os }}-${{ inputs.arch }}-v6
 
     # ---- Install LLVM via conda (cache miss only) ----
     - name: Setup conda
@@ -103,7 +103,9 @@ runs:
       if: steps.llvm-cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
       shell: cmd /C call {0}
       run: |
-        conda create -q -p C:\opt\llvm -c conda-forge llvmdev=%LLVM_VERSION% zlib zstd-static libxml2-devel -y
+        rem `call` is required: conda is conda.bat, and without `call` a batch
+        rem file does not return control here, so the copy/del below would be skipped.
+        call conda create -q -p C:\opt\llvm -c conda-forge llvmdev=%LLVM_VERSION% zlib zstd-static libxml2-devel -y
         rem Force static zstd. conda zstd-static also pulls in dynamic zstd, and
         rem FindLLVM.cmake links %libdir%\zstd.lib for llvm-config's "zstd.dll.lib"
         rem token; overwrite that import lib with the static archive and drop the
@@ -150,24 +152,16 @@ runs:
           bash {project}/ci/scripts/package/windows_build_libtvm_runtime_cuda.sh
           "${{ inputs.include_cuda_runtime }}"
         CIBW_ENVIRONMENT: >-
-          TVM_USE_LLVM="/opt/llvm/bin/llvm-config --link-static"
           CMAKE_PREFIX_PATH="/opt/llvm"
           CMAKE_ARGS="-DUSE_LLVM='/opt/llvm/bin/llvm-config --link-static' -DCMAKE_PREFIX_PATH=/opt/llvm ${{ inputs.include_cuda_runtime == '1' && '-DTVM_PACKAGE_EXTRA_LIBS=/project/build-wheel-cuda/lib/libtvm_runtime_cuda.so' || '' }}"
           TVM_WHEEL_DIST_NAME="${{ inputs.distribution_name }}"
           TVM_WHEEL_DIST_VERSION="${{ inputs.distribution_version }}"
-          TVM_BUILD_PARALLEL_LEVEL="${{ steps.env_vars.outputs.cpu_count }}"
         CIBW_ENVIRONMENT_WINDOWS: >-
-          TVM_USE_LLVM="C:/opt/llvm/Library/bin/llvm-config.exe --link-static"
           CMAKE_PREFIX_PATH="C:/opt/llvm/Library"
           CMAKE_ARGS="-DUSE_LLVM='C:/opt/llvm/Library/bin/llvm-config.exe --link-static' -DCMAKE_PREFIX_PATH=C:/opt/llvm/Library ${{ inputs.include_cuda_runtime == '1' && format('-DTVM_PACKAGE_EXTRA_LIBS={0}', env.TVM_CUDA_EXTRA_LIB) || '' }}"
           TVM_WHEEL_DIST_NAME="${{ inputs.distribution_name }}"
           TVM_WHEEL_DIST_VERSION="${{ inputs.distribution_version }}"
-          TVM_BUILD_PARALLEL_LEVEL="${{ steps.env_vars.outputs.cpu_count }}"
-        # Strict post-install expectations consumed by tests/python/wheel. These
-        # belong to the cibuildwheel test phase, so the standard test-command
-        # asserts them (no separate verify step needed).
+        # Tells tests/python/wheel to assert the CUDA runtime is bundled
+        # (only on the CUDA wheels; the value is "0" for CPU wheels).
         CIBW_TEST_ENVIRONMENT: >-
-          TVM_EXPECT_LLVM_ENABLED=1
-          TVM_EXPECT_STATIC_LLVM=1
-          TVM_EXPECT_CUDA_RUNTIME="${{ inputs.include_cuda_runtime }}"
-          TVM_EXPECT_CUDA_ENABLED="${{ inputs.include_cuda_runtime != '1' && '0' || '' }}"
+          TVM_WHEEL_EXPECT_CUDA_RUNTIME="${{ inputs.include_cuda_runtime }}"
