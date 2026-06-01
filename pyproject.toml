@@ -211,6 +211,7 @@ docstring-code-format = false
 docstring-code-line-length = "dynamic"
 
 [tool.cibuildwheel]
+# Skip win32, i686 (32-bit), and musllinux wheels.
 skip = "*-win32 *-manylinux_i686 *-musllinux*"
 build-verbosity = 1
 test-requires = ["pytest", "numpy"]
