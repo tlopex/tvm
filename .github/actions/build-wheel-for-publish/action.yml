@@ -43,9 +43,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: ./.github/actions/detect-env-vars
-      id: env_vars
-
     # Single source of truth for the LLVM toolchain version, shared by the cache
     # key and the conda install steps below.
     - name: Set LLVM version
@@ -132,7 +129,6 @@ runs:
         CIBW_ARCHS_LINUX: ${{ inputs.arch }}
         CIBW_ARCHS_MACOS: ${{ inputs.arch }}
         CIBW_ARCHS_WINDOWS: ${{ inputs.arch }}
-        CMAKE_BUILD_PARALLEL_LEVEL: ${{ steps.env_vars.outputs.cpu_count }}
         # Linux builds run in cibuildwheel's default manylinux_2_28 container;
         # bind-mount the cached LLVM prefix into it. Ignored on macOS/Windows,
         # which build without a container.
