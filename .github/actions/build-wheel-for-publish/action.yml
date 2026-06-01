@@ -100,15 +100,7 @@ runs:
       if: steps.llvm-cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
       shell: cmd /C call {0}
       run: |
-        rem `call` is required: conda is conda.bat, and without `call` a batch
-        rem file does not return control here, so the copy/del below would be skipped.
         call conda create -q -p C:\opt\llvm -c conda-forge llvmdev=%LLVM_VERSION% zlib zstd-static libxml2-devel -y
-        rem Force static zstd. conda zstd-static also pulls in dynamic zstd, and
-        rem FindLLVM.cmake links %libdir%\zstd.lib for llvm-config's "zstd.dll.lib"
-        rem token; overwrite that import lib with the static archive and drop the
-        rem DLL so the build links zstd statically (no vendored zstd-*.dll).
-        copy /Y C:\opt\llvm\Library\lib\zstd_static.lib C:\opt\llvm\Library\lib\zstd.lib
-        del /Q C:\opt\llvm\Library\bin\zstd.dll C:\opt\llvm\Library\bin\libzstd.dll
 
     # The {project} placeholder is not expanded inside CIBW_ENVIRONMENT values, so
     # compute the forward-slash host path here (the Windows analog of the Linux
