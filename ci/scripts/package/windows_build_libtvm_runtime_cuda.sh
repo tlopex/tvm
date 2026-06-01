@@ -24,11 +24,10 @@
 # wheel build can bundle it via -DTVM_PACKAGE_EXTRA_LIBS. A no-op for CPU-only
 # wheels. This is the Windows mirror of manylinux_build_libtvm_runtime_cuda.sh.
 #
-# Usage: windows_build_libtvm_runtime_cuda.sh <include_cuda_runtime: 0|1> <cuda_architectures>
+# Usage: windows_build_libtvm_runtime_cuda.sh <include_cuda_runtime: 0|1>
 set -euxo pipefail
 
 include_cuda_runtime="${1:-0}"
-cuda_architectures="${2:-75}"
 
 if [[ "${include_cuda_runtime}" != "1" ]]; then
   echo "windows_build_libtvm_runtime_cuda: CUDA runtime not requested; nothing to do."
@@ -83,10 +82,12 @@ vcvars="${vs_path}\\VC\\Auxiliary\\Build\\vcvars64.bat"
 
 rm -rf "${build_dir_unix}"
 
-# CMAKE_CUDA_ARCHITECTURES does not affect the resulting tvm_runtime_cuda.dll (the
-# runtime has no .cu device code; nvcc is never invoked for it), but is passed so
-# CUDA.cmake never falls back to "native". -allow-unsupported-compiler guards
-# against the runner's MSVC being newer than the CUDA toolkit officially supports.
+# CMAKE_CUDA_COMPILER only tells CMake which nvcc to use (load-bearing here: the
+# conda nvcc is not on PATH); it does not affect the resulting tvm_runtime_cuda.dll,
+# which is built only from .cc host sources (no .cu device code). CMAKE_CUDA_ARCHITECTURES
+# is intentionally not set -- a no-op for the same reason, and modern CMake fills a
+# default. -allow-unsupported-compiler guards against the runner's MSVC being newer
+# than the CUDA toolkit officially supports.
 cmd_script="$(mktemp --suffix=.bat)"
 cat > "${cmd_script}" <<EOF
 call "${vcvars}" || exit /b 1
@@ -97,7 +98,6 @@ cmake -S "${repo_root}" -B "${build_dir}" -G Ninja ^
   -DUSE_CUDA="${cuda_root}" ^
   -DUSE_LLVM=OFF ^
   -DUSE_CUBLAS=OFF -DUSE_CUDNN=OFF -DUSE_CUTLASS=OFF -DUSE_NCCL=OFF -DUSE_NVTX=OFF ^
-  -DCMAKE_CUDA_ARCHITECTURES="${cuda_architectures}" ^
   -DCMAKE_CUDA_COMPILER="${nvcc_exe}" ^
   -DCMAKE_CUDA_FLAGS="-allow-unsupported-compiler" || exit /b 1
 cmake --build "${build_dir}" --target tvm_runtime tvm_runtime_cuda --config Release || exit /b 1

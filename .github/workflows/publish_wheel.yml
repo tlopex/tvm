@@ -43,11 +43,6 @@ on:
         required: false
         default: ""
         type: string
-      cuda_architectures:
-        description: "CMake CUDA architectures for libtvm_runtime_cuda.so"
-        required: false
-        default: "75"
-        type: string
       verify_from_repository:
         description: "Install the uploaded package from the selected repository and import-test it"
         required: true
@@ -140,7 +135,6 @@ jobs:
           build: ${{ matrix.build }}
           distribution_name: ${{ inputs.distribution_name }}
           distribution_version: ${{ inputs.distribution_version }}
-          cuda_architectures: ${{ inputs.cuda_architectures }}
           include_cuda_runtime: ${{ matrix.include_cuda_runtime }}
 
       - name: Upload wheel artifact

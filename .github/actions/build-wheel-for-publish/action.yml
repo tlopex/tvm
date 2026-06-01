@@ -35,10 +35,6 @@ inputs:
     description: "Optional wheel distribution version override, useful for TestPyPI"
     required: false
     default: ""
-  cuda_architectures:
-    description: "CMake CUDA architectures for libtvm_runtime_cuda.so"
-    required: false
-    default: "75"
   include_cuda_runtime:
     description: "Set to 1 to build and inject the CUDA runtime library (Linux only)"
     required: false
@@ -141,14 +137,12 @@ runs:
         CIBW_BEFORE_ALL_LINUX: >-
           bash {project}/ci/scripts/package/manylinux_build_libtvm_runtime_cuda.sh
           "${{ inputs.include_cuda_runtime }}"
-          "${{ inputs.cuda_architectures }}"
         # Windows mirror of the Linux hook: build tvm_runtime_cuda.dll on the host
         # (there is no build container on Windows). cibuildwheel runs before-all
         # through bash on Windows too, so the same bash entrypoint shape works.
         CIBW_BEFORE_ALL_WINDOWS: >-
           bash {project}/ci/scripts/package/windows_build_libtvm_runtime_cuda.sh
           "${{ inputs.include_cuda_runtime }}"
-          "${{ inputs.cuda_architectures }}"
         CIBW_ENVIRONMENT: >-
           TVM_USE_LLVM="/opt/llvm/bin/llvm-config --link-static"
           CMAKE_PREFIX_PATH="/opt/llvm"

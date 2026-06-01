@@ -24,11 +24,10 @@
 # A no-op for CPU-only wheels. This is the one build step cibuildwheel cannot do
 # itself, since its manylinux container ships no CUDA toolkit.
 #
-# Usage: manylinux_build_libtvm_runtime_cuda.sh <include_cuda_runtime: 0|1> <cuda_architectures>
+# Usage: manylinux_build_libtvm_runtime_cuda.sh <include_cuda_runtime: 0|1>
 set -euxo pipefail
 
 include_cuda_runtime="${1:-0}"
-cuda_architectures="${2:-75}"
 
 if [[ "${include_cuda_runtime}" != "1" ]]; then
   echo "manylinux_build_libtvm_runtime_cuda: CUDA runtime not requested; nothing to do."
@@ -60,13 +59,12 @@ export PATH="/opt/python/cp310-cp310/bin:/usr/local/cuda/bin:${PATH}"
 nvcc --version
 
 rm -rf "${build_dir}"
-# CMAKE_CUDA_ARCHITECTURES and CMAKE_CUDA_COMPILER do not affect the resulting
-# libtvm_runtime_cuda.so: it is built only from .cc host sources (no .cu device
-# code), so nvcc is never invoked for it and no arch-specific code is baked in
-# (the .so's .text/.rodata are byte-identical across arch values and cuobjdump
-# reports no device code). We still pass an explicit arch as cheap forward-proofing:
-# if a future source adds real .cu device code to this runtime, an explicit value
-# keeps the build deterministic instead of falling back to nvcc's default arch.
+# CMAKE_CUDA_COMPILER only tells CMake which nvcc to use; it does not affect the
+# resulting libtvm_runtime_cuda.so, which is built only from .cc host sources (no
+# .cu device code, so nvcc is never invoked for it). CMAKE_CUDA_ARCHITECTURES is
+# intentionally not set: it would be a no-op here for the same reason (verified --
+# the .so is byte-identical across arch values and carries no device code), and
+# modern CMake fills in a default so configure does not fail without it.
 cmake -S "${repo_root}" -B "${build_dir}" \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTING=OFF \
@@ -74,7 +72,6 @@ cmake -S "${repo_root}" -B "${build_dir}" \
   -DUSE_CUDA=/usr/local/cuda \
   -DUSE_LLVM=OFF \
   -DUSE_CUBLAS=OFF -DUSE_CUDNN=OFF -DUSE_CUTLASS=OFF -DUSE_NCCL=OFF -DUSE_NVTX=OFF \
-  -DCMAKE_CUDA_ARCHITECTURES="${cuda_architectures}" \
   -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc
 cmake --build "${build_dir}" --target tvm_runtime tvm_runtime_cuda --parallel "${parallel}"
 
