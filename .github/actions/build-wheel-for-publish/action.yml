@@ -66,7 +66,7 @@ runs:
       id: llvm-cache
       with:
         path: ${{ runner.os == 'Windows' && 'C:/opt/llvm' || '/opt/llvm' }}
-        key: tvm-wheel-llvm-${{ env.LLVM_VERSION }}-${{ runner.os }}-${{ inputs.arch }}-v4
+        key: tvm-wheel-llvm-${{ env.LLVM_VERSION }}-${{ runner.os }}-${{ inputs.arch }}-v5
 
     # ---- Install LLVM via conda (cache miss only) ----
     - name: Setup conda
@@ -104,6 +104,12 @@ runs:
       shell: cmd /C call {0}
       run: |
         conda create -q -p C:\opt\llvm -c conda-forge llvmdev=%LLVM_VERSION% zlib zstd-static libxml2-devel -y
+        rem Force static zstd. conda zstd-static also pulls in dynamic zstd, and
+        rem FindLLVM.cmake links %libdir%\zstd.lib for llvm-config's "zstd.dll.lib"
+        rem token; overwrite that import lib with the static archive and drop the
+        rem DLL so the build links zstd statically (no vendored zstd-*.dll).
+        copy /Y C:\opt\llvm\Library\lib\zstd_static.lib C:\opt\llvm\Library\lib\zstd.lib
+        del /Q C:\opt\llvm\Library\bin\zstd.dll C:\opt\llvm\Library\bin\libzstd.dll
 
     # Inject the absolute path to the Windows CUDA sidecar into CIBW_ENVIRONMENT.
     # The {project} placeholder is not expanded inside CIBW_ENVIRONMENT values, so
