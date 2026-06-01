@@ -134,12 +134,13 @@ runs:
           TVM_WHEEL_DIST_VERSION="${{ inputs.distribution_version }}"
         CIBW_ENVIRONMENT_LINUX: >-
           CMAKE_PREFIX_PATH="/opt/llvm"
-          LIBRARY_PATH="/tmp/tvm-wheel-link-libs"
+          LIBRARY_PATH="/opt/llvm/lib"
           CMAKE_ARGS="-DUSE_LLVM='/opt/llvm/bin/llvm-config --link-static' -DCMAKE_PREFIX_PATH=/opt/llvm ${{ inputs.include_cuda_runtime == '1' && '-DTVM_PACKAGE_EXTRA_LIBS=/project/build-wheel-cuda/lib/libtvm_runtime_cuda.so' || '' }}"
           TVM_WHEEL_DIST_NAME="${{ inputs.distribution_name }}"
           TVM_WHEEL_DIST_VERSION="${{ inputs.distribution_version }}"
         CIBW_ENVIRONMENT_WINDOWS: >-
           CMAKE_PREFIX_PATH="C:/opt/llvm/Library"
+          PATH="C:/opt/llvm/Library/bin;$PATH"
           CMAKE_ARGS="-DUSE_LLVM='C:/opt/llvm/Library/bin/llvm-config.exe --link-static' -DCMAKE_PREFIX_PATH=C:/opt/llvm/Library ${{ inputs.include_cuda_runtime == '1' && format('-DTVM_PACKAGE_EXTRA_LIBS={0}', env.TVM_CUDA_EXTRA_LIB) || '' }}"
           TVM_WHEEL_DIST_NAME="${{ inputs.distribution_name }}"
           TVM_WHEEL_DIST_VERSION="${{ inputs.distribution_version }}"
