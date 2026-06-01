@@ -17,10 +17,8 @@
 
 # TVM wheel packaging
 
-The TVM wheels are built with `cibuildwheel`. Configuration intrinsic to the
-package lives in `pyproject.toml`; the GitHub Actions workflow only adds the
-per-run environment on top. This directory holds the few helpers `cibuildwheel`
-cannot provide itself.
+The TVM wheels are built with `cibuildwheel`. This directory holds the few
+helpers `cibuildwheel` cannot provide itself.
 
 ## Build flow
 
@@ -43,34 +41,6 @@ The publish workflow builds four wheels — Linux x86_64 and aarch64 (with the
 CUDA runtime, in cibuildwheel's default `manylinux_2_28` image), macOS arm64, and
 Windows AMD64 (with the CUDA runtime) — then optionally uploads them with
 `pypa/gh-action-pypi-publish` and verifies the uploaded package.
-
-## Where configuration lives
-
-Settings intrinsic to the package go in `pyproject.toml`, so they apply to
-*every* build — `pip install .`, a local `cibuildwheel` run, a fork, or an
-upstream pipeline. The workflow sets only what a *specific CI run* provides.
-
-`pyproject.toml` (stable):
-
-- `[build-system].requires` — the build toolchain (`scikit-build-core`, `cmake`,
-  `ninja`).
-- `[tool.scikit-build.cmake.define]` — static CMake options (`USE_CUDA=OFF`,
-  `BUILD_TESTING=OFF`, `TVM_BUILD_PYTHON_MODULE=ON`, `ZLIB_USE_STATIC_LIBS=ON`).
-- `[tool.cibuildwheel]` and `[tool.cibuildwheel.{linux,macos,windows}]` — `skip`,
-  test config, and the per-platform `before-build` / `repair-wheel-command`.
-
-Workflow `env:` (per-run):
-
-- `CIBW_BUILD` / `CIBW_ARCHS_*` — the architecture; the `manylinux_*` tag already
-  selects the default `manylinux_2_28` image, so no image override is set.
-- `CIBW_ENVIRONMENT` — the `USE_LLVM` config path, `CMAKE_PREFIX_PATH`, and the
-  CUDA library path (all depend on where the runner installed things).
-- `CIBW_CONTAINER_ENGINE` — bind-mounts the cached `/opt/llvm` prefix.
-- `CIBW_BEFORE_ALL_LINUX`, `CIBW_TEST_ENVIRONMENT`, and the optional dist
-  name/version override.
-
-Rule of thumb: still correct when the package is built elsewhere → `pyproject.toml`;
-only describes this CI run → the workflow.
 
 ## Files
 
