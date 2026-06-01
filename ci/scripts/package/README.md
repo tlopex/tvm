@@ -68,7 +68,8 @@ Test a locally built wheel with the same suite `cibuildwheel` uses:
 
 ```bash
 python -m pip install wheelhouse/*.whl pytest numpy
-python -m pytest -c tests/python/wheel/pytest.ini tests/python/wheel
+python -m pytest -p no:tvm.testing.plugin -vvs tests/python/wheel
+python -m pytest -vvs tests/python/all-platform-minimal-test
 ```
 
 Run the workflow from a fork without publishing (add
