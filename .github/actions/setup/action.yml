@@ -6,14 +6,14 @@ runs:
       CACHE_NUMBER: 2
     with:
       path: ~/conda_pkgs_dir
-      key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ hashFiles('tests/conda/build-environment.yaml') }}
+      key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ hashFiles('ci/scripts/package/build-environment.yaml') }}
   - uses: conda-incubator/setup-miniconda@8ee1f361103df19b6f8c8655fd3967a8ecb162d5 # v4.0.1
     continue-on-error: true
     id: conda1
     with:
       activate-environment: tvm-build
       channel-priority: strict
-      environment-file: tests/conda/build-environment.yaml
+      environment-file: ci/scripts/package/build-environment.yaml
       auto-activate-base: false
       miniforge-version: latest
       python-version: "3.10"
@@ -24,7 +24,7 @@ runs:
     with:
       activate-environment: tvm-build
       channel-priority: strict
-      environment-file: tests/conda/build-environment.yaml
+      environment-file: ci/scripts/package/build-environment.yaml
       auto-activate-base: false
       miniforge-version: latest
       use-only-tar-bz2: true
