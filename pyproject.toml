@@ -135,7 +135,6 @@ logging.level = "INFO"
 TVM_BUILD_PYTHON_MODULE = "ON"
 USE_CUDA = "OFF"
 BUILD_TESTING = "OFF"
-ZLIB_USE_STATIC_LIBS = "ON"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
