@@ -216,11 +216,13 @@ test-requires = ["pytest", "numpy"]
 test-command = "pytest -p no:tvm.testing.plugin -vvs {project}/tests/python/wheel && pytest -vvs {project}/tests/python/all-platform-minimal-test"
 
 [tool.cibuildwheel.linux]
+before-build = 'python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml'
 repair-wheel-command = "auditwheel repair --exclude libtvm_ffi.so --exclude libtvm_runtime_cuda.so --exclude 'libcuda.so.*' --exclude 'libcudart.so.*' --exclude 'libnvrtc.so.*' --exclude 'libnvrtc-builtins.so.*' -w {dest_dir} {wheel}"
 
 [tool.cibuildwheel.macos]
+before-build = 'python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml'
 repair-wheel-command = 'delocate-wheel --ignore-missing-dependencies --exclude libtvm_ffi.dylib --require-archs {delocate_archs} -w {dest_dir} -v {wheel}'
 
 [tool.cibuildwheel.windows]
-before-build = 'python -m pip install delvewheel'
+before-build = 'python -m pip install delvewheel && python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml'
 repair-wheel-command = "delvewheel repair --analyze-existing --ignore-existing --exclude tvm_ffi.dll --exclude libtvm_ffi.dll --exclude tvm_runtime_cuda.dll --exclude nvcuda.dll --exclude cudart64_13.dll --exclude nvrtc64_130_0.dll -w {dest_dir} {wheel}"

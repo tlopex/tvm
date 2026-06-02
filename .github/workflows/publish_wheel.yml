@@ -33,6 +33,16 @@ on:
           - none
           - testpypi
           - pypi
+      distribution_name:
+        description: "Optional package name override, e.g. tvm-yourname-test for TestPyPI"
+        required: false
+        default: ""
+        type: string
+      distribution_version:
+        description: "Optional package version override for TestPyPI validation builds"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -155,8 +165,26 @@ jobs:
         env:
           TVM_PUBLISH_REPOSITORY: ${{ inputs.publish_repository }}
           TVM_PUBLISH_REF: ${{ inputs.tag }}
+          TVM_WHEEL_DIST_NAME: ${{ inputs.distribution_name }}
+          TVM_WHEEL_DIST_VERSION: ${{ inputs.distribution_version }}
         run: |
           set -eux
+          if [[ -n "${TVM_WHEEL_DIST_NAME}" && ! "${TVM_WHEEL_DIST_NAME}" =~ ^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$ ]]; then
+            echo "distribution_name must be a valid Python package name override" >&2
+            exit 1
+          fi
+          if [[ -n "${TVM_WHEEL_DIST_VERSION}" && ! "${TVM_WHEEL_DIST_VERSION}" =~ ^[A-Za-z0-9][A-Za-z0-9._!+-]*$ ]]; then
+            echo "distribution_version must be a valid Python package version override" >&2
+            exit 1
+          fi
+          if [[ "${TVM_PUBLISH_REPOSITORY}" == "pypi" && -n "${TVM_WHEEL_DIST_NAME}" ]]; then
+            echo "distribution_name must be empty when publishing to PyPI" >&2
+            exit 1
+          fi
+          if [[ "${TVM_PUBLISH_REPOSITORY}" == "pypi" && -n "${TVM_WHEEL_DIST_VERSION}" ]]; then
+            echo "distribution_version must be empty when publishing to PyPI" >&2
+            exit 1
+          fi
           if [[ "${TVM_PUBLISH_REPOSITORY}" == "pypi" && "${TVM_PUBLISH_REF}" != refs/tags/* ]]; then
             echo "PyPI publishes must use an immutable refs/tags/<tag> ref" >&2
             exit 1
@@ -201,6 +229,8 @@ jobs:
           arch: ${{ matrix.arch }}
           build: ${{ matrix.build }}
           cmake_defines: ${{ matrix.cmake_defines }}
+          distribution_name: ${{ inputs.distribution_name }}
+          distribution_version: ${{ inputs.distribution_version }}
           include_cuda_runtime: ${{ matrix.include_cuda_runtime }}
 
       - name: Upload wheel artifact
