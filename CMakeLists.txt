@@ -594,7 +594,7 @@ set_property(TARGET tvm_compiler APPEND PROPERTY LINK_OPTIONS "${TVM_VISIBILITY_
 # generation. Disabling linker relaxation keeps the GOT-indirect sequences and
 # avoids the miscompilation; it is harmless when LLVM is linked dynamically.
 # See binutils bug ld/25754.
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ${USE_LLVM} MATCHES ${IS_FALSE_PATTERN})
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT "${USE_LLVM}" MATCHES ${IS_FALSE_PATTERN})
   set_property(TARGET tvm_compiler APPEND PROPERTY LINK_OPTIONS "-Wl,--no-relax")
   # LLVM's --system-libs reports -lxml2, but TVM calls no libxml2 symbols. The
   # manylinux toolchain does not default to --as-needed, so set it explicitly:

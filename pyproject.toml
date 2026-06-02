@@ -48,7 +48,6 @@ dependencies = [
   "ml_dtypes",
   "numpy",
   "psutil",
-  "pytest",
   "typing_extensions",
 ]
 
@@ -213,10 +212,6 @@ docstring-code-line-length = "dynamic"
 # Skip win32, i686 (32-bit), and musllinux wheels.
 skip = "*-win32 *-manylinux_i686 *-musllinux*"
 build-verbosity = 1
-# Pin the manylinux image so the build_cuda_runtime sidecar (built in this same
-# image) stays ABI-compatible if a cibuildwheel bump changes the default.
-manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2026.01.04-1"
-manylinux-aarch64-image = "quay.io/pypa/manylinux_2_28_aarch64:2026.01.04-1"
 test-requires = ["pytest", "numpy"]
 test-command = "pytest -p no:tvm.testing.plugin -vvs {project}/tests/python/wheel && pytest -vvs {project}/tests/python/all-platform-minimal-test"
 
