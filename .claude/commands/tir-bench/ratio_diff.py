@@ -17,6 +17,9 @@ unstable, so the ratio Δ is less trustworthy.
 
 The report lists every comparable workload in a single table, sorted by
 ratio Δ from most-improved to most-regressed (positive → negative).
+Baseline workloads that were attempted this run but produced no comparable
+measurement (failed, interfered, or missing an impl) are listed in a separate
+"Not comparable in current run" section so lost coverage is never silent.
 
 Usage:
     python ratio_diff.py [baseline.json] [current.json] [-o PATH]
@@ -75,8 +78,23 @@ def build_report(
     base = index(base_payload)
     cur = index(cur_payload)
 
+    # Status of every current-run result, including non-ok rows. index() keeps
+    # only status=="ok", so a workload that failed/interfered this run is absent
+    # from `cur` and would otherwise vanish from the report with no trace — the
+    # only hint being a "comparable" count below the baseline size. Keep the full
+    # record so we can explain *why* a baseline workload has no comparable
+    # measurement this run instead of silently truncating coverage.
+    cur_status: dict[tuple[str, str], dict] = {}
+    for r in cur_payload.get("results") or []:
+        cur_status[(r["kernel"], r.get("label") or r.get("config"))] = r
+
     rows: list[tuple[str, str, str, float, float, float, float, float]] = []
     skipped_no_ref: list[tuple[str, str]] = []
+    # Baseline workloads attempted this run but yielding no comparable ratio
+    # (failed, interfered, or ok-but-missing an impl). Workloads simply not in
+    # this run's scope (e.g. a --filter subset) have no cur_status record and are
+    # NOT listed, so filtered runs don't get spammed with the whole baseline.
+    not_comparable: list[tuple[str, str, str]] = []
     for key, base_impls in base.items():
         ref = pick_ref(base_impls)
         ours_b = next((i for i in OUR_IMPLS if i in base_impls), None)
@@ -84,9 +102,16 @@ def build_report(
             skipped_no_ref.append(key)
             continue
         if key not in cur:
+            rec = cur_status.get(key)
+            if rec is not None:  # attempted this run but not ok → surface it
+                st = rec.get("status") or "?"
+                err = (rec.get("error") or "").strip().splitlines()
+                not_comparable.append((key[0], key[1], f"{st}: {err[0]}" if err else st))
             continue
         cur_impls = cur[key]
         if ours_b not in cur_impls or ref not in cur_impls:
+            missing = ", ".join(i for i in (ours_b, ref) if i not in cur_impls)
+            not_comparable.append((key[0], key[1], f"ok but missing impl(s): {missing}"))
             continue
         our_b_ms, ref_b_ms = base_impls[ours_b], base_impls[ref]
         our_c_ms, ref_c_ms = cur_impls[ours_b], cur_impls[ref]
@@ -119,8 +144,10 @@ def build_report(
       "fixed across runs). Higher ratio = ours is faster. Sorted by ratio Δ "
       "from improved → regressed.")
     w(f"- Summary: {len(rows)} comparable workloads; "
-      f"{n_improvements} > +5%, {n_regressions} < -5%. "
-      f"⚠ = reference impl itself drifted >20% (less trustworthy).")
+      f"{n_improvements} > +5%, {n_regressions} < -5%"
+      + (f"; {len(not_comparable)} not comparable in current run (see below)"
+         if not_comparable else "")
+      + ". ⚠ = reference impl itself drifted >20% (less trustworthy).")
     w()
 
     if rows:
@@ -130,6 +157,20 @@ def build_report(
             flag = " ⚠" if abs(ref_d) > 20 else ""
             w(f"| {k} | {c} | {ref} | {br:.3f} | {cr:.3f} | {d:+.1f}% | "
               f"{our_d:+.1f}% | {ref_d:+.1f}%{flag} |")
+        w()
+
+    if not_comparable:
+        w(f"## Not comparable in current run ({len(not_comparable)})")
+        w()
+        w("_In baseline with a ref/ours pair, but produced no comparable "
+          "measurement this run (failed, interfered, or missing an impl), so "
+          "excluded from the ratio table above. Not a perf signal — usually a "
+          "contention/OOM artifact — but flagged so lost coverage is never silent._")
+        w()
+        for k, c, reason in sorted(not_comparable):
+            # OOM messages are huge single lines; keep the actionable head.
+            reason = reason if len(reason) <= 160 else reason[:157] + "..."
+            w(f"- `{k}/{c}` — {reason}")
         w()
 
     if skipped_no_ref:

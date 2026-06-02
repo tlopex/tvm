@@ -1462,8 +1462,8 @@
       "gpu": "1",
       "started_at": "2026-06-02T15:32:23+00:00",
       "impls": {
-        "deepgemm": 0.123735,
-        "tirx": 0.118041
+        "deepgemm": 0.12524,
+        "tirx": 0.119416
       },
       "errors": {},
       "timer": "proton",
@@ -2083,9 +2083,9 @@
       "gpu": "6",
       "started_at": "2026-06-02T15:33:38+00:00",
       "impls": {
-        "flashattn_sm100": 0.019874,
-        "flashinfer": 0.026169,
-        "tir": 0.020736
+        "flashattn_sm100": 0.01989,
+        "flashinfer": 0.0261,
+        "tir": 0.020797
       },
       "errors": {},
       "timer": "proton",
@@ -2211,9 +2211,9 @@
       "gpu": "7",
       "started_at": "2026-06-02T15:33:21+00:00",
       "impls": {
-        "flashattn_sm100": 0.019582000000000002,
-        "flashinfer": 0.026007500000000003,
-        "tir": 0.019888
+        "flashattn_sm100": 0.01952,
+        "flashinfer": 0.02605,
+        "tir": 0.01975
       },
       "errors": {},
       "timer": "proton",
@@ -2251,9 +2251,9 @@
       "gpu": "2",
       "started_at": "2026-06-02T15:33:29+00:00",
       "impls": {
-        "flashattn_sm100": 0.020339,
-        "flashinfer": 0.026046,
-        "tir": 0.020904
+        "flashattn_sm100": 0.020192,
+        "flashinfer": 0.0261,
+        "tir": 0.020919
       },
       "errors": {},
       "timer": "proton",
@@ -3151,10 +3151,10 @@
       "gpu": "5",
       "started_at": "2026-06-02T15:36:22+00:00",
       "impls": {
-        "deepgemm-bf16": 0.018806999999999997,
-        "deepgemm-cublaslt": 0.018454,
-        "tir": 0.027664,
-        "torch-cublas": 0.018459
+        "deepgemm-bf16": 0.01862,
+        "deepgemm-cublaslt": 0.01836,
+        "tir": 0.02757,
+        "torch-cublas": 0.01835
       },
       "errors": {},
       "timer": "proton",
