@@ -213,7 +213,7 @@ docstring-code-line-length = "dynamic"
 skip = "*-win32 *-manylinux_i686 *-musllinux*"
 build-verbosity = 1
 test-requires = ["pytest", "numpy"]
-test-command = "pytest -p no:tvm.testing.plugin -vvs {project}/tests/python/wheel && pytest -vvs {project}/tests/python/all-platform-minimal-test"
+test-command = "pytest -vvs {project}/tests/python/all-platform-minimal-test"
 
 [tool.cibuildwheel.linux]
 before-build = 'python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml'
@@ -224,5 +224,5 @@ before-build = 'python {project}/ci/scripts/package/set_wheel_dist.py {project}/
 repair-wheel-command = 'bash ci/scripts/package/macos_repair_wheel.sh {dest_dir} {wheel} {delocate_archs}'
 
 [tool.cibuildwheel.windows]
-before-build = 'python -m pip install delvewheel && python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml'
-repair-wheel-command = "delvewheel repair --analyze-existing --ignore-existing --exclude tvm_ffi.dll --exclude libtvm_ffi.dll --exclude tvm_runtime_cuda.dll --exclude nvcuda.dll --exclude cudart64_13.dll --exclude nvrtc64_130_0.dll -w {dest_dir} {wheel}"
+before-build = 'python -m pip install "delvewheel>=1.12.0" && python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml'
+repair-wheel-command = 'delvewheel repair --analyze-existing --ignore-existing --exclude "*tvm_ffi*.dll" --exclude tvm_runtime_cuda.dll --exclude nvcuda.dll --exclude cudart64_13.dll --exclude nvrtc64_130_0.dll -w {dest_dir} {wheel}'
