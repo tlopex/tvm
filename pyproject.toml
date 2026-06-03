@@ -221,7 +221,23 @@ repair-wheel-command = "auditwheel repair --exclude libtvm_ffi.so --exclude libt
 
 [tool.cibuildwheel.macos]
 before-build = 'python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml'
-repair-wheel-command = '''bash -c 'set -euo pipefail; r="$(mktemp -d)"; delocate-wheel --ignore-missing-dependencies --exclude libtvm_ffi.dylib --require-archs {delocate_archs} -w "$r" -v "{wheel}"; python -m pip install -q wheel; u="$(mktemp -d)"; python -m wheel unpack "$r"/*.whl -d "$u"; find "$u" -type f \( -name "*.dylib" -o -name "*.so" \) -print0 | xargs -0 -n1 codesign --force --sign -; python -m wheel pack "$u"/*/ -d "{dest_dir}"' '''
+# delocate edits invalidate the ad-hoc signatures of the Mach-O files it touches.
+# tvm/lib/libtvm_runtime.dylib LC_LOADs @rpath/libtvm_ffi.dylib, which is --excluded
+# (it ships in the separate apache-tvm-ffi package), so delocate leaves it with an
+# invalid signature; arm64 dyld SIGKILLs an invalidly-signed Mach-O, so `import tvm`
+# would die with "Code Signature Invalid". Re-sign every bundled Mach-O and repack so
+# RECORD matches. `wheel` is not in cibuildwheel's repair venv, so install it first.
+repair-wheel-command = '''
+set -euo pipefail
+delocate-wheel --ignore-missing-dependencies --exclude libtvm_ffi.dylib --require-archs {delocate_archs} -w {dest_dir} -v {wheel}
+python -m pip install -q wheel
+TMP_DIR="$(mktemp -d)"
+python -m wheel unpack "{dest_dir}"/*.whl -d "$TMP_DIR"
+find "$TMP_DIR" -type f \( -name "*.dylib" -o -name "*.so" \) -exec codesign --force --sign - {} +
+rm -f "{dest_dir}"/*.whl
+python -m wheel pack "$TMP_DIR"/*/ -d {dest_dir}
+rm -rf "$TMP_DIR"
+'''
 
 [tool.cibuildwheel.windows]
 before-build = 'python -m pip install "delvewheel>=1.12.0" && python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml'
