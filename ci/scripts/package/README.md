@@ -26,4 +26,5 @@ invokes:
   stage; builds the `libtvm_runtime_cuda.so` sidecar inside the manylinux container.
 - `windows_build_libtvm_runtime_cuda.bat` — the Windows equivalent (run with
   `shell: cmd`), building `tvm_runtime_cuda.dll`.
+- `set_wheel_dist.py` — optional wheel name/version override for TestPyPI validation.
 - `build-environment.yaml` — conda environment for building the wheel.

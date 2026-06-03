@@ -216,11 +216,13 @@ test-requires = ["pytest", "numpy"]
 test-command = "pytest -vvs {project}/tests/python/all-platform-minimal-test"
 
 [tool.cibuildwheel.linux]
+before-build = 'python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml'
 repair-wheel-command = "auditwheel repair --exclude libtvm_ffi.so --exclude libtvm_runtime_cuda.so --exclude 'libcuda.so.*' --exclude 'libcudart.so.*' --exclude 'libnvrtc.so.*' --exclude 'libnvrtc-builtins.so.*' -w {dest_dir} {wheel}"
 
 [tool.cibuildwheel.macos]
+before-build = 'python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml'
 repair-wheel-command = '''bash -c 'set -euo pipefail; r="$(mktemp -d)"; delocate-wheel --ignore-missing-dependencies --exclude libtvm_ffi.dylib --require-archs {delocate_archs} -w "$r" -v "{wheel}"; python -m pip install -q wheel; u="$(mktemp -d)"; python -m wheel unpack "$r"/*.whl -d "$u"; find "$u" -type f \( -name "*.dylib" -o -name "*.so" \) -print0 | xargs -0 -n1 codesign --force --sign -; python -m wheel pack "$u"/*/ -d "{dest_dir}"' '''
 
 [tool.cibuildwheel.windows]
-before-build = 'python -m pip install "delvewheel>=1.12.0"'
+before-build = 'python -m pip install "delvewheel>=1.12.0" && python {project}/ci/scripts/package/set_wheel_dist.py {project}/pyproject.toml'
 repair-wheel-command = 'delvewheel repair --analyze-existing --ignore-existing --exclude "*tvm_ffi*.dll" --exclude tvm_runtime_cuda.dll --exclude nvcuda.dll --exclude cudart64_13.dll --exclude nvrtc64_130_0.dll -w {dest_dir} {wheel}'
