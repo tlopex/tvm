@@ -20,7 +20,7 @@ import pytest
 
 import tvm
 import tvm.testing
-from tvm.script import tirx as Tx
+from tvm.script import tirx as T
 
 DEV = tvm.device("cuda")
 
@@ -42,12 +42,12 @@ def _helper_source(src: str, helper_name: str) -> str:
 
 
 def test_serial_pragma_unroll_codegen():
-    @Tx.prim_func
-    def main(A: Tx.Buffer((4,), "int32")):
-        Tx.device_entry()
-        tx = Tx.thread_id([32])
+    @T.prim_func
+    def main(A: T.Buffer((4,), "int32")):
+        T.device_entry()
+        tx = T.thread_id([32])
         if tx == 0:
-            for i in Tx.serial(4, unroll=True):
+            for i in T.serial(4, unroll=True):
                 if i == 2:
                     break
                 A[i] = A[i] + 1
@@ -59,11 +59,11 @@ def test_serial_pragma_unroll_codegen():
 
 
 def test_cluster_cta_id_codegen_uses_coordinate_sregs():
-    @Tx.prim_func
-    def main(A: Tx.Buffer((1,), "int32")):
-        Tx.device_entry()
-        cbx, cby = Tx.cta_id_in_cluster([2, 2])
-        tx = Tx.thread_id([32])
+    @T.prim_func
+    def main(A: T.Buffer((1,), "int32")):
+        T.device_entry()
+        cbx, cby = T.cta_id_in_cluster([2, 2])
+        tx = T.thread_id([32])
         if tx == 0:
             A[0] = cbx + cby
 
@@ -75,13 +75,13 @@ def test_cluster_cta_id_codegen_uses_coordinate_sregs():
 
 
 def test_cuda_handle_uint64_reinterpret_codegen():
-    @Tx.prim_func
-    def main(A: Tx.Buffer((1,), "uint64")):
-        Tx.device_entry()
-        tx = Tx.thread_id([32])
+    @T.prim_func
+    def main(A: T.Buffer((1,), "uint64")):
+        T.device_entry()
+        tx = T.thread_id([32])
         if tx == 0:
-            ptr = Tx.reinterpret("handle", A[0])
-            A[0] = Tx.reinterpret("uint64", ptr)
+            ptr = T.reinterpret("handle", A[0])
+            A[0] = T.reinterpret("uint64", ptr)
 
     src, _ = _get_source(main)
     assert "reinterpret_cast<void*>" in src
@@ -90,14 +90,14 @@ def test_cuda_handle_uint64_reinterpret_codegen():
 
 
 def test_cuda_atomic_add():
-    @Tx.prim_func
-    def main(A: Tx.Buffer((1,), "int32"), B: Tx.Buffer((1,), "float32")):
-        Tx.device_entry()
-        cta_id = Tx.cta_id([1])
-        tx = Tx.thread_id([32])
+    @T.prim_func
+    def main(A: T.Buffer((1,), "int32"), B: T.Buffer((1,), "float32")):
+        T.device_entry()
+        cta_id = T.cta_id([1])
+        tx = T.thread_id([32])
         if tx == 0:
-            Tx.cuda.atomic_add(A.data, Tx.int32(1))
-            Tx.cuda.atomic_add(B.data, Tx.float32(1.0))
+            T.cuda.atomic_add(A.data, T.int32(1))
+            T.cuda.atomic_add(B.data, T.float32(1.0))
 
     src, mod = _get_source(main)
     assert "tvm_builtin_cuda_atomic_add" in src
@@ -111,18 +111,16 @@ def test_cuda_atomic_add():
 
 
 def test_ptx_ld_acquire_and_volatile_codegen():
-    @Tx.prim_func
-    def main(
-        A: Tx.Buffer((1,), "uint64"), B: Tx.Buffer((1,), "int32"), C: Tx.Buffer((1,), "uint32")
-    ):
-        Tx.device_entry()
-        tx = Tx.thread_id([32])
+    @T.prim_func
+    def main(A: T.Buffer((1,), "uint64"), B: T.Buffer((1,), "int32"), C: T.Buffer((1,), "uint32")):
+        T.device_entry()
+        tx = T.thread_id([32])
         if tx == 0:
-            A[0] = Tx.ptx.ld_acquire(A.data, "uint64", "u64", scope="gpu", space="global")
-            B[0] = Tx.ptx.ld_acquire(B.data, "int32", "s32", scope="sys", space="global")
-            C[0] = Tx.ptx.ld_acquire(C.data, "uint32", "b32", scope="gpu", space="global")
-            Tx.ptx.ld_global_acquire(B[0], B.data)
-            A[0] = Tx.ptx.ld_volatile(A.data, "uint64", "u64", space="global")
+            A[0] = T.ptx.ld_acquire(A.data, "uint64", "u64", scope="gpu", space="global")
+            B[0] = T.ptx.ld_acquire(B.data, "int32", "s32", scope="sys", space="global")
+            C[0] = T.ptx.ld_acquire(C.data, "uint32", "b32", scope="gpu", space="global")
+            T.ptx.ld_global_acquire(B[0], B.data)
+            A[0] = T.ptx.ld_volatile(A.data, "uint64", "u64", space="global")
 
     src, _ = _get_source(main)
     assert "ld.acquire.gpu.global.u64" in src
@@ -134,17 +132,17 @@ def test_ptx_ld_acquire_and_volatile_codegen():
 
 
 def test_megamoe_extracted_intrinsics_codegen():
-    @Tx.prim_func
+    @T.prim_func
     def main(
-        U32: Tx.Buffer((4,), "uint32"),
-        I32: Tx.Buffer((1,), "int32"),
-        U64: Tx.Buffer((1,), "uint64"),
-        F32: Tx.Buffer((4,), "float32"),
+        U32: T.Buffer((4,), "uint32"),
+        I32: T.Buffer((1,), "int32"),
+        U64: T.Buffer((1,), "uint64"),
+        F32: T.Buffer((4,), "float32"),
     ):
-        Tx.device_entry()
-        tx = Tx.thread_id([32])
+        T.device_entry()
+        tx = T.thread_id([32])
         if tx == 0:
-            Tx.ptx.red_scalar(
+            T.ptx.red_scalar(
                 U64.data,
                 U64[0],
                 sem="release",
@@ -153,7 +151,7 @@ def test_megamoe_extracted_intrinsics_codegen():
                 op="or",
                 ptx_type="b64",
             )
-            Tx.ptx.red_scalar(
+            T.ptx.red_scalar(
                 I32.data,
                 I32[0],
                 sem="release",
@@ -162,7 +160,7 @@ def test_megamoe_extracted_intrinsics_codegen():
                 op="add",
                 ptx_type="s32",
             )
-            U32[0] = Tx.ptx.atom_scalar(
+            U32[0] = T.ptx.atom_scalar(
                 U32.data,
                 U32[0],
                 sem="release",
@@ -171,14 +169,14 @@ def test_megamoe_extracted_intrinsics_codegen():
                 op="add",
                 ptx_type="u32",
             )
-            U64[0] = Tx.ptx.atom_scalar(
+            U64[0] = T.ptx.atom_scalar(
                 U64.data, U64[0], scope="sys", space="global", op="add", ptx_type="u64"
             )
-            Tx.ptx.red_scalar(
+            T.ptx.red_scalar(
                 U32.data, U32[0], scope="gpu", space="global", op="add", ptx_type="u32"
             )
-            Tx.ptx.st(U32.data, U32[0], space="shared", ptx_type="u32")
-            Tx.ptx.st(
+            T.ptx.st(U32.data, U32[0], space="shared", ptx_type="u32")
+            T.ptx.st(
                 U32.data,
                 U32[0],
                 U32[1],
@@ -188,9 +186,9 @@ def test_megamoe_extracted_intrinsics_codegen():
                 vec="v4",
                 ptx_type="b32",
             )
-            Tx.ptx.st_bulk(U32.data, Tx.uint32(16), weak=True, space="shared::cta")
-            U32[0] = Tx.ptx.fns_b32(U32[0], U32[1], I32[0])
-            Tx.ptx.stmatrix(
+            T.ptx.st_bulk(U32.data, T.uint32(16), weak=True, space="shared::cta")
+            U32[0] = T.ptx.fns_b32(U32[0], U32[1], I32[0])
+            T.ptx.stmatrix(
                 True,  # trans
                 1,  # num
                 ".b8",  # dtype
@@ -200,17 +198,17 @@ def test_megamoe_extracted_intrinsics_codegen():
                 space="shared",
             )
 
-            F32[1] = Tx.cuda.uint_as_float(U32[0])
-            F32[2] = Tx.ptx.ld(F32.data, "float32", "f32", space="global")
-            U32[3] = Tx.cuda.float_as_uint(F32[1])
-            F32[0] = Tx.ptx.add_rn_f32_bf16(F32[0], Tx.cast(U32[0], "uint16"))
-            U64[0] = Tx.reinterpret("uint64", U32.data)
-            U32[0] = Tx.cuda.ballot_sync(Tx.uint32(0xFFFFFFFF), I32[0])
-            I32[0] = Tx.cuda.ffs_u32(U32[0])
-            U32[0] = Tx.cuda.reduce_add_sync_u32(Tx.uint32(0xFFFFFFFF), U32[0])
-            U32[0] = Tx.cuda.reduce_min_sync_u32(Tx.uint32(0xFFFFFFFF), U32[0])
-            U64[0] = Tx.cuda.clock64()
-            U32[0] = Tx.cuda.float22bfloat162_rn(F32[0], F32[1])
+            F32[1] = T.cuda.uint_as_float(U32[0])
+            F32[2] = T.ptx.ld(F32.data, "float32", "f32", space="global")
+            U32[3] = T.cuda.float_as_uint(F32[1])
+            F32[0] = T.ptx.add_rn_f32_bf16(F32[0], T.cast(U32[0], "uint16"))
+            U64[0] = T.reinterpret("uint64", U32.data)
+            U32[0] = T.cuda.ballot_sync(T.uint32(0xFFFFFFFF), I32[0])
+            I32[0] = T.cuda.ffs_u32(U32[0])
+            U32[0] = T.cuda.reduce_add_sync_u32(T.uint32(0xFFFFFFFF), U32[0])
+            U32[0] = T.cuda.reduce_min_sync_u32(T.uint32(0xFFFFFFFF), U32[0])
+            U64[0] = T.cuda.clock64()
+            U32[0] = T.cuda.float22bfloat162_rn(F32[0], F32[1])
 
     src, _ = _get_source(main)
     for snippet in [
@@ -239,23 +237,23 @@ def test_megamoe_extracted_intrinsics_codegen():
 
 
 def test_ptx_cp_async_bulk_non_tma_form_codegen():
-    @Tx.prim_func
+    @T.prim_func
     def main(
-        A: Tx.Buffer((128,), "float32"),
-        B: Tx.Buffer((128,), "float32"),
-        C: Tx.Buffer((1,), "uint64"),
+        A: T.Buffer((128,), "float32"),
+        B: T.Buffer((128,), "float32"),
+        C: T.Buffer((1,), "uint64"),
     ):
-        Tx.device_entry()
-        tx = Tx.thread_id([32])
+        T.device_entry()
+        tx = T.thread_id([32])
         if tx == 0:
-            smem = Tx.alloc_shared([128], "float32")
-            Tx.ptx.cp_async_bulk_g2s_cta(
-                smem.ptr_to([0]), A.data, Tx.uint32(64), smem.ptr_to([0]), cache_policy=C[0]
+            smem = T.alloc_shared([128], "float32")
+            T.ptx.cp_async_bulk_g2s_cta(
+                smem.ptr_to([0]), A.data, T.uint32(64), smem.ptr_to([0]), cache_policy=C[0]
             )
-            Tx.ptx.cp_async_bulk_g2s_cluster(
-                smem.ptr_to([0]), A.data, Tx.uint32(64), smem.ptr_to([0]), cache_policy=C[0]
+            T.ptx.cp_async_bulk_g2s_cluster(
+                smem.ptr_to([0]), A.data, T.uint32(64), smem.ptr_to([0]), cache_policy=C[0]
             )
-            Tx.ptx.cp_async_bulk_s2g(B.data, smem.ptr_to([0]), Tx.uint32(64), cache_policy=C[0])
+            T.ptx.cp_async_bulk_s2g(B.data, smem.ptr_to([0]), T.uint32(64), cache_policy=C[0])
 
     src, _ = _get_source(main)
     assert "cp.async.bulk.shared::cta.global.mbarrier::complete_tx::bytes.L2::cache_hint" in src
@@ -265,12 +263,12 @@ def test_ptx_cp_async_bulk_non_tma_form_codegen():
 
 
 def test_tensor_map_param_codegen():
-    @Tx.prim_func
-    def main(A_map: Tx.TensorMap()):
-        Tx.device_entry()
-        tx = Tx.thread_id([32])
+    @T.prim_func
+    def main(A_map: T.TensorMap()):
+        T.device_entry()
+        tx = T.thread_id([32])
         if tx == 0:
-            Tx.evaluate(Tx.address_of(A_map))
+            T.evaluate(T.address_of(A_map))
 
     src, _ = _get_source(main)
     assert "const __grid_constant__ CUtensorMap A_map" in src
@@ -278,21 +276,21 @@ def test_tensor_map_param_codegen():
 
 
 def test_tma_cache_policy_operand_codegen():
-    @Tx.prim_func
-    def main(Cache: Tx.Buffer((1,), "uint64")):
-        A_map: Tx.let[Tx.handle("tensormap")] = Tx.tvm_stack_alloca("tensormap", 1)
-        B_map: Tx.let[Tx.handle("tensormap")] = Tx.tvm_stack_alloca("tensormap", 1)
+    @T.prim_func
+    def main(Cache: T.Buffer((1,), "uint64")):
+        A_map: T.let[T.handle("tensormap")] = T.tvm_stack_alloca("tensormap", 1)
+        B_map: T.let[T.handle("tensormap")] = T.tvm_stack_alloca("tensormap", 1)
 
-        Tx.device_entry()
-        tx = Tx.thread_id([32])
+        T.device_entry()
+        tx = T.thread_id([32])
         if tx == 0:
-            smem = Tx.alloc_buffer((128,), "float32", scope="shared", align=128)
-            bar = Tx.shared_scalar("uint64")
-            Tx.ptx.cp_async.bulk.tensor.g2c(
+            smem = T.alloc_buffer((128,), "float32", scope="shared", align=128)
+            bar = T.shared_scalar("uint64")
+            T.ptx.cp_async.bulk.tensor.g2c(
                 2,
                 smem.data,
-                Tx.address_of(bar),
-                Tx.address_of(A_map),
+                T.address_of(bar),
+                T.address_of(A_map),
                 1,
                 2,
                 "",
@@ -300,11 +298,11 @@ def test_tma_cache_policy_operand_codegen():
                 0,
                 cache_policy=Cache[0],
             )
-            Tx.ptx.cp_async.bulk.tensor.g2c(
+            T.ptx.cp_async.bulk.tensor.g2c(
                 2,
                 smem.data,
-                Tx.address_of(bar),
-                Tx.address_of(A_map),
+                T.address_of(bar),
+                T.address_of(A_map),
                 3,
                 2,
                 "",
@@ -312,15 +310,15 @@ def test_tma_cache_policy_operand_codegen():
                 0,
                 cache_policy=Cache[0],
             )
-            Tx.ptx.cp_async.bulk.tensor.s2g(
-                2, smem.data, Tx.address_of(A_map), "", 0, 0, cache_policy=Cache[0]
+            T.ptx.cp_async.bulk.tensor.s2g(
+                2, smem.data, T.address_of(A_map), "", 0, 0, cache_policy=Cache[0]
             )
-            masked_bar = Tx.cuda.sm100_tma_2sm_mbarrier_addr(Tx.address_of(bar))
-            Tx.ptx.cp_async.bulk.tensor.g2c_bar_addr(
+            masked_bar = T.cuda.sm100_tma_2sm_mbarrier_addr(T.address_of(bar))
+            T.ptx.cp_async.bulk.tensor.g2c_bar_addr(
                 2,
                 smem.data,
                 masked_bar,
-                Tx.address_of(A_map),
+                T.address_of(A_map),
                 1,
                 2,
                 "",
@@ -329,11 +327,11 @@ def test_tma_cache_policy_operand_codegen():
                 cache_policy=Cache[0],
             )
             if tx == 0:
-                Tx.ptx.cp_async.bulk.tensor.g2c_bar_addr(
+                T.ptx.cp_async.bulk.tensor.g2c_bar_addr(
                     2,
                     smem.data,
                     masked_bar,
-                    Tx.address_of(A_map),
+                    T.address_of(A_map),
                     1,
                     2,
                     "",
@@ -342,11 +340,11 @@ def test_tma_cache_policy_operand_codegen():
                     cache_policy=Cache[0],
                 )
             else:
-                Tx.ptx.cp_async.bulk.tensor.g2c_bar_addr(
+                T.ptx.cp_async.bulk.tensor.g2c_bar_addr(
                     2,
                     smem.data,
                     masked_bar,
-                    Tx.address_of(B_map),
+                    T.address_of(B_map),
                     1,
                     2,
                     "",
@@ -377,39 +375,39 @@ def test_tma_cache_policy_operand_codegen():
 
 
 def test_cuda_thread_fence():
-    @Tx.prim_func
-    def main(A: Tx.Buffer((16, 16), "int32")):
-        Tx.device_entry()
-        cta_id = Tx.cta_id([1])
-        tx = Tx.thread_id([32])
+    @T.prim_func
+    def main(A: T.Buffer((16, 16), "int32")):
+        T.device_entry()
+        cta_id = T.cta_id([1])
+        tx = T.thread_id([32])
         if tx == 0:
-            Tx.cuda.thread_fence()
+            T.cuda.thread_fence()
 
     src, mod = _get_source(main)
     assert "tvm_builtin_cuda_thread_fence" in src
 
 
 def test_cuda_nano_sleep():
-    @Tx.prim_func
-    def main(A: Tx.Buffer((16, 16), "int32")):
-        Tx.device_entry()
-        cta_id = Tx.cta_id([1])
-        tx = Tx.thread_id([32])
+    @T.prim_func
+    def main(A: T.Buffer((16, 16), "int32")):
+        T.device_entry()
+        cta_id = T.cta_id([1])
+        tx = T.thread_id([32])
         if tx == 0:
-            Tx.cuda.nano_sleep(1)
+            T.cuda.nano_sleep(1)
 
     src, mod = _get_source(main)
     assert "tvm_builtin_cuda_nano_sleep" in src
 
 
 def test_cuda_atomic_cas():
-    @Tx.prim_func
-    def main(A: Tx.Buffer((16, 16), "int32")):
-        Tx.device_entry()
-        cta_id = Tx.cta_id([1])
-        tx = Tx.thread_id([32])
+    @T.prim_func
+    def main(A: T.Buffer((16, 16), "int32")):
+        T.device_entry()
+        cta_id = T.cta_id([1])
+        tx = T.thread_id([32])
         if tx == 0:
-            Tx.cuda.atomic_cas(A.data, Tx.int32(1), Tx.int32(2))
+            T.cuda.atomic_cas(A.data, T.int32(1), T.int32(2))
 
     src, mod = _get_source(main)
     assert "tvm_builtin_cuda_atomic_cas" in src
@@ -423,14 +421,14 @@ __device__ int32_t add_one(int32_t a) {
 }
 """
 
-        @Tx.prim_func
-        def main(a: Tx.Buffer((16, 16), "int32"), b: Tx.Buffer((16, 16), "int32")):
-            Tx.device_entry()
-            cta_id = Tx.cta_id([1])
-            tx = Tx.thread_id([32])
+        @T.prim_func
+        def main(a: T.Buffer((16, 16), "int32"), b: T.Buffer((16, 16), "int32")):
+            T.device_entry()
+            cta_id = T.cta_id([1])
+            tx = T.thread_id([32])
             if tx == 0:
-                for i, j in Tx.grid(16, 16):
-                    b[i, j] = Tx.cuda.func_call(
+                for i, j in T.grid(16, 16):
+                    b[i, j] = T.cuda.func_call(
                         "add_one", a[i, j], source_code=add_one, return_type="int32"
                     )
 
@@ -452,14 +450,14 @@ __device__ void print(int32_t a) {
 }
 """
 
-        @Tx.prim_func
-        def main(a: Tx.Buffer((16, 16), "int32")):
-            Tx.device_entry()
-            cta_id = Tx.cta_id([1])
-            tx = Tx.thread_id([32])
+        @T.prim_func
+        def main(a: T.Buffer((16, 16), "int32")):
+            T.device_entry()
+            cta_id = T.cta_id([1])
+            tx = T.thread_id([32])
             if tx == 0:
-                for i, j in Tx.grid(16, 16):
-                    Tx.cuda.func_call("print", a[i, j], source_code=print_func)
+                for i, j in T.grid(16, 16):
+                    T.cuda.func_call("print", a[i, j], source_code=print_func)
 
         src, mod = _get_source(main)
         A = np.random.randint(0, 10, (16, 16)).astype("int32")
@@ -472,22 +470,22 @@ __device__ void print(int32_t a) {
 
 def test_warp_shuffle_xor_sync():
     # fmt: off
-    @Tx.prim_func
-    def func(A_ptr: Tx.handle):
-        A = Tx.match_buffer(A_ptr, (32,), dtype="float32", align=16)
+    @T.prim_func
+    def func(A_ptr: T.handle):
+        A = T.match_buffer(A_ptr, (32,), dtype="float32", align=16)
 
-        Tx.device_entry()
-        cta_id = Tx.cta_id([1])
-        warp_id = Tx.warp_id([1])
-        lane_id = Tx.lane_id([32])
+        T.device_entry()
+        cta_id = T.cta_id([1])
+        warp_id = T.warp_id([1])
+        lane_id = T.lane_id([32])
 
-        A_local = Tx.alloc_buffer([1], "float32", scope="local")
-        i = Tx.alloc_buffer([1], "int32", scope="local")
+        A_local = T.alloc_buffer([1], "float32", scope="local")
+        i = T.alloc_buffer([1], "int32", scope="local")
 
-        A_local[0] = Tx.float32(31 - lane_id)
+        A_local[0] = T.float32(31 - lane_id)
         i[0] = 16
         while i[0] >= 1:
-            A_local[0] += Tx.tvm_warp_shuffle_xor(0xFFFFFFFF, A_local[0], i[0], 32, 32)
+            A_local[0] += T.tvm_warp_shuffle_xor(0xFFFFFFFF, A_local[0], i[0], 32, 32)
             i[0] = i[0] // 2
 
         A[lane_id] = A_local[0]
@@ -508,7 +506,7 @@ def test_warp_shuffle_xor_sync():
 @pytest.mark.parametrize("cp_size", [4, 8, 16])
 @pytest.mark.parametrize("cache_hint", ["", "evict_last"])
 @pytest.mark.parametrize("prefetch_size", [-1, 64, 128, 256])
-@pytest.mark.parametrize("predicate", [-1, Tx.int32(0), Tx.int32(1)])
+@pytest.mark.parametrize("predicate", [-1, T.int32(0), T.int32(1)])
 @pytest.mark.parametrize("fill_mode", ["", "zero"])
 def test_ptx_cp_async(cp_size, cache_hint, prefetch_size, predicate, fill_mode):
     if fill_mode != "" and predicate == -1:
@@ -517,19 +515,19 @@ def test_ptx_cp_async(cp_size, cache_hint, prefetch_size, predicate, fill_mode):
     N = cp_size // 2
 
     # fmt: off
-    @Tx.prim_func
-    def main(A: Tx.Buffer((N), "float16")):
-        Tx.device_entry()
-        cta_id = Tx.cta_id([1])
-        tid = Tx.thread_id([32])
-        A_shared = Tx.alloc_shared([N], "float16")
-        for i in Tx.vectorized(N):
+    @T.prim_func
+    def main(A: T.Buffer((N), "float16")):
+        T.device_entry()
+        cta_id = T.cta_id([1])
+        tid = T.thread_id([32])
+        A_shared = T.alloc_shared([N], "float16")
+        for i in T.vectorized(N):
             A_shared[i] = 5.0
-        Tx.ptx.fence.proxy_async("shared::cta")
-        Tx.ptx.cp_async(A_shared.ptr_to([0]), A.ptr_to([0]), cp_size, cache_hint=cache_hint, prefetch_size=prefetch_size, predicate=predicate, fill_mode=fill_mode)  # noqa: E501
-        Tx.ptx.cp_async.commit_group()
-        Tx.ptx.cp_async.wait_group(0)
-        for i in Tx.serial(N):
+        T.ptx.fence.proxy_async("shared::cta")
+        T.ptx.cp_async(A_shared.ptr_to([0]), A.ptr_to([0]), cp_size, cache_hint=cache_hint, prefetch_size=prefetch_size, predicate=predicate, fill_mode=fill_mode)  # noqa: E501
+        T.ptx.cp_async.commit_group()
+        T.ptx.cp_async.wait_group(0)
+        for i in T.serial(N):
             A[i] = A_shared[i] + 1.0
         # fmt: on
 
@@ -554,46 +552,46 @@ def test_ptx_ldmatrix(trans, num):
     dtype = ".b16"
 
     # fmt: off
-    @Tx.prim_func
-    def main(A: Tx.Buffer((16, 16), "float16"), B: Tx.Buffer((16, 16), "float16")):
-        Tx.device_entry()
-        cta_id = Tx.cta_id([1])
-        tx = Tx.thread_id([32])
-        A_shared = Tx.alloc_shared([16, 16], "float16")
+    @T.prim_func
+    def main(A: T.Buffer((16, 16), "float16"), B: T.Buffer((16, 16), "float16")):
+        T.device_entry()
+        cta_id = T.cta_id([1])
+        tx = T.thread_id([32])
+        A_shared = T.alloc_shared([16, 16], "float16")
         if tx == 0:
-            for i, j in Tx.grid(16, 16):
+            for i, j in T.grid(16, 16):
                 A_shared[i, j] = A[i, j]
-        Tx.cuda.cta_sync()
-        A_local = Tx.alloc_local([8], "float16")
+        T.cuda.cta_sync()
+        A_local = T.alloc_local([8], "float16")
         A_local[0] = -1.0
                 # ldmatrix .x{num}.b16 writes `num` 32-bit registers; A_local
                 # is a contiguous fp16[8] buffer, so consecutive register
                 # destinations land 2 fp16 elements apart.
         if num == 1:
-            Tx.ptx.ldmatrix(
+            T.ptx.ldmatrix(
                 trans, num, dtype,
                 A_shared.ptr_to([tx % 16, tx // 16 * 8]),
-                Tx.address_of(A_local[0]),
+                T.address_of(A_local[0]),
             )
         elif num == 2:
-            Tx.ptx.ldmatrix(
+            T.ptx.ldmatrix(
                 trans, num, dtype,
                 A_shared.ptr_to([tx % 16, tx // 16 * 8]),
-                Tx.address_of(A_local[0]),
-                Tx.address_of(A_local[2]),
+                T.address_of(A_local[0]),
+                T.address_of(A_local[2]),
             )
         else:
-            Tx.ptx.ldmatrix(
+            T.ptx.ldmatrix(
                 trans, num, dtype,
                 A_shared.ptr_to([tx % 16, tx // 16 * 8]),
-                Tx.address_of(A_local[0]),
-                Tx.address_of(A_local[2]),
-                Tx.address_of(A_local[4]),
-                Tx.address_of(A_local[6]),
+                T.address_of(A_local[0]),
+                T.address_of(A_local[2]),
+                T.address_of(A_local[4]),
+                T.address_of(A_local[6]),
             )
         for i in range(8):
-            row: Tx.let = (i // 2) % 2 * 8
-            col: Tx.let = (i // 4) * 8
+            row: T.let = (i // 2) % 2 * 8
+            col: T.let = (i // 4) * 8
             B[row + tx // 4, col + tx % 4 * 2 + i % 2] = A_local[i]
         # fmt: on
 

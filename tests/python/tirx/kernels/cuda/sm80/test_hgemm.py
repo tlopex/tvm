@@ -19,7 +19,7 @@ import pytest
 
 import tvm
 import tvm.testing
-from tvm.script import tirx as Tx
+from tvm.script import tirx as T
 from tvm.tirx.bench import ProtonContext, bench
 
 
@@ -34,79 +34,79 @@ def test_hgemm_ampere():
 
     _BLK_M, _BLK_N, _BLK_K = 128, 128, 32
 
-    @Tx.inline
+    @T.inline
     def load_global_to_shared_A(
         tz: int,
         ty: int,
         tx: int,
         by: int,
-        SA: Tx.Buffer,
+        SA: T.Buffer,
         slice_idx: int,
-        A: Tx.Buffer,
+        A: T.Buffer,
         ko: int,
         KI: int,
         K: int,
     ):
-        tid = Tx.meta_var(tz * 64 + ty * 32 + tx)
-        for i in Tx.serial(4):
-            logic_row = Tx.meta_var(i * 32 + tid // 4)
-            logic_col = Tx.meta_var((tid % 4) * 8)
-            row = Tx.meta_var(i * 16 + tid // 8)
-            col = Tx.meta_var(((tid % 8) * 8) ^ ((row & 3) << 3))
+        tid = T.meta_var(tz * 64 + ty * 32 + tx)
+        for i in T.serial(4):
+            logic_row = T.meta_var(i * 32 + tid // 4)
+            logic_col = T.meta_var((tid % 4) * 8)
+            row = T.meta_var(i * 16 + tid // 8)
+            col = T.meta_var(((tid % 8) * 8) ^ ((row & 3) << 3))
 
-            smem_offset = Tx.meta_var(slice_idx * (MI * KI) + row * 64 + col)
-            global_offset = Tx.meta_var((by * 128 + logic_row) * K + (ko * KI + logic_col))
-            Tx.ptx.cp_async(
+            smem_offset = T.meta_var(slice_idx * (MI * KI) + row * 64 + col)
+            global_offset = T.meta_var((by * 128 + logic_row) * K + (ko * KI + logic_col))
+            T.ptx.cp_async(
                 dst_ptr=SA.access_ptr("rw", offset=smem_offset),
                 src_ptr=A.access_ptr("rw", offset=global_offset),
                 cp_size=16,
             )
 
-    @Tx.inline
+    @T.inline
     def load_global_to_shared_B(
         tz: int,
         ty: int,
         tx: int,
         bx: int,
-        SB: Tx.Buffer,
+        SB: T.Buffer,
         slice_idx: int,
-        B: Tx.Buffer,
+        B: T.Buffer,
         ko: int,
         KI: int,
         K: int,
     ):
-        tid = Tx.meta_var(tz * 64 + ty * 32 + tx)
-        for i in Tx.serial(4):
-            logic_row = Tx.meta_var(i * 32 + tid // 4)
-            logic_col = Tx.meta_var((tid % 4) * 8)
-            row = Tx.meta_var(i * 16 + tid // 8)
-            col = Tx.meta_var((((tid // 4) % 2) * 32 + (tid % 4) * 8) ^ ((row & 3) << 3))
+        tid = T.meta_var(tz * 64 + ty * 32 + tx)
+        for i in T.serial(4):
+            logic_row = T.meta_var(i * 32 + tid // 4)
+            logic_col = T.meta_var((tid % 4) * 8)
+            row = T.meta_var(i * 16 + tid // 8)
+            col = T.meta_var((((tid // 4) % 2) * 32 + (tid % 4) * 8) ^ ((row & 3) << 3))
 
-            smem_offset = Tx.meta_var(slice_idx * (NI * KI) + row * 64 + col)
-            global_offset = Tx.meta_var((bx * 128 + logic_row) * K + (ko * KI + logic_col))
-            Tx.ptx.cp_async(
+            smem_offset = T.meta_var(slice_idx * (NI * KI) + row * 64 + col)
+            global_offset = T.meta_var((bx * 128 + logic_row) * K + (ko * KI + logic_col))
+            T.ptx.cp_async(
                 dst_ptr=SB.access_ptr("rw", offset=smem_offset),
                 src_ptr=B.access_ptr("rw", offset=global_offset),
                 cp_size=16,
             )
 
-    @Tx.inline
+    @T.inline
     def loadFragA(
-        frag: Tx.Buffer, slice_frag: int, SA: Tx.Buffer, slice_idx: int, ki: int, tx: int, tz: int
+        frag: T.Buffer, slice_frag: int, SA: T.Buffer, slice_idx: int, ki: int, tx: int, tz: int
     ):
         """Loads a 64x16 fragment from shared memory into `frag` from SA[slice_idx]."""
-        for i in Tx.serial(4):
-            row = Tx.meta_var((tz * 64 + i * 16 + tx // 16 * 8 + tx % 8) // 2)
-            col = Tx.meta_var(
+        for i in T.serial(4):
+            row = T.meta_var((tz * 64 + i * 16 + tx // 16 * 8 + tx % 8) // 2)
+            col = T.meta_var(
                 (
                     ((tz * 64 + i * 16 + tx // 16 * 8 + tx % 8) % 2) * 32
                     + (ki * 16 + tx // 8 % 2 * 8)
                 )
                 ^ ((row & 3) << 3)
             )
-            smem_offset = Tx.meta_var(slice_idx * (MI * KI) + row * 64 + col)
+            smem_offset = T.meta_var(slice_idx * (MI * KI) + row * 64 + col)
 
-            Tx.ptx.ldmatrix_legacy(
+            T.ptx.ldmatrix_legacy(
                 dtype="float16",
                 trans=False,
                 num=4,
@@ -121,22 +121,22 @@ def test_hgemm_ampere():
             frag[slice_frag, i * 4 + 1] = frag[slice_frag, i * 4 + 2]
             frag[slice_frag, i * 4 + 2] = tmp
 
-    @Tx.inline
+    @T.inline
     def loadFragB(
-        frag: Tx.Buffer, slice_frag: int, SB: Tx.Buffer, slice_idx: int, ki: int, tx: int, ty: int
+        frag: T.Buffer, slice_frag: int, SB: T.Buffer, slice_idx: int, ki: int, tx: int, ty: int
     ):
-        for i in Tx.serial(4):
-            row = Tx.meta_var((ty * 64 + i * 16 + tx // 16 * 8 + tx % 8) // 2)
-            col = Tx.meta_var(
+        for i in T.serial(4):
+            row = T.meta_var((ty * 64 + i * 16 + tx // 16 * 8 + tx % 8) // 2)
+            col = T.meta_var(
                 (
                     ((ty * 64 + i * 16 + tx // 16 * 8 + tx % 8) % 2) * 32
                     + (ki * 16 + tx // 8 % 2 * 8)
                 )
                 ^ ((row & 3) << 3)
             )
-            smem_offset = Tx.meta_var(slice_idx * (NI * KI) + row * 64 + col)
+            smem_offset = T.meta_var(slice_idx * (NI * KI) + row * 64 + col)
 
-            Tx.ptx.ldmatrix(
+            T.ptx.ldmatrix(
                 dtype="float16",
                 trans=False,
                 num=4,
@@ -147,22 +147,22 @@ def test_hgemm_ampere():
                 smem_offset=smem_offset,
             )
 
-    @Tx.inline
+    @T.inline
     def store_accum_to_shared(tz, ty, tx, C_smem: tvm.tirx.Buffer, Accum):
         """Helper for storing accumulator results to shared memory with optimized indexing"""
-        for i in Tx.serial(4):
-            for j in Tx.serial(4):
-                for r in Tx.serial(2):
-                    for c in Tx.serial(2):
+        for i in T.serial(4):
+            for j in T.serial(4):
+                for r in T.serial(2):
+                    for c in T.serial(2):
                         # Calculate row and column indices
-                        row = Tx.meta_var(tz * 64 + i * 16 + r * 8 + tx // 4)
-                        col = Tx.meta_var(ty * 64 + j * 16 + c * 8 + tx % 4 * 2)
+                        row = T.meta_var(tz * 64 + i * 16 + r * 8 + tx // 4)
+                        col = T.meta_var(ty * 64 + j * 16 + c * 8 + tx % 4 * 2)
 
                         # Apply crosswise transformation to column
-                        scol = Tx.meta_var(col ^ ((row & 3) << 3))
+                        scol = T.meta_var(col ^ ((row & 3) << 3))
 
                         # Calculate accumulator offset
-                        acc_offset = Tx.meta_var(i * 32 + j * 8 + r * 4 + c * 2)
+                        acc_offset = T.meta_var(i * 32 + j * 8 + r * 4 + c * 2)
                         if acc_offset % 8 == 4 or acc_offset % 8 == 5:
                             C_smem[row, scol] = Accum[acc_offset - 2]
                             C_smem[row, scol + 1] = Accum[acc_offset - 2 + 1]
@@ -173,23 +173,23 @@ def test_hgemm_ampere():
                             C_smem[row, scol] = Accum[acc_offset]
                             C_smem[row, scol + 1] = Accum[acc_offset + 1]
 
-    @Tx.inline
+    @T.inline
     def store_shared_to_global(tz, ty, tx, bx, by, C: tvm.tirx.Buffer, C_smem: tvm.tirx.Buffer):
         """Helper for storing shared memory results to global memory"""
-        tid = Tx.meta_var(tz * 64 + ty * 32 + tx)
+        tid = T.meta_var(tz * 64 + ty * 32 + tx)
 
-        for i in Tx.serial(128):
-            row = Tx.meta_var(i)
-            col = Tx.meta_var(tid)
+        for i in T.serial(128):
+            row = T.meta_var(i)
+            col = T.meta_var(tid)
 
-            scol = Tx.meta_var(col ^ ((row & 3) << 3))
+            scol = T.meta_var(col ^ ((row & 3) << 3))
 
-            global_row = Tx.meta_var(by * 128 + row)
-            global_col = Tx.meta_var(bx * 128 + col)
+            global_row = T.meta_var(by * 128 + row)
+            global_col = T.meta_var(bx * 128 + col)
 
-            C[global_row, global_col] = Tx.Cast("float16", C_smem[row, scol])
+            C[global_row, global_col] = T.Cast("float16", C_smem[row, scol])
 
-    @Tx.inline
+    @T.inline
     def mmaSync(
         fragA: tvm.tirx.Buffer,
         fragA_offset: int,
@@ -201,7 +201,7 @@ def test_hgemm_ampere():
         """Matrix multiply-accumulate operation using tensor cores"""
 
         # First MMA operation - for accum[0:4]
-        Tx.ptx.mma.legacy(
+        T.ptx.mma.legacy(
             dtype="float32",
             shape="m16n8k16",
             A_layout="row",
@@ -219,7 +219,7 @@ def test_hgemm_ampere():
         )
 
         # Second MMA operation - for accum[4:8]
-        Tx.ptx.mma.legacy(
+        T.ptx.mma.legacy(
             dtype="float32",
             shape="m16n8k16",
             A_layout="row",
@@ -236,54 +236,54 @@ def test_hgemm_ampere():
             saturate=False,
         )
 
-    @Tx.prim_func
-    def efficient(A_ptr: Tx.handle, B_ptr: Tx.handle, C_ptr: Tx.handle) -> None:
-        A = Tx.match_buffer(A_ptr, (M, K), "float16", scope="global")
-        B = Tx.match_buffer(B_ptr, (N, K), "float16", scope="global")
-        C = Tx.match_buffer(C_ptr, (M, N), "float32", scope="global")
+    @T.prim_func
+    def efficient(A_ptr: T.handle, B_ptr: T.handle, C_ptr: T.handle) -> None:
+        A = T.match_buffer(A_ptr, (M, K), "float16", scope="global")
+        B = T.match_buffer(B_ptr, (N, K), "float16", scope="global")
+        C = T.match_buffer(C_ptr, (M, N), "float32", scope="global")
 
-        Tx.device_entry()
-        bx, by = Tx.cta_id([M // MI, N // NI])
-        tx, ty, tz = Tx.thread_id([32, 2, 2])
+        T.device_entry()
+        bx, by = T.cta_id([M // MI, N // NI])
+        tx, ty, tz = T.thread_id([32, 2, 2])
         # 4-pipeline + ld_matrix + ptx_mma
-        SA = Tx.alloc_buffer([4, MI, KI], dtype="float16", scope="shared.dyn")
-        SB = Tx.alloc_buffer([4, NI, KI], dtype="float16", scope="shared.dyn")
-        C_smem = Tx.alloc_buffer([MI, NI], dtype="float32", scope="shared.dyn")
+        SA = T.alloc_buffer([4, MI, KI], dtype="float16", scope="shared.dyn")
+        SB = T.alloc_buffer([4, NI, KI], dtype="float16", scope="shared.dyn")
+        C_smem = T.alloc_buffer([MI, NI], dtype="float32", scope="shared.dyn")
 
-        fragA = Tx.alloc_buffer([2, 16], dtype="uint32", scope="local")
-        fragB = Tx.alloc_buffer([2, 16], dtype="uint32", scope="local")
-        Accum = Tx.alloc_buffer([128], dtype="float32", scope="local")
-        for idx in Tx.serial(128):
+        fragA = T.alloc_buffer([2, 16], dtype="uint32", scope="local")
+        fragB = T.alloc_buffer([2, 16], dtype="uint32", scope="local")
+        Accum = T.alloc_buffer([128], dtype="float32", scope="local")
+        for idx in T.serial(128):
             Accum[idx] = 0.0
 
         load_global_to_shared_A(tz, ty, tx, by, SA, 0, A, 0, KI, K)
         load_global_to_shared_B(tz, ty, tx, bx, SB, 0, B, 0, KI, K)
-        Tx.ptx.cp_async.commit_group()
+        T.ptx.cp_async.commit_group()
 
         load_global_to_shared_A(tz, ty, tx, by, SA, 1, A, 1, KI, K)
         load_global_to_shared_B(tz, ty, tx, bx, SB, 1, B, 1, KI, K)
-        Tx.ptx.cp_async.commit_group()
+        T.ptx.cp_async.commit_group()
 
         load_global_to_shared_A(tz, ty, tx, by, SA, 2, A, 2, KI, K)
         load_global_to_shared_B(tz, ty, tx, bx, SB, 2, B, 2, KI, K)
-        Tx.ptx.cp_async.commit_group()
+        T.ptx.cp_async.commit_group()
 
-        Tx.ptx.cp_async.wait_group(2)
-        Tx.cuda.cta_sync()
+        T.ptx.cp_async.wait_group(2)
+        T.cuda.cta_sync()
 
         loadFragA(fragA, 0, SA, 0, 0, tx, tz)
         loadFragB(fragB, 0, SB, 0, 0, tx, ty)
 
-        for ko_idx in Tx.serial(K // KI):
-            ko = Tx.meta_var(ko_idx)
+        for ko_idx in T.serial(K // KI):
+            ko = T.meta_var(ko_idx)
 
-            slice_in: Tx.let = ko % 4
+            slice_in: T.let = ko % 4
             loadFragA(fragA, 1, SA, slice_in, 1, tx, tz)
             loadFragB(fragB, 1, SB, slice_in, 1, tx, ty)
 
-            for mii in Tx.serial(MII // wmmaM):
-                for nii in Tx.serial(NII // wmmaN):
-                    n = (NII // wmmaN - 1 - nii) if Tx.meta_var(mii & 1) else nii
+            for mii in T.serial(MII // wmmaM):
+                for nii in T.serial(NII // wmmaN):
+                    n = (NII // wmmaN - 1 - nii) if T.meta_var(mii & 1) else nii
                     mmaSync(fragA, mii * 4, fragB, n * 4, Accum, mii * 32 + n * 8)
 
             if ko + 3 < K // KI:
@@ -291,17 +291,17 @@ def test_hgemm_ampere():
                 load_global_to_shared_A(tz, ty, tx, by, SA, slice_out, A, ko + 3, KI, K)
                 load_global_to_shared_B(tz, ty, tx, bx, SB, slice_out, B, ko + 3, KI, K)
 
-            Tx.ptx.cp_async.commit_group()
-            Tx.ptx.cp_async.wait_group(2)
-            Tx.cuda.cta_sync()
+            T.ptx.cp_async.commit_group()
+            T.ptx.cp_async.wait_group(2)
+            T.cuda.cta_sync()
 
             next_slice = (ko + 1) % 4
             loadFragA(fragA, 0, SA, next_slice, 0, tx, tz)
             loadFragB(fragB, 0, SB, next_slice, 0, tx, ty)
 
-            for mii in Tx.serial(MII // wmmaM):
-                for nii in Tx.serial(NII // wmmaN):
-                    n = (NII // wmmaN - 1 - nii) if Tx.meta_var(mii & 1) else nii
+            for mii in T.serial(MII // wmmaM):
+                for nii in T.serial(NII // wmmaN):
+                    n = (NII // wmmaN - 1 - nii) if T.meta_var(mii & 1) else nii
                     mmaSync(
                         fragA,
                         16 * 1 + mii * 4,
@@ -312,7 +312,7 @@ def test_hgemm_ampere():
                     )
 
         store_accum_to_shared(tz, ty, tx, C_smem, Accum)
-        Tx.cuda.cta_sync()
+        T.cuda.cta_sync()
         store_shared_to_global(tz, ty, tx, bx, by, C, C_smem)
 
     np.random.seed(0)

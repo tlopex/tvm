@@ -22,7 +22,7 @@ from tvm.tirx.stmt import TilePrimitiveCall
 
 
 def _test(op: str, *args):
-    return TilePrimitiveCall(*args, op=Op.get("tirx." + op), workspace={}, config={})
+    return TilePrimitiveCall(*args, op=Op.get("tirx.tile." + op), workspace={}, config={})
 
 
 def test_copy():

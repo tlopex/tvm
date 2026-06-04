@@ -21,7 +21,8 @@ import numpy as np
 
 import tvm
 import tvm.testing
-from tvm.script import tirx as Tx
+from tvm.script import tirx as T
+from tvm.script.tirx import tile as Tx
 
 M = 1024
 N = 1024
@@ -31,61 +32,61 @@ NUM_BLOCK_M = M // BLOCK_M
 NUM_BLOCK_N = N // BLOCK_N
 
 
-@Tx.meta_class
+@T.meta_class
 class Semaphore:
     def __init__(self, cnt, buffer):
         self.cnt = cnt
         self.sem = buffer
-        self.state = Tx.alloc_buffer([1], "int32", scope="local", align=4)
+        self.state = T.alloc_buffer([1], "int32", scope="local", align=4)
 
-    @Tx.inline
+    @T.inline
     def semaphore_wait(self, *coord):
         while 1:
-            Tx.ptx.ld_global_acquire(
+            T.ptx.ld_global_acquire(
                 self.state[0], self.sem.access_ptr("r", offset=self.sem.elem_offset_of(coord))
             )
-            if Tx.cuda.syncthreads_and(self.state[0] == self.cnt):
+            if T.cuda.syncthreads_and(self.state[0] == self.cnt):
                 break
-            Tx.cuda.nano_sleep(40)
+            T.cuda.nano_sleep(40)
 
-    @Tx.inline
+    @T.inline
     def semaphore_notify(self, *coord):
-        tid = Tx.thread_id([1024])
-        Tx.cuda.cta_sync()
+        tid = T.thread_id([1024])
+        T.cuda.cta_sync()
         if tid == 0:
-            Tx.cuda.atomic_add(self.sem.access_ptr("rw", offset=self.sem.elem_offset_of(coord)), 1)
-        Tx.cuda.thread_fence()
+            T.cuda.atomic_add(self.sem.access_ptr("rw", offset=self.sem.elem_offset_of(coord)), 1)
+        T.cuda.thread_fence()
 
 
-@Tx.prim_func
-def partial_reduction_ref_stage1(A: Tx.handle, B: Tx.handle):
-    A_ptr = Tx.match_buffer(A, (M, N), "float32")
-    B_ptr = Tx.match_buffer(B, (M, NUM_BLOCK_N), "float32")
-    Tx.device_entry()
-    bx, by = Tx.cta_id([NUM_BLOCK_M, NUM_BLOCK_N])
-    Tx.thread_id([1024])
-    A_smem = Tx.alloc_buffer([BLOCK_M, BLOCK_N], "float32", scope="shared")
-    B_smem = Tx.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
+@T.prim_func
+def partial_reduction_ref_stage1(A: T.handle, B: T.handle):
+    A_ptr = T.match_buffer(A, (M, N), "float32")
+    B_ptr = T.match_buffer(B, (M, NUM_BLOCK_N), "float32")
+    T.device_entry()
+    bx, by = T.cta_id([NUM_BLOCK_M, NUM_BLOCK_N])
+    T.thread_id([1024])
+    A_smem = T.alloc_buffer([BLOCK_M, BLOCK_N], "float32", scope="shared")
+    B_smem = T.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
     Tx.cta.copy(A_smem, A_ptr[bx * BLOCK_M : (bx + 1) * BLOCK_M, by * BLOCK_N : (by + 1) * BLOCK_N])
-    Tx.cuda.cta_sync()
+    T.cuda.cta_sync()
     Tx.cta.sum(B_smem, A_smem)
-    Tx.cuda.cta_sync()
+    T.cuda.cta_sync()
     Tx.cta.copy(B_ptr[bx * BLOCK_M : (bx + 1) * BLOCK_M, by], B_smem)
 
 
-@Tx.prim_func
-def partial_reduction_ref_stage2(B: Tx.handle, C: Tx.handle):
-    B_ptr = Tx.match_buffer(B, (M, NUM_BLOCK_N), "float32")
-    C_ptr = Tx.match_buffer(C, (M, 1), "float32")
-    Tx.device_entry()
-    bx = Tx.cta_id([NUM_BLOCK_M])
-    Tx.thread_id([1024])
-    B_smem = Tx.alloc_buffer([BLOCK_M, NUM_BLOCK_N], "float32", scope="shared")
-    C_smem = Tx.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
+@T.prim_func
+def partial_reduction_ref_stage2(B: T.handle, C: T.handle):
+    B_ptr = T.match_buffer(B, (M, NUM_BLOCK_N), "float32")
+    C_ptr = T.match_buffer(C, (M, 1), "float32")
+    T.device_entry()
+    bx = T.cta_id([NUM_BLOCK_M])
+    T.thread_id([1024])
+    B_smem = T.alloc_buffer([BLOCK_M, NUM_BLOCK_N], "float32", scope="shared")
+    C_smem = T.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
     Tx.cta.copy(B_smem, B_ptr[bx * BLOCK_M : (bx + 1) * BLOCK_M, :])
-    Tx.cuda.cta_sync()
+    T.cuda.cta_sync()
     Tx.cta.sum(C_smem, B_smem)
-    Tx.cuda.cta_sync()
+    T.cuda.cta_sync()
     Tx.cta.copy(C_ptr[bx * BLOCK_M : (bx + 1) * BLOCK_M, 0], C_smem)
 
 
@@ -94,27 +95,27 @@ STAGE_2_SM_CNT = 16
 TOTAL_SM_CNT = STAGE_1_SM_CNT + STAGE_2_SM_CNT
 
 
-@Tx.meta_class
+@T.meta_class
 class SpatialTileScheduler:
     def __init__(self, prefix: str, tile_num: tuple[int, int], sm_cnt: int):
         self.tile_num = tile_num
         self.sm_cnt = sm_cnt
-        self.m_idx = Tx.alloc_local([1], "int32")
-        self.n_idx = Tx.alloc_local([1], "int32")
-        self.linear_idx = Tx.alloc_local([1], "int32")
+        self.m_idx = T.alloc_local([1], "int32")
+        self.n_idx = T.alloc_local([1], "int32")
+        self.linear_idx = T.alloc_local([1], "int32")
 
     def get_current_m_n_idx(self, linear_idx):
         row = linear_idx // self.tile_num[1]
         col = linear_idx % self.tile_num[1]
         return (row, col)
 
-    @Tx.inline
+    @T.inline
     def init(self, linear_init):
         self.linear_idx[0] = linear_init
         self.m_idx[0] = self.get_current_m_n_idx(linear_init)[0]
         self.n_idx[0] = self.get_current_m_n_idx(linear_init)[1]
 
-    @Tx.inline
+    @T.inline
     def next_tile(self):
         self.linear_idx[0] = self.linear_idx[0] + self.sm_cnt
         self.m_idx[0] = self.get_current_m_n_idx(self.linear_idx[0])[0]
@@ -124,26 +125,26 @@ class SpatialTileScheduler:
         return self.linear_idx[0] < functools.reduce(lambda x, y: x * y, self.tile_num)
 
 
-@Tx.prim_func
-def partial_reduction_fused(A: Tx.handle, B: Tx.handle, C: Tx.handle, semaphore: Tx.handle):
-    A_ptr = Tx.match_buffer(A, (M, N), "float32")
-    B_ptr = Tx.match_buffer(B, (M, NUM_BLOCK_N), "float32")
-    C_ptr = Tx.match_buffer(C, (M, 1), "float32")
-    sem_ptr = Tx.match_buffer(semaphore, (NUM_BLOCK_M,), "int32")
-    Tx.device_entry()
-    bx = Tx.cta_id([TOTAL_SM_CNT])
-    Tx.thread_id([1024])
+@T.prim_func
+def partial_reduction_fused(A: T.handle, B: T.handle, C: T.handle, semaphore: T.handle):
+    A_ptr = T.match_buffer(A, (M, N), "float32")
+    B_ptr = T.match_buffer(B, (M, NUM_BLOCK_N), "float32")
+    C_ptr = T.match_buffer(C, (M, 1), "float32")
+    sem_ptr = T.match_buffer(semaphore, (NUM_BLOCK_M,), "int32")
+    T.device_entry()
+    bx = T.cta_id([TOTAL_SM_CNT])
+    T.thread_id([1024])
     sem = Semaphore(NUM_BLOCK_N, sem_ptr)
     if 0 <= bx and bx < STAGE_1_SM_CNT:
-        A_smem = Tx.alloc_buffer([BLOCK_M, BLOCK_N], "float32", scope="shared")
-        B_smem = Tx.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
+        A_smem = T.alloc_buffer([BLOCK_M, BLOCK_N], "float32", scope="shared")
+        B_smem = T.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
         stage1_scheduler = SpatialTileScheduler(
             "stage1", (NUM_BLOCK_M, NUM_BLOCK_N), STAGE_1_SM_CNT
         )
         stage1_scheduler.init(bx)
         while stage1_scheduler.valid():
-            m_idx = Tx.meta_var(stage1_scheduler.m_idx[0])
-            n_idx = Tx.meta_var(stage1_scheduler.n_idx[0])
+            m_idx = T.meta_var(stage1_scheduler.m_idx[0])
+            n_idx = T.meta_var(stage1_scheduler.n_idx[0])
             Tx.cta.copy(
                 A_smem,
                 A_ptr[
@@ -151,24 +152,24 @@ def partial_reduction_fused(A: Tx.handle, B: Tx.handle, C: Tx.handle, semaphore:
                     n_idx * BLOCK_N : (n_idx + 1) * BLOCK_N,
                 ],
             )
-            Tx.cuda.cta_sync()
+            T.cuda.cta_sync()
             Tx.cta.sum(B_smem, A_smem)
-            Tx.cuda.cta_sync()
+            T.cuda.cta_sync()
             Tx.cta.copy(B_ptr[m_idx * BLOCK_M : (m_idx + 1) * BLOCK_M, n_idx], B_smem)
             sem.semaphore_notify(m_idx)
             stage1_scheduler.next_tile()
     if STAGE_1_SM_CNT <= bx and bx < TOTAL_SM_CNT:
-        B_smem = Tx.alloc_buffer([BLOCK_M, NUM_BLOCK_N], "float32", scope="shared")
-        C_smem = Tx.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
+        B_smem = T.alloc_buffer([BLOCK_M, NUM_BLOCK_N], "float32", scope="shared")
+        C_smem = T.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
         stage2_scheduler = SpatialTileScheduler("stage2", (NUM_BLOCK_M, 1), STAGE_2_SM_CNT)
         stage2_scheduler.init(bx - STAGE_1_SM_CNT)
         while stage2_scheduler.valid():
-            m_idx = Tx.meta_var(stage2_scheduler.m_idx[0])
+            m_idx = T.meta_var(stage2_scheduler.m_idx[0])
             sem.semaphore_wait(m_idx)
             Tx.cta.copy(B_smem, B_ptr[m_idx * BLOCK_M : (m_idx + 1) * BLOCK_M, :])
-            Tx.cuda.cta_sync()
+            T.cuda.cta_sync()
             Tx.cta.sum(C_smem, B_smem)
-            Tx.cuda.cta_sync()
+            T.cuda.cta_sync()
             Tx.cta.copy(C_ptr[m_idx * BLOCK_M : (m_idx + 1) * BLOCK_M, 0], C_smem)
             stage2_scheduler.next_tile()
 

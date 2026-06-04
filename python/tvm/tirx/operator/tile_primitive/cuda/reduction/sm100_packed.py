@@ -28,16 +28,16 @@ Before (TilePrimitiveCall -- sum example):
 After -- packed_add_sum (uses add.f32x2 to reduce pairs):
     # Iteratively reduce: 32 -> 16 -> 8 -> 4 -> 2 -> 1
     # Each step: add.f32x2 combines adjacent pairs
-    for i in Tx.serial(16):
-        Tx.cuda.func_call("add_f32x2", &buf[i*2], &buf[i*2], &buf[i*2+2])
+    for i in T.serial(16):
+        T.cuda.func_call("add_f32x2", &buf[i*2], &buf[i*2], &buf[i*2+2])
     # ... repeat halving until scalar result
     dst_local[0] = buf[0]
 
 After -- 3input_maxmin (uses 3-input PTX max/min):
     # Tree reduction with 3-input instructions:
     # max(a, b, c) in one PTX instruction
-    for i in Tx.serial(n // 3):
-        Tx.cuda.func_call("max3_f32", &buf[i*3], &buf[i*3+1], &buf[i*3+2])
+    for i in T.serial(n // 3):
+        T.cuda.func_call("max3_f32", &buf[i*3], &buf[i*3+1], &buf[i*3+2])
 
 With accum=True: accumulator folded into first element/pair of the reduction.
 """
@@ -45,7 +45,7 @@ With accum=True: accumulator folded into first element/pair of the reduction.
 import functools
 import operator
 
-from tvm.script import tirx as Tx
+from tvm.script import tirx as T
 from tvm.tirx import BufferRegion, PrimFunc
 from tvm.tirx.operator.tile_primitive import DispatchContext
 from tvm.tirx.operator.tile_primitive.dispatcher import predicate, register_dispatch
@@ -88,23 +88,23 @@ def _emit_reduction_local_thread_packed_add_sum(
     remainder_base = num_full_chunks * 8
 
     # fmt: off
-    @Tx.prim_func(check_well_formed=False)
+    @T.prim_func(check_well_formed=False)
     def impl():
-        local_sum = Tx.alloc_buffer([8], dtype, scope="local")
+        local_sum = T.alloc_buffer([8], dtype, scope="local")
         # First pass: copy first 8 elements (with optional accumulator)
-        for i in Tx.unroll(8):
+        for i in T.unroll(8):
             if accum and i == 0:
                 local_sum[i] = src[src_base + i] + dst[tuple(dst_st)]
             else:
                 local_sum[i] = src[src_base + i]
 
         # Process remaining full chunks of 8
-        for outer in Tx.serial(num_full_chunks - 1):
-            for j in Tx.unroll(4):
-                Tx.ptx.add_f32x2(
-                    Tx.address_of(local_sum[2 * j]),
-                    Tx.cuda.make_float2(local_sum[2 * j], local_sum[2 * j + 1]),
-                    Tx.cuda.make_float2(
+        for outer in T.serial(num_full_chunks - 1):
+            for j in T.unroll(4):
+                T.ptx.add_f32x2(
+                    T.address_of(local_sum[2 * j]),
+                    T.cuda.make_float2(local_sum[2 * j], local_sum[2 * j + 1]),
+                    T.cuda.make_float2(
                         src[src_base + 8 * (outer + 1) + 2 * j],
                         src[src_base + 8 * (outer + 1) + 2 * j + 1],
                     ),
@@ -112,26 +112,26 @@ def _emit_reduction_local_thread_packed_add_sum(
                 )
 
         # Handle remainder elements (0 to 7)
-        for i in Tx.serial(remainder):
+        for i in T.serial(remainder):
             local_sum[0] = local_sum[0] + src[src_base + remainder_base + i]
 
         # Final packed add sum: 8 -> 4 -> 2 -> 1
-        Tx.ptx.add_f32x2(
-            Tx.address_of(local_sum[0]),
-            Tx.cuda.make_float2(local_sum[0], local_sum[1]),
-            Tx.cuda.make_float2(local_sum[2], local_sum[3]),
+        T.ptx.add_f32x2(
+            T.address_of(local_sum[0]),
+            T.cuda.make_float2(local_sum[0], local_sum[1]),
+            T.cuda.make_float2(local_sum[2], local_sum[3]),
             ftz=True,
         )
-        Tx.ptx.add_f32x2(
-            Tx.address_of(local_sum[4]),
-            Tx.cuda.make_float2(local_sum[4], local_sum[5]),
-            Tx.cuda.make_float2(local_sum[6], local_sum[7]),
+        T.ptx.add_f32x2(
+            T.address_of(local_sum[4]),
+            T.cuda.make_float2(local_sum[4], local_sum[5]),
+            T.cuda.make_float2(local_sum[6], local_sum[7]),
             ftz=True,
         )
-        Tx.ptx.add_f32x2(
-            Tx.address_of(local_sum[0]),
-            Tx.cuda.make_float2(local_sum[0], local_sum[1]),
-            Tx.cuda.make_float2(local_sum[4], local_sum[5]),
+        T.ptx.add_f32x2(
+            T.address_of(local_sum[0]),
+            T.cuda.make_float2(local_sum[0], local_sum[1]),
+            T.cuda.make_float2(local_sum[4], local_sum[5]),
             ftz=True,
         )
         dst[tuple(dst_st)] = local_sum[0] + local_sum[1]
@@ -158,9 +158,7 @@ def _emit_reduction_local_thread_3input_maxmin(
     reduction_len = functools.reduce(operator.mul, src_extent, 1)
 
     op_func = reduce_op_table[reduce_op]
-    reduce3_func = (
-        Tx.ptx.reduce3_max_f32 if reduce_op == ReduceOpType.MAX else Tx.ptx.reduce3_min_f32
-    )
+    reduce3_func = T.ptx.reduce3_max_f32 if reduce_op == ReduceOpType.MAX else T.ptx.reduce3_min_f32
 
     src_base = src_st[0]
     num_full_chunks = reduction_len // 8
@@ -168,19 +166,19 @@ def _emit_reduction_local_thread_3input_maxmin(
     remainder_base = num_full_chunks * 8
 
     # fmt: off
-    @Tx.prim_func(check_well_formed=False)
+    @T.prim_func(check_well_formed=False)
     def impl():
-        temp = Tx.alloc_buffer([4], dtype, scope="local")
+        temp = T.alloc_buffer([4], dtype, scope="local")
         # First pass: process first 8 elements into 4 temps
-        for i in Tx.unroll(4):
+        for i in T.unroll(4):
             if accum and i == 0:
                 temp[i] = reduce3_func(src[src_base + 2 * i], src[src_base + 2 * i + 1], dst[tuple(dst_st)])  # noqa: E501
             else:
                 temp[i] = op_func(src[src_base + 2 * i], src[src_base + 2 * i + 1])
 
         # Process remaining full chunks of 8
-        for outer in Tx.serial(num_full_chunks - 1):
-            for i in Tx.unroll(4):
+        for outer in T.serial(num_full_chunks - 1):
+            for i in T.unroll(4):
                 temp[i] = reduce3_func(
                     temp[i],
                     src[src_base + 8 * (outer + 1) + 2 * i],
@@ -188,7 +186,7 @@ def _emit_reduction_local_thread_3input_maxmin(
                 )
 
         # Process remainder elements (0 to 7 elements)
-        for i in Tx.serial(remainder):
+        for i in T.serial(remainder):
             temp[0] = op_func(temp[0], src[src_base + remainder_base + i])
 
         # Final merge: combine 4 temps into result

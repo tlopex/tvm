@@ -21,10 +21,54 @@ from tvm.ir import Op
 from tvm.tirx import PrimExpr
 from tvm.tirx.stmt import TilePrimitiveCall
 
+_DISPATCH_OPS = {
+    "zero",
+    "sqrt",
+    "exp",
+    "exp2",
+    "reciprocal",
+    "add",
+    "sub",
+    "mul",
+    "fdiv",
+    "maximum",
+    "minimum",
+    "copy",
+    "fill",
+    "gemm",
+    "sum",
+    "max",
+    "min",
+    "memset",
+    "reduce_negate",
+    "binary_reduce",
+    "unary_reduce",
+    "binary_chain",
+    "select",
+    "cast",
+    "fma",
+    "silu",
+}
+_COMPOSE_OPS = {"compose_op"}
+_ASYNC_OPS = {"copy_async", "gemm_async"}
+_MARKER_OPS = {"tvm_kernel_replace_point"}
+
+
+def _tile_primitive_kind(op_name: str) -> str:
+    if op_name in _DISPATCH_OPS:
+        return "dispatch"
+    if op_name in _COMPOSE_OPS:
+        return "compose"
+    if op_name in _ASYNC_OPS:
+        return "async"
+    if op_name in _MARKER_OPS:
+        return "marker"
+    return "dispatch"
+
 
 def get_tirx_op(op_name: str):
     assert isinstance(op_name, str)
-    return Op.get("tirx." + op_name)
+    return Op.get("tirx.tile." + op_name)
 
 
 class ArgProperty:
@@ -549,30 +593,6 @@ class ComposeOp(TilePrimitiveCall):
         raise NotImplementedError(
             "Generic compose_op must be lowered to specific compose ops before operator-level passes"  # noqa: E501
         )
-
-
-def _register_permute_layout_op():
-    """Register tirx.permute_layout dynamically (Python-only, no C++ rebuild).
-
-    Mirrors the TIRX_DEFINE_DISPATCH_OP macro: marks the op as a TIRx op
-    and a dispatch op so the well-formed verifier and printer accept it.
-    """
-
-    tirx_name = "tirx.permute_layout"
-    try:
-        return Op.get(tirx_name)
-    except Exception:
-        from tvm.ir import _ffi_api as ir_ffi
-        from tvm.ir.op import register_op_attr
-
-        ir_ffi.RegisterOp(tirx_name, "Permute the physical layout of a buffer in-place.")
-        register_op_attr(tirx_name, "TIsTIRxOp", True)
-        register_op_attr(tirx_name, "TIsDispatchOp", True)
-        register_op_attr(tirx_name, "TScriptPrinterName", "permute_layout")
-        return Op.get(tirx_name)
-
-
-_register_permute_layout_op()
 
 
 class PermuteLayout(TilePrimitiveCall):

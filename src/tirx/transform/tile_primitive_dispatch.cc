@@ -124,7 +124,14 @@ class ElectSyncFinder : public StmtExprVisitor {
   using StmtExprVisitor::VisitStmt_;
 
   void VisitExpr_(const CallNode* op) final {
-    if (op->op.same_as(tirx::builtin::ptx_elect_sync())) {
+    auto is_canonical_elect_sync = [&]() {
+      if (op->op.same_as(tirx::builtin::ptx_elect_sync())) return true;
+      if (auto call_op = op->op.as<Op>()) {
+        return call_op.value()->name == "tirx.ptx.elect_sync";
+      }
+      return false;
+    };
+    if (is_canonical_elect_sync()) {
       found_ = true;
       return;
     }

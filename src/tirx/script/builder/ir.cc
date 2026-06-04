@@ -662,7 +662,7 @@ AttrFrame DeviceEntry() {
   IRBuilder builder = IRBuilder::Current();
   ffi::Optional<PrimFuncFrame> pf_frame = builder->FindFrame<PrimFuncFrame>();
   TVM_FFI_ICHECK(pf_frame.defined())
-      << "Tx.device_entry() must be called inside a @Tx.prim_func body";
+      << "T.device_entry() must be called inside a @T.prim_func body";
   // Capture the AttrFrame by ObjectRef value so the lambda holds a strong
   // reference while the callback runs. Without this, the only reference is
   // the IRBuilder frame stack; ``ExitWithScope`` pops itself first and the

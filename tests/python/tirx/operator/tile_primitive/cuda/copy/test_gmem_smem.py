@@ -26,7 +26,8 @@ import pytest
 
 import tvm
 import tvm.testing
-from tvm.script import tirx as Tx
+from tvm.script import tirx as T
+from tvm.script.tirx import tile as Tx
 from tvm.tirx.layout import ComposeLayout, S, SwizzleLayout, TileLayout
 
 
@@ -36,51 +37,51 @@ def _build_kernel(scope, n_threads, shape, dtype):
 
     if scope == "warpgroup":
 
-        @Tx.prim_func
-        def kernel(A_ptr: Tx.handle, B_ptr: Tx.handle) -> None:
-            A = Tx.match_buffer(A_ptr, shape, dtype)
-            B = Tx.match_buffer(B_ptr, shape, dtype)
-            Tx.device_entry()
-            Tx.cta_id([1])
-            Tx.warpgroup_id([n_threads // 128])
-            Tx.warp_id_in_wg([4])
-            Tx.lane_id([32])
-            Tx.thread_id_in_wg([128])
-            Tx.thread_id([n_threads])
-            A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+        @T.prim_func
+        def kernel(A_ptr: T.handle, B_ptr: T.handle) -> None:
+            A = T.match_buffer(A_ptr, shape, dtype)
+            B = T.match_buffer(B_ptr, shape, dtype)
+            T.device_entry()
+            T.cta_id([1])
+            T.warpgroup_id([n_threads // 128])
+            T.warp_id_in_wg([4])
+            T.lane_id([32])
+            T.thread_id_in_wg([128])
+            T.thread_id([n_threads])
+            A_smem = T.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
             Tx.wg.copy(A_smem[full_slices], A[full_slices])
-            Tx.cuda.cta_sync()
+            T.cuda.cta_sync()
             Tx.wg.copy(B[full_slices], A_smem[full_slices])
 
     elif scope == "warp":
 
-        @Tx.prim_func
-        def kernel(A_ptr: Tx.handle, B_ptr: Tx.handle) -> None:
-            A = Tx.match_buffer(A_ptr, shape, dtype)
-            B = Tx.match_buffer(B_ptr, shape, dtype)
-            Tx.device_entry()
-            Tx.cta_id([1])
-            Tx.lane_id([32])
-            Tx.thread_id([n_threads])
-            A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+        @T.prim_func
+        def kernel(A_ptr: T.handle, B_ptr: T.handle) -> None:
+            A = T.match_buffer(A_ptr, shape, dtype)
+            B = T.match_buffer(B_ptr, shape, dtype)
+            T.device_entry()
+            T.cta_id([1])
+            T.lane_id([32])
+            T.thread_id([n_threads])
+            A_smem = T.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
             Tx.warp.copy(A_smem[full_slices], A[full_slices])
-            Tx.cuda.cta_sync()
+            T.cuda.cta_sync()
             Tx.warp.copy(B[full_slices], A_smem[full_slices])
 
     elif scope == "cta":
 
-        @Tx.prim_func
-        def kernel(A_ptr: Tx.handle, B_ptr: Tx.handle) -> None:
-            A = Tx.match_buffer(A_ptr, shape, dtype)
-            B = Tx.match_buffer(B_ptr, shape, dtype)
-            Tx.device_entry()
-            Tx.cta_id([1])
-            Tx.warp_id([n_threads // 32])
-            Tx.lane_id([32])
-            Tx.thread_id([n_threads])
-            A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+        @T.prim_func
+        def kernel(A_ptr: T.handle, B_ptr: T.handle) -> None:
+            A = T.match_buffer(A_ptr, shape, dtype)
+            B = T.match_buffer(B_ptr, shape, dtype)
+            T.device_entry()
+            T.cta_id([1])
+            T.warp_id([n_threads // 32])
+            T.lane_id([32])
+            T.thread_id([n_threads])
+            A_smem = T.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
             Tx.cta.copy(A_smem[full_slices], A[full_slices])
-            Tx.cuda.cta_sync()
+            T.cuda.cta_sync()
             Tx.cta.copy(B[full_slices], A_smem[full_slices])
     else:
         raise ValueError(f"unsupported scope {scope!r}")
@@ -205,20 +206,20 @@ def test_copy_g2s_s2g(task, dtype, scope):
     if scope == "thread":
         thread_cnt = 1
 
-    @Tx.prim_func
-    def copy_sync(A_ptr: Tx.handle, B_ptr: Tx.handle) -> None:
-        A = Tx.match_buffer(A_ptr, g_shape, dtype, layout=layoutA)
-        B = Tx.match_buffer(B_ptr, g_shape, dtype, layout=layoutB)
+    @T.prim_func
+    def copy_sync(A_ptr: T.handle, B_ptr: T.handle) -> None:
+        A = T.match_buffer(A_ptr, g_shape, dtype, layout=layoutA)
+        B = T.match_buffer(B_ptr, g_shape, dtype, layout=layoutB)
 
-        Tx.device_entry()
-        Tx.cta_id([2])
-        Tx.thread_id([thread_cnt])
+        T.device_entry()
+        T.cta_id([2])
+        T.thread_id([thread_cnt])
 
-        A_smem = Tx.alloc_buffer(s_shape, dtype, scope="shared", layout=layoutS)
+        A_smem = T.alloc_buffer(s_shape, dtype, scope="shared", layout=layoutS)
         # `scope` is parametrized at runtime; select the scope namespace
-        # dynamically (Tx.cta / Tx.thread) instead of a literal prefix.
+        # dynamically (T.cta / T.thread) instead of a literal prefix.
         getattr(Tx, scope).copy(A_smem[r_smem], A[r_gmem])
-        Tx.cuda.cta_sync()
+        T.cuda.cta_sync()
         getattr(Tx, scope).copy(B[r_gmem], A_smem[r_smem])
 
     np_dtype = tvm.testing.np_dtype_from_str(dtype)
@@ -344,23 +345,23 @@ def test_swizzled_smem_emit_must_be_swizzle_aware():
     ``s_buf.ptr_to([0,..,0]) + linear_offset`` which only matches a
     non-swizzled storage layout."""
     import tvm
-    from tvm.script import tirx as Tx
+    from tvm.script import tirx as T
     from tvm.tirx.layout import ComposeLayout, S, SwizzleLayout, TileLayout
 
     shape = (128, 32)
     s_layout = ComposeLayout(SwizzleLayout(3, 3, 3), TileLayout(S[shape]))
 
-    @Tx.prim_func
-    def kernel(A_ptr: Tx.handle) -> None:
-        A = Tx.match_buffer(A_ptr, shape, "float16")
-        Tx.device_entry()
-        Tx.cta_id([1])
-        Tx.warpgroup_id([1])
-        Tx.warp_id_in_wg([4])
-        Tx.lane_id([32])
-        Tx.thread_id_in_wg([128])
-        Tx.thread_id([128])
-        A_smem = Tx.alloc_buffer(shape, "float16", scope="shared", layout=s_layout)
+    @T.prim_func
+    def kernel(A_ptr: T.handle) -> None:
+        A = T.match_buffer(A_ptr, shape, "float16")
+        T.device_entry()
+        T.cta_id([1])
+        T.warpgroup_id([1])
+        T.warp_id_in_wg([4])
+        T.lane_id([32])
+        T.thread_id_in_wg([128])
+        T.thread_id([128])
+        A_smem = T.alloc_buffer(shape, "float16", scope="shared", layout=s_layout)
         Tx.wg.copy(A_smem[0:128, 0:32], A[0:128, 0:32])
 
     # NB: pin sm_90 explicitly — the default cuda target falls back to sm_50
@@ -520,17 +521,17 @@ def test_gmem_smem_swizzle_fast_path_fires_with_var_bounds():
     g_layout = TileLayout(S[shape])
     s_layout = ComposeLayout(swizzle, TileLayout(S[shape]))
 
-    @Tx.prim_func
-    def kernel(A_ptr: Tx.handle, B_ptr: Tx.handle) -> None:
-        A = Tx.match_buffer(A_ptr, shape, "float16", layout=g_layout)
-        B = Tx.match_buffer(B_ptr, shape, "float16", layout=g_layout)
-        Tx.device_entry()
-        Tx.cta_id([1])
-        Tx.lane_id([32])
-        Tx.thread_id([32])
-        smem = Tx.alloc_buffer(shape, "float16", scope="shared", layout=s_layout)
+    @T.prim_func
+    def kernel(A_ptr: T.handle, B_ptr: T.handle) -> None:
+        A = T.match_buffer(A_ptr, shape, "float16", layout=g_layout)
+        B = T.match_buffer(B_ptr, shape, "float16", layout=g_layout)
+        T.device_entry()
+        T.cta_id([1])
+        T.lane_id([32])
+        T.thread_id([32])
+        smem = T.alloc_buffer(shape, "float16", scope="shared", layout=s_layout)
         Tx.warp.copy(smem, A[:, :])
-        Tx.cuda.cta_sync()
+        T.cuda.cta_sync()
         Tx.warp.copy(B[:, :], smem)
 
     target = tvm.target.Target("cuda")

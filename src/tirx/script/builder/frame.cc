@@ -311,7 +311,7 @@ void ComposeOpFrameNode::ExitWithScope() {
                             << stmt;
     ops.push_back(ffi::GetRef<tvm::tirx::TilePrimitiveCall>(op_call));
   }
-  auto compose_op_op = tvm::Op::Get("tirx.compose_op");
+  auto compose_op_op = tvm::Op::Get("tirx.tile.compose_op");
   AddToParent(tvm::tirx::TilePrimitiveCall(compose_op_op, ops, workspace, config, dispatch));
 }
 

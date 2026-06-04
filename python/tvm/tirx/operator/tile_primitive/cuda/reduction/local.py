@@ -29,7 +29,7 @@ Before:
 
 After (scheduled PrimFunc, spatial_len=6, reduction_len=4):
     for spa in range(6):
-        B_local[spa] = Tx.float32(0.0)                      # init (skipped if accum)
+        B_local[spa] = T.float32(0.0)                      # init (skipped if accum)
         for red in range(4):
             B_local[spa] = B_local[spa] + A_local[spa * 4 + red]
 
@@ -50,7 +50,7 @@ After (scheduled PrimFunc, local_total=2, local_red=32, 2 shuffle steps):
     src_local = acc_view.view(64)
     dst_local = red_view.view(2)
     for spa in range(2):
-        dst_local[spa] = Tx.float32(0.0)
+        dst_local[spa] = T.float32(0.0)
         for red in range(32):
             dst_local[spa] = dst_local[spa] + src_local[...]
         dst_local[spa] = dst_local[spa] + shfl_xor(..., 1, 32, 32)
@@ -62,7 +62,7 @@ import operator
 from typing import Any
 
 from tvm.arith.analyzer import Analyzer
-from tvm.script import tirx as Tx
+from tvm.script import tirx as T
 from tvm.tirx import BufferRegion, PrimFunc
 from tvm.tirx.layout import TileLayout, laneid
 from tvm.tirx.operator.tile_primitive import DispatchContext, fail
@@ -135,14 +135,14 @@ def _gen_warp_shuffle_reduce(src, dst, reduce_width, local_elems, accum, op_type
     op_str = _REDUCE_OP_TO_STR[op_type]
 
     # fmt: off
-    @Tx.prim_func(check_well_formed=False)
+    @T.prim_func(check_well_formed=False)
     def impl():
         src_local = src.local(local_elems)
         dst_local = dst.local(local_elems)
-        for k in Tx.serial(local_elems):
+        for k in T.serial(local_elems):
             if not is_same_buffer:
                 dst_local[k] = src_local[k]
-            dst_local[k] = Tx.cuda.warp_reduce(dst_local[k], op_str, reduce_width)
+            dst_local[k] = T.cuda.warp_reduce(dst_local[k], op_str, reduce_width)
     # fmt: on
 
     return impl
@@ -268,14 +268,14 @@ def _emit_reduction_local_thread_wise(
         return full
 
     # fmt: off
-    @Tx.prim_func(check_well_formed=False)
+    @T.prim_func(check_well_formed=False)
     def impl():
-        for spa in Tx.serial(spatial_len):
-            dst_idx = Tx.meta_var(get_indices(spa, dst_st, dst_extent))
+        for spa in T.serial(spatial_len):
+            dst_idx = T.meta_var(get_indices(spa, dst_st, dst_extent))
             if not accum:
                 dst[tuple(dst_idx)] = init_value
-            for red in Tx.serial(reduction_len):
-                src_idx = Tx.meta_var(get_src_indices(spa, red))
+            for red in T.serial(reduction_len):
+                src_idx = T.meta_var(get_src_indices(spa, red))
                 dst[tuple(dst_idx)] = op_func(dst[tuple(dst_idx)], src[tuple(src_idx)])
     # fmt: on
 
@@ -342,10 +342,10 @@ def _emit_reduction_local_view(
     in_place = dst.same_as(src)
 
     def shuffle_data(mask, dst_local, dst_idx):
-        @Tx.inline
+        @T.inline
         def inner_shuffle(v, shuffle_mask):
             dst_local[tuple(dst_idx)] = op_func(
-                v, Tx.tvm_warp_shuffle_xor(mask, v, shuffle_mask, 32, 32)
+                v, T.tvm_warp_shuffle_xor(mask, v, shuffle_mask, 32, 32)
             )
 
         for i in range(len(shuffle_masks)):
@@ -355,40 +355,40 @@ def _emit_reduction_local_view(
 
     # fmt: off
     if need_save_accum:
-        @Tx.prim_func(check_well_formed=False)
+        @T.prim_func(check_well_formed=False)
         def impl():
             src_local = src.local(*src_local_shape)
             dst_local = dst.local(*dst_local_shape)
-            old_val = Tx.alloc_buffer([1], dtype, scope="local")
+            old_val = T.alloc_buffer([1], dtype, scope="local")
 
-            for spa in Tx.serial(dst_local_total):
-                dst_idx = Tx.meta_var(get_indices(spa, dst_local_st, dst_local_ext))
+            for spa in T.serial(dst_local_total):
+                dst_idx = T.meta_var(get_indices(spa, dst_local_st, dst_local_ext))
                 old_val[0] = dst_local[tuple(dst_idx)]
                 if not in_place:
                     dst_local[tuple(dst_idx)] = init_value
-                    for red in Tx.serial(reduction_local_total):
-                        src_idx = Tx.meta_var(_get_src_local_index(spa, red))
+                    for red in T.serial(reduction_local_total):
+                        src_idx = T.meta_var(_get_src_local_index(spa, red))
                         dst_local[tuple(dst_idx)] = op_func(dst_local[tuple(dst_idx)], src_local[tuple(src_idx)])  # noqa: E501
                 if shuffle:
-                    mask = Tx.tvm_warp_activemask()
+                    mask = T.tvm_warp_activemask()
                     shuffle_data(mask, dst_local, dst_idx)
                 dst_local[tuple(dst_idx)] = op_func(dst_local[tuple(dst_idx)], old_val[0])
     else:
-        @Tx.prim_func(check_well_formed=False)
+        @T.prim_func(check_well_formed=False)
         def impl():
             src_local = src.local(*src_local_shape)
             dst_local = dst.local(*dst_local_shape)
 
-            for spa in Tx.serial(dst_local_total):
-                dst_idx = Tx.meta_var(get_indices(spa, dst_local_st, dst_local_ext))
+            for spa in T.serial(dst_local_total):
+                dst_idx = T.meta_var(get_indices(spa, dst_local_st, dst_local_ext))
                 if not in_place:
                     if not accum:
                         dst_local[tuple(dst_idx)] = init_value
-                    for red in Tx.serial(reduction_local_total):
-                        src_idx = Tx.meta_var(_get_src_local_index(spa, red))
+                    for red in T.serial(reduction_local_total):
+                        src_idx = T.meta_var(_get_src_local_index(spa, red))
                         dst_local[tuple(dst_idx)] = op_func(dst_local[tuple(dst_idx)], src_local[tuple(src_idx)])  # noqa: E501
                 if shuffle:
-                    mask = Tx.tvm_warp_activemask()
+                    mask = T.tvm_warp_activemask()
                     shuffle_data(mask, dst_local, dst_idx)
     # fmt: on
 

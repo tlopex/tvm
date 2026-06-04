@@ -30,7 +30,8 @@ import pytest
 
 import tvm
 import tvm.testing
-from tvm.script import tirx as Tx
+from tvm.script import tirx as T
+from tvm.script.tirx import tile as Tx
 from tvm.tirx.layout import S, TileLayout
 
 # Force the fallback dispatch to register before any test compiles a kernel.
@@ -74,51 +75,51 @@ def _build_round_trip_kernel(scope, n_threads, shape, dtype):
     # pair on ``A_smem`` would otherwise race.
     if scope == "warp":
 
-        @Tx.prim_func
-        def kernel(A_ptr: Tx.handle, B_ptr: Tx.handle) -> None:
-            A = Tx.match_buffer(A_ptr, shape, dtype)
-            B = Tx.match_buffer(B_ptr, shape, dtype)
-            Tx.device_entry()
-            Tx.cta_id([1])
-            Tx.lane_id([32])
-            Tx.thread_id([n_threads])
-            A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+        @T.prim_func
+        def kernel(A_ptr: T.handle, B_ptr: T.handle) -> None:
+            A = T.match_buffer(A_ptr, shape, dtype)
+            B = T.match_buffer(B_ptr, shape, dtype)
+            T.device_entry()
+            T.cta_id([1])
+            T.lane_id([32])
+            T.thread_id([n_threads])
+            A_smem = T.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
             Tx.warp.copy(A_smem[full], A[full])
-            Tx.cuda.cta_sync()
+            T.cuda.cta_sync()
             Tx.warp.copy(B[full], A_smem[full])
 
     elif scope == "warpgroup":
 
-        @Tx.prim_func
-        def kernel(A_ptr: Tx.handle, B_ptr: Tx.handle) -> None:
-            A = Tx.match_buffer(A_ptr, shape, dtype)
-            B = Tx.match_buffer(B_ptr, shape, dtype)
-            Tx.device_entry()
-            Tx.cta_id([1])
-            Tx.warpgroup_id([n_threads // 128])
-            Tx.warp_id_in_wg([4])
-            Tx.lane_id([32])
-            Tx.thread_id_in_wg([128])
-            Tx.thread_id([n_threads])
-            A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+        @T.prim_func
+        def kernel(A_ptr: T.handle, B_ptr: T.handle) -> None:
+            A = T.match_buffer(A_ptr, shape, dtype)
+            B = T.match_buffer(B_ptr, shape, dtype)
+            T.device_entry()
+            T.cta_id([1])
+            T.warpgroup_id([n_threads // 128])
+            T.warp_id_in_wg([4])
+            T.lane_id([32])
+            T.thread_id_in_wg([128])
+            T.thread_id([n_threads])
+            A_smem = T.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
             Tx.wg.copy(A_smem[full], A[full])
-            Tx.cuda.cta_sync()
+            T.cuda.cta_sync()
             Tx.wg.copy(B[full], A_smem[full])
 
     elif scope == "cta":
 
-        @Tx.prim_func
-        def kernel(A_ptr: Tx.handle, B_ptr: Tx.handle) -> None:
-            A = Tx.match_buffer(A_ptr, shape, dtype)
-            B = Tx.match_buffer(B_ptr, shape, dtype)
-            Tx.device_entry()
-            Tx.cta_id([1])
-            Tx.warp_id([n_threads // 32])
-            Tx.lane_id([32])
-            Tx.thread_id([n_threads])
-            A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+        @T.prim_func
+        def kernel(A_ptr: T.handle, B_ptr: T.handle) -> None:
+            A = T.match_buffer(A_ptr, shape, dtype)
+            B = T.match_buffer(B_ptr, shape, dtype)
+            T.device_entry()
+            T.cta_id([1])
+            T.warp_id([n_threads // 32])
+            T.lane_id([32])
+            T.thread_id([n_threads])
+            A_smem = T.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
             Tx.cta.copy(A_smem[full], A[full])
-            Tx.cuda.cta_sync()
+            T.cuda.cta_sync()
             Tx.cta.copy(B[full], A_smem[full])
 
     else:
@@ -158,7 +159,7 @@ def test_fallback_round_trip(scope, n_threads, shape, why):
 
 
 def test_fallback_thread_scope():
-    """``Tx.thread()`` — single thread, no gate. Either ``gmem_smem`` picks
+    """``T.thread()`` — single thread, no gate. Either ``gmem_smem`` picks
     it up (n_elements % 1 == 0) or ``fallback`` does — both end up emitting
     a sensible single-thread copy. We only check the round trip is correct,
     not which variant fired."""
@@ -167,16 +168,16 @@ def test_fallback_thread_scope():
     s_layout = TileLayout(S[shape])
     full = tuple(slice(0, d) for d in shape)
 
-    @Tx.prim_func
-    def kernel(A_ptr: Tx.handle, B_ptr: Tx.handle) -> None:
-        A = Tx.match_buffer(A_ptr, shape, dtype)
-        B = Tx.match_buffer(B_ptr, shape, dtype)
-        Tx.device_entry()
-        Tx.cta_id([1])
-        Tx.thread_id([1])
-        A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+    @T.prim_func
+    def kernel(A_ptr: T.handle, B_ptr: T.handle) -> None:
+        A = T.match_buffer(A_ptr, shape, dtype)
+        B = T.match_buffer(B_ptr, shape, dtype)
+        T.device_entry()
+        T.cta_id([1])
+        T.thread_id([1])
+        A_smem = T.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
         Tx.copy(A_smem[full], A[full])
-        Tx.cuda.cta_sync()
+        T.cuda.cta_sync()
         Tx.copy(B[full], A_smem[full])
 
     dev = tvm.cuda(0)
@@ -203,16 +204,16 @@ def test_fallback_emits_gate():
     s_layout = TileLayout(S[shape])
     full = tuple(slice(0, d) for d in shape)
 
-    @Tx.prim_func
-    def kernel(A_ptr: Tx.handle, B_ptr: Tx.handle) -> None:
-        A = Tx.match_buffer(A_ptr, shape, dtype)
-        B = Tx.match_buffer(B_ptr, shape, dtype)
-        Tx.device_entry()
-        Tx.cta_id([1])
-        Tx.warp_id([8])  # 256 threads => 8 warps
-        Tx.lane_id([32])
-        Tx.thread_id([256])
-        A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+    @T.prim_func
+    def kernel(A_ptr: T.handle, B_ptr: T.handle) -> None:
+        A = T.match_buffer(A_ptr, shape, dtype)
+        B = T.match_buffer(B_ptr, shape, dtype)
+        T.device_entry()
+        T.cta_id([1])
+        T.warp_id([8])  # 256 threads => 8 warps
+        T.lane_id([32])
+        T.thread_id([256])
+        A_smem = T.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
         Tx.cta.copy(A_smem[full], A[full])
         Tx.cta.copy(B[full], A_smem[full])
 

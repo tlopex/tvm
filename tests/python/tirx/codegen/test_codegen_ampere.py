@@ -17,7 +17,7 @@
 # pylint: disable=missing-function-docstring
 """Codegen tests for Ampere (sm_80) warp-level ``mma.sync`` tensor cores.
 
-These exercise the ``Tx.ptx.mma`` intrinsic directly (not via the gemm
+These exercise the ``T.ptx.mma`` intrinsic directly (not via the gemm
 dispatch). ``ptx.mma`` takes one pointer per 32-bit register for each operand
 (``d_ptrs`` / ``a_ptrs`` / ``b_ptrs`` / ``c_ptrs``), enumerated in the fixed
 PTX register order, so the b32 registers may be scattered in the register file
@@ -34,7 +34,7 @@ import pytest
 
 import tvm
 import tvm.testing
-from tvm.script import tirx as Tx
+from tvm.script import tirx as T
 
 DEV = tvm.device("cuda")
 
@@ -81,33 +81,33 @@ def test_ptx_mma_m16n8k16(a_type, no_c_ptr):
     b_type = a_type
 
     # fmt: off
-    @Tx.prim_func
+    @T.prim_func
     def main(
-        D: Tx.Buffer((16, 8), "float32"),
-        A: Tx.Buffer((16, 16), a_type),
-        B: Tx.Buffer((16, 8), b_type),
-        C: Tx.Buffer((16, 8), "float32"),
+        D: T.Buffer((16, 8), "float32"),
+        A: T.Buffer((16, 16), a_type),
+        B: T.Buffer((16, 8), b_type),
+        C: T.Buffer((16, 8), "float32"),
     ):
-        Tx.device_entry()
-        cta_id = Tx.cta_id([1])
-        tx = Tx.thread_id([32])
-        D_local = Tx.alloc_local([4], "float32")
-        A_local = Tx.alloc_local([8], a_type)
-        B_local = Tx.alloc_local([4], b_type)
-        C_local = Tx.alloc_local([4], "float32")
+        T.device_entry()
+        cta_id = T.cta_id([1])
+        tx = T.thread_id([32])
+        D_local = T.alloc_local([4], "float32")
+        A_local = T.alloc_local([8], a_type)
+        B_local = T.alloc_local([4], b_type)
+        C_local = T.alloc_local([4], "float32")
 
-        @Tx.inline
+        @T.inline
         def G2L(buf_local, buf_global, block_8x8, mode="row"):
             if mode == "row":
                 for i in range(block_8x8):
-                    row = Tx.meta_var(i % 2 * 8 + tx // 4)
-                    col = Tx.meta_var(i // 2 * 8 + (tx % 4) * 2)
+                    row = T.meta_var(i % 2 * 8 + tx // 4)
+                    col = T.meta_var(i // 2 * 8 + (tx % 4) * 2)
                     for j in range(2):
                         buf_local[i * 2 + j] = buf_global[row, col + j]
             elif mode == "col":
                 for i in range(block_8x8):
-                    row = Tx.meta_var(i % 2 * 8 + (tx % 4) * 2)
-                    col = Tx.meta_var(i // 2 * 8 + tx // 4)
+                    row = T.meta_var(i % 2 * 8 + (tx % 4) * 2)
+                    col = T.meta_var(i // 2 * 8 + tx // 4)
                     for j in range(2):
                         buf_local[i * 2 + j] = buf_global[row + j, col]
 
@@ -121,16 +121,16 @@ def test_ptx_mma_m16n8k16(a_type, no_c_ptr):
         a_ptrs = [A_local.ptr_to([2 * i]) for i in range(4)]
         b_ptrs = [B_local.ptr_to([2 * i]) for i in range(2)]
         if no_c_ptr:
-            Tx.ptx.mma("m16n8k16", "row", "col", "float32", a_type, b_type, "float32",
+            T.ptx.mma("m16n8k16", "row", "col", "float32", a_type, b_type, "float32",
                        d_ptrs, a_ptrs, b_ptrs)
         else:
             c_ptrs = [C_local.ptr_to([i]) for i in range(4)]
-            Tx.ptx.mma("m16n8k16", "row", "col", "float32", a_type, b_type, "float32",
+            T.ptx.mma("m16n8k16", "row", "col", "float32", a_type, b_type, "float32",
                        d_ptrs, a_ptrs, b_ptrs, c_ptrs)
 
         for i in range(2):
-            row = Tx.meta_var(i % 2 * 8 + tx // 4)
-            col = Tx.meta_var(i // 2 * 8 + (tx % 4) * 2)
+            row = T.meta_var(i % 2 * 8 + tx // 4)
+            col = T.meta_var(i // 2 * 8 + (tx % 4) * 2)
             for j in range(2):
                 D[row, col + j] = D_local[i * 2 + j]
     # fmt: on
@@ -151,33 +151,33 @@ def test_ptx_mma_m16n8k8(a_type, no_c_ptr):
     b_type = a_type
 
     # fmt: off
-    @Tx.prim_func
+    @T.prim_func
     def main(
-        D: Tx.Buffer((16, 8), "float32"),
-        A: Tx.Buffer((16, 8), a_type),
-        B: Tx.Buffer((8, 8), b_type),
-        C: Tx.Buffer((16, 8), "float32"),
+        D: T.Buffer((16, 8), "float32"),
+        A: T.Buffer((16, 8), a_type),
+        B: T.Buffer((8, 8), b_type),
+        C: T.Buffer((16, 8), "float32"),
     ):
-        Tx.device_entry()
-        cta_id = Tx.cta_id([1])
-        tx = Tx.thread_id([32])
-        D_local = Tx.alloc_local([4], "float32")
-        A_local = Tx.alloc_local([4], a_type)
-        B_local = Tx.alloc_local([2], b_type)
-        C_local = Tx.alloc_local([4], "float32")
+        T.device_entry()
+        cta_id = T.cta_id([1])
+        tx = T.thread_id([32])
+        D_local = T.alloc_local([4], "float32")
+        A_local = T.alloc_local([4], a_type)
+        B_local = T.alloc_local([2], b_type)
+        C_local = T.alloc_local([4], "float32")
 
-        @Tx.inline
+        @T.inline
         def G2L(buf_local, buf_global, block_8x8, mode="row"):
             if mode == "row":
                 for i in range(block_8x8):
-                    row = Tx.meta_var(i % 2 * 8 + tx // 4)
-                    col = Tx.meta_var(i // 2 * 8 + (tx % 4) * 2)
+                    row = T.meta_var(i % 2 * 8 + tx // 4)
+                    col = T.meta_var(i // 2 * 8 + (tx % 4) * 2)
                     for j in range(2):
                         buf_local[i * 2 + j] = buf_global[row, col + j]
             elif mode == "col":
                 for i in range(block_8x8):
-                    row = Tx.meta_var(i % 2 * 8 + (tx % 4) * 2)
-                    col = Tx.meta_var(i // 2 * 8 + tx // 4)
+                    row = T.meta_var(i % 2 * 8 + (tx % 4) * 2)
+                    col = T.meta_var(i // 2 * 8 + tx // 4)
                     for j in range(2):
                         buf_local[i * 2 + j] = buf_global[row + j, col]
 
@@ -191,16 +191,16 @@ def test_ptx_mma_m16n8k8(a_type, no_c_ptr):
         a_ptrs = [A_local.ptr_to([2 * i]) for i in range(2)]
         b_ptrs = [B_local.ptr_to([0])]
         if no_c_ptr:
-            Tx.ptx.mma("m16n8k8", "row", "col", "float32", a_type, b_type, "float32",
+            T.ptx.mma("m16n8k8", "row", "col", "float32", a_type, b_type, "float32",
                        d_ptrs, a_ptrs, b_ptrs)
         else:
             c_ptrs = [C_local.ptr_to([i]) for i in range(4)]
-            Tx.ptx.mma("m16n8k8", "row", "col", "float32", a_type, b_type, "float32",
+            T.ptx.mma("m16n8k8", "row", "col", "float32", a_type, b_type, "float32",
                        d_ptrs, a_ptrs, b_ptrs, c_ptrs)
 
         for i in range(2):
-            row = Tx.meta_var(i % 2 * 8 + tx // 4)
-            col = Tx.meta_var(i // 2 * 8 + (tx % 4) * 2)
+            row = T.meta_var(i % 2 * 8 + tx // 4)
+            col = T.meta_var(i // 2 * 8 + (tx % 4) * 2)
             for j in range(2):
                 D[row, col + j] = D_local[i * 2 + j]
     # fmt: on

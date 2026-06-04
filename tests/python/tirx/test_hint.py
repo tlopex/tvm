@@ -170,7 +170,7 @@ def test_hint_keyword_arg_on_tx_op():
     op_call = TilePrimitiveCall(
         A[0:64, 0:64],
         A_sm[0:64, 0:64],
-        op=tvm.ir.Op.get("tirx.copy"),
+        op=tvm.ir.Op.get("tirx.tile.copy"),
         workspace={},
         config={"hint": "3-input ptx"},
     )
@@ -180,7 +180,7 @@ def test_hint_keyword_arg_on_tx_op():
 
 def test_hint_keyword_arg_on_tx_op_roundtrip():
     """Tx.op(..., hint="msg") roundtrips through printer/parser."""
-    from tvm.script import tirx as Tx
+    from tvm.script.tirx import tile as Tx
 
     @T.prim_func
     def func(A_ptr: T.handle, B_ptr: T.handle):

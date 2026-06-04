@@ -98,9 +98,9 @@ class ScopeNamespace:
     def __getattr__(self, name: str):
         if name.startswith("_"):
             raise AttributeError(name)
-        import tvm.tirx.script as _tx_script
+        from tvm.tirx.script import tile as _tile_script
 
-        op = getattr(_tx_script, name)
+        op = getattr(_tile_script, name)
         if not isinstance(op, ScopedOp):
             # AttributeError (not TypeError) so hasattr()/getattr(..., default)
             # degrade gracefully on a scope namespace.

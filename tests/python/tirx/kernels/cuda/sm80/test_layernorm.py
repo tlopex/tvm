@@ -19,7 +19,8 @@ import pytest
 
 import tvm
 import tvm.testing
-from tvm.script import tirx as Tx
+from tvm.script import tirx as T
+from tvm.script.tirx import tile as Tx
 from tvm.tirx.bench import ProtonContext, bench
 
 
@@ -31,11 +32,11 @@ def test_layernorm(dtype):
 
     if dtype == "bfloat16":
         np_dtype = "bfloat16"
-        const_func = Tx.bfloat16
+        const_func = T.bfloat16
     else:
         assert dtype == "float16"
         np_dtype = np.float16
-        const_func = Tx.float16
+        const_func = T.float16
 
     ATTN_B, ATTN_N, ATTN_D = 4, 1024, 1024  # attention batch size, seq length, feature dim
     PIPELINE_DEPTH = 2
@@ -54,52 +55,52 @@ def test_layernorm(dtype):
     #         in a CTA participate in each op.
 
     # fmt: off
-    @Tx.prim_func
-    def layernorm(inp_ptr: Tx.handle, inp_resid_ptr: Tx.handle, norm_weight_ptr: Tx.handle, norm_bias_ptr: Tx.handle,  # noqa: E501
-                  out_ptr: Tx.handle, out_resid_ptr: Tx.handle) -> None:
-        inp = Tx.match_buffer(inp_ptr, (ATTN_B, 1, ATTN_N, ATTN_D), dtype, scope="global", layout=Tx.TileLayout(Tx.S[ATTN_B, 1, ATTN_N, ATTN_D]))  # noqa: E501
-        out = Tx.match_buffer(out_ptr, (ATTN_B, 1, ATTN_N, ATTN_D), dtype, scope="global", layout=Tx.TileLayout(Tx.S[ATTN_B, 1, ATTN_N, ATTN_D]))  # noqa: E501
-        inp_resid = Tx.match_buffer(inp_resid_ptr, (ATTN_B, 1, ATTN_N, ATTN_D), dtype, scope="global", layout=Tx.TileLayout(Tx.S[ATTN_B, 1, ATTN_N, ATTN_D]))  # noqa: E501
-        out_resid = Tx.match_buffer(out_resid_ptr, (ATTN_B, 1, ATTN_N, ATTN_D), dtype, scope="global", layout=Tx.TileLayout(Tx.S[ATTN_B, 1, ATTN_N, ATTN_D]))  # noqa: E501
-        norm_weight = Tx.match_buffer(norm_weight_ptr, (ATTN_D,), dtype, scope="global", layout=Tx.TileLayout(Tx.S[ATTN_D])) # gamma  # noqa: E501
-        norm_bias = Tx.match_buffer(norm_bias_ptr, (ATTN_D,), dtype, scope="global", layout=Tx.TileLayout(Tx.S[ATTN_D])) # beta  # noqa: E501
+    @T.prim_func
+    def layernorm(inp_ptr: T.handle, inp_resid_ptr: T.handle, norm_weight_ptr: T.handle, norm_bias_ptr: T.handle,  # noqa: E501
+                  out_ptr: T.handle, out_resid_ptr: T.handle) -> None:
+        inp = T.match_buffer(inp_ptr, (ATTN_B, 1, ATTN_N, ATTN_D), dtype, scope="global", layout=T.TileLayout(T.S[ATTN_B, 1, ATTN_N, ATTN_D]))  # noqa: E501
+        out = T.match_buffer(out_ptr, (ATTN_B, 1, ATTN_N, ATTN_D), dtype, scope="global", layout=T.TileLayout(T.S[ATTN_B, 1, ATTN_N, ATTN_D]))  # noqa: E501
+        inp_resid = T.match_buffer(inp_resid_ptr, (ATTN_B, 1, ATTN_N, ATTN_D), dtype, scope="global", layout=T.TileLayout(T.S[ATTN_B, 1, ATTN_N, ATTN_D]))  # noqa: E501
+        out_resid = T.match_buffer(out_resid_ptr, (ATTN_B, 1, ATTN_N, ATTN_D), dtype, scope="global", layout=T.TileLayout(T.S[ATTN_B, 1, ATTN_N, ATTN_D]))  # noqa: E501
+        norm_weight = T.match_buffer(norm_weight_ptr, (ATTN_D,), dtype, scope="global", layout=T.TileLayout(T.S[ATTN_D])) # gamma  # noqa: E501
+        norm_bias = T.match_buffer(norm_bias_ptr, (ATTN_D,), dtype, scope="global", layout=T.TileLayout(T.S[ATTN_D])) # beta  # noqa: E501
 
-        Tx.device_entry()
-        bx, by = Tx.cta_id([Tx.ceildiv(ATTN_N, N_PER_TILE), ATTN_B])
-        tid = Tx.thread_id([NUM_WORKERS * 32])
-        warp_id = Tx.warp_id([NUM_WORKERS])
-        lane_id = Tx.lane_id([32])
-        x_smem = Tx.alloc_buffer([NUM_WORKERS, PIPELINE_DEPTH, ATTN_D], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[NUM_WORKERS, PIPELINE_DEPTH, ATTN_D]))  # noqa: E501
-        resid_smem = Tx.alloc_buffer([NUM_WORKERS, PIPELINE_DEPTH, ATTN_D], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[NUM_WORKERS, PIPELINE_DEPTH, ATTN_D]))  # noqa: E501
-        norm_weight_smem = Tx.alloc_buffer([ATTN_D,], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[ATTN_D]))  # noqa: E501
-        norm_bias_smem = Tx.alloc_buffer([ATTN_D,], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[ATTN_D]))  # noqa: E501
-        mean = Tx.alloc_buffer([NUM_WORKERS, 1, 1], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[NUM_WORKERS, 1, 1]), align=8)  # noqa: E501
-        var = Tx.alloc_buffer([NUM_WORKERS, 1, 1], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[NUM_WORKERS, 1, 1]), align=8)  # noqa: E501
+        T.device_entry()
+        bx, by = T.cta_id([T.ceildiv(ATTN_N, N_PER_TILE), ATTN_B])
+        tid = T.thread_id([NUM_WORKERS * 32])
+        warp_id = T.warp_id([NUM_WORKERS])
+        lane_id = T.lane_id([32])
+        x_smem = T.alloc_buffer([NUM_WORKERS, PIPELINE_DEPTH, ATTN_D], dtype, scope="shared", layout=T.TileLayout(T.S[NUM_WORKERS, PIPELINE_DEPTH, ATTN_D]))  # noqa: E501
+        resid_smem = T.alloc_buffer([NUM_WORKERS, PIPELINE_DEPTH, ATTN_D], dtype, scope="shared", layout=T.TileLayout(T.S[NUM_WORKERS, PIPELINE_DEPTH, ATTN_D]))  # noqa: E501
+        norm_weight_smem = T.alloc_buffer([ATTN_D,], dtype, scope="shared", layout=T.TileLayout(T.S[ATTN_D]))  # noqa: E501
+        norm_bias_smem = T.alloc_buffer([ATTN_D,], dtype, scope="shared", layout=T.TileLayout(T.S[ATTN_D]))  # noqa: E501
+        mean = T.alloc_buffer([NUM_WORKERS, 1, 1], dtype, scope="shared", layout=T.TileLayout(T.S[NUM_WORKERS, 1, 1]), align=8)  # noqa: E501
+        var = T.alloc_buffer([NUM_WORKERS, 1, 1], dtype, scope="shared", layout=T.TileLayout(T.S[NUM_WORKERS, 1, 1]), align=8)  # noqa: E501
 
         Tx.cta.copy(norm_bias_smem[:], norm_bias[:])
         Tx.cta.copy(norm_weight_smem[:], norm_weight[:])
-        Tx.cuda.cta_sync()
+        T.cuda.cta_sync()
 
         # two cp.async
-        non_bulk_copy = Tx.meta_var({"dispatch": "ldgsts"})
+        non_bulk_copy = T.meta_var({"dispatch": "ldgsts"})
         Tx.cta.copy_async(x_smem[:, 0, :], inp[by, 0, slice(bx * NUM_WORKERS, (bx + 1) * NUM_WORKERS), :], **non_bulk_copy)  # noqa: E501
         Tx.cta.copy_async(resid_smem[:, 0, :], inp_resid[by, 0, slice(bx * NUM_WORKERS, (bx + 1) * NUM_WORKERS), :], **non_bulk_copy)  # noqa: E501
-        Tx.ptx.cp_async.commit_group()
-        Tx.cuda.cta_sync()
+        T.ptx.cp_async.commit_group()
+        T.cuda.cta_sync()
 
         # main loop
-        n_loops = Tx.meta_var(Tx.ceildiv(N_PER_TILE, NUM_WORKERS))
-        for k in Tx.serial(n_loops):
-            curr_idx = Tx.meta_var((k + 0) * NUM_WORKERS)
-            next_idx = Tx.meta_var((k + 1) * NUM_WORKERS)
+        n_loops = T.meta_var(T.ceildiv(N_PER_TILE, NUM_WORKERS))
+        for k in T.serial(n_loops):
+            curr_idx = T.meta_var((k + 0) * NUM_WORKERS)
+            next_idx = T.meta_var((k + 1) * NUM_WORKERS)
 
             if k < n_loops - 1:
                 # TODO(@kathy): support pipeline token flip when pipeline is long
                 Tx.cta.copy_async(x_smem[:, 1, :], inp[by, 0, slice(bx * NUM_WORKERS + next_idx, (bx + 1) * NUM_WORKERS + next_idx), :], **non_bulk_copy)  # noqa: E501
                 Tx.cta.copy_async(resid_smem[:, 1, :], inp_resid[by, 0, slice(bx * NUM_WORKERS + next_idx, (bx + 1) * NUM_WORKERS + next_idx), :], **non_bulk_copy)  # noqa: E501
-                Tx.ptx.cp_async.commit_group()
-            Tx.ptx.cp_async.wait_group(0)
-            Tx.cuda.cta_sync()
+                T.ptx.cp_async.commit_group()
+            T.ptx.cp_async.wait_group(0)
+            T.cuda.cta_sync()
 
             # store residual
             Tx.cta.add(resid_smem[:, 0, :], resid_smem[:, 0, :], x_smem[:, 0, :])
