@@ -73,8 +73,8 @@ def reduction_trn(
     Returns:
         Optional[PrimFunc]: The scheduled function, or None if not applicable.
     """
-    if not (sctx.is_trn() and sctx.scope_kind == "kernel"):
-        fail("requires Trainium target and kernel exec_scope")
+    if not (sctx.is_trn() and sctx.scope_kind == "thread"):
+        fail("requires Trainium target and thread exec_scope")
 
     dst_buffer_region, src_buffer_region, axes, accum = op.args[:4]
     assert not accum, "Accumulation is not supported for reduction on Trainium"

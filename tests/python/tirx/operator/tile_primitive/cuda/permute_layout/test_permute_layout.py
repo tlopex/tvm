@@ -198,12 +198,10 @@ def test_sf_blockwise_transpose(name, pipe, blk, dtype):
         Tx.device_entry()
         Tx.cta_id([1])
         Tx.thread_id([32])
-        with Tx.cta():
-            with Tx.warp():
-                for s in Tx.serial(0, pipe):
-                    Tx.permute_layout(
-                        B_buf[s, 0:high, 0:4, 0:32], A_buf[s, 0:high, 0:4, 0:32]
-                    )
+        for s in Tx.serial(0, pipe):
+            Tx.warp.permute_layout(
+                B_buf[s, 0:high, 0:4, 0:32], A_buf[s, 0:high, 0:4, 0:32]
+            )
         # fmt: on
 
     np.random.seed(0)
@@ -246,9 +244,7 @@ def test_identity_passes_through_as_copy():
         Tx.device_entry()
         Tx.cta_id([1])
         Tx.thread_id([32])
-        with Tx.cta():
-            with Tx.warp():
-                Tx.permute_layout(B_buf, A_buf)
+        Tx.warp.permute_layout(B_buf, A_buf)
         # fmt: on
 
     np.random.seed(0)
@@ -282,9 +278,7 @@ def test_generic_transpose(shape, src_strides, dst_strides, dtype):
         Tx.device_entry()
         Tx.cta_id([1])
         Tx.thread_id([32])
-        with Tx.cta():
-            with Tx.warp():
-                Tx.permute_layout(B_buf, A_buf)
+        Tx.warp.permute_layout(B_buf, A_buf)
         # fmt: on
 
     np.random.seed(0)
@@ -311,9 +305,7 @@ def _build_and_assert_rejected(shape, src_layout, dst_layout, dtype, msg_substr)
         Tx.device_entry()
         Tx.cta_id([1])
         Tx.thread_id([32])
-        with Tx.cta():
-            with Tx.warp():
-                Tx.permute_layout(B_buf, A_buf)
+        Tx.warp.permute_layout(B_buf, A_buf)
         # fmt: on
 
     target = tvm.target.Target("cuda")
@@ -337,9 +329,7 @@ def test_reject_dtype_mismatch():
         Tx.device_entry()
         Tx.cta_id([1])
         Tx.thread_id([32])
-        with Tx.cta():
-            with Tx.warp():
-                Tx.permute_layout(B_buf, A_buf)
+        Tx.warp.permute_layout(B_buf, A_buf)
         # fmt: on
 
     target = tvm.target.Target("cuda")
@@ -360,9 +350,7 @@ def test_reject_shape_mismatch():
         Tx.device_entry()
         Tx.cta_id([1])
         Tx.thread_id([32])
-        with Tx.cta():
-            with Tx.warp():
-                Tx.permute_layout(B_buf, A_buf)
+        Tx.warp.permute_layout(B_buf, A_buf)
         # fmt: on
 
     target = tvm.target.Target("cuda")
@@ -388,9 +376,7 @@ def test_reject_swizzle_layout():
         Tx.device_entry()
         Tx.cta_id([1])
         Tx.thread_id([32])
-        with Tx.cta():
-            with Tx.warp():
-                Tx.permute_layout(B_buf, A_buf)
+        Tx.warp.permute_layout(B_buf, A_buf)
         # fmt: on
 
     target = tvm.target.Target("cuda")
@@ -411,8 +397,7 @@ def test_reject_non_warp_scope():
         Tx.device_entry()
         Tx.cta_id([1])
         Tx.thread_id([32])
-        with Tx.cta():
-            Tx.permute_layout(B_buf, A_buf)  # cta scope, not warp
+        Tx.cta.permute_layout(B_buf, A_buf)  # cta scope, not warp
         # fmt: on
 
     target = tvm.target.Target("cuda")

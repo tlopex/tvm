@@ -343,8 +343,7 @@ def jit(
             *,
             N: Tx.constexpr,
         ):
-            with Tx.thread():
-                ...
+            ...
 
         kernel = add.specialize(N=1024)  # returns a PrimFunc
     """

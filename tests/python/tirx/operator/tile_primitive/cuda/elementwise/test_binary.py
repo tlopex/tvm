@@ -93,24 +93,22 @@ def test_binary_op_shared(input, op_type, operands_type, dtype):
         Tx.device_entry()
         cta_id = Tx.cta_id([1])
         tid = Tx.thread_id([thread_cnt])
+        A_smem = Tx.alloc_buffer(g_shape, dtype, scope="shared", layout=s_layout)
+        B_smem = Tx.alloc_buffer(g_shape, dtype, scope="shared", layout=s_layout)
 
-        with Tx.cta():
-            A_smem = Tx.alloc_buffer(g_shape, dtype, scope="shared", layout=s_layout)
-            B_smem = Tx.alloc_buffer(g_shape, dtype, scope="shared", layout=s_layout)
-
-            Tx.copy(A_smem[tuple(copy_slice)], A[tuple(copy_slice)])
-            Tx.copy(B_smem[tuple(copy_slice)], B[tuple(copy_slice)])
-            Tx.cuda.cta_sync()
-            if op_type == "add":
-                Tx.add(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], B_smem[tuple(map_slice_b)])  # noqa: E501
-            elif op_type == "sub":
-                Tx.sub(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], B_smem[tuple(map_slice_b)])  # noqa: E501
-            elif op_type == "mul":
-                Tx.mul(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], B_smem[tuple(map_slice_b)])  # noqa: E501
-            elif op_type == "fdiv":
-                Tx.fdiv(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], B_smem[tuple(map_slice_b)])  # noqa: E501
-            Tx.cuda.cta_sync()
-            Tx.copy(A[tuple(copy_slice)], A_smem[tuple(copy_slice)])
+        Tx.cta.copy(A_smem[tuple(copy_slice)], A[tuple(copy_slice)])
+        Tx.cta.copy(B_smem[tuple(copy_slice)], B[tuple(copy_slice)])
+        Tx.cuda.cta_sync()
+        if op_type == "add":
+            Tx.cta.add(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], B_smem[tuple(map_slice_b)])  # noqa: E501
+        elif op_type == "sub":
+            Tx.cta.sub(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], B_smem[tuple(map_slice_b)])  # noqa: E501
+        elif op_type == "mul":
+            Tx.cta.mul(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], B_smem[tuple(map_slice_b)])  # noqa: E501
+        elif op_type == "fdiv":
+            Tx.cta.fdiv(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], B_smem[tuple(map_slice_b)])  # noqa: E501
+        Tx.cuda.cta_sync()
+        Tx.cta.copy(A[tuple(copy_slice)], A_smem[tuple(copy_slice)])
 
     @Tx.prim_func
     def binary_op_const_region_or_region_const(A_ptr: Tx.handle, B_ptr: Tx.handle) -> None:
@@ -120,34 +118,32 @@ def test_binary_op_shared(input, op_type, operands_type, dtype):
         Tx.device_entry()
         cta_id = Tx.cta_id([1])
         tid = Tx.thread_id([thread_cnt])
+        A_smem = Tx.alloc_buffer(g_shape, dtype, scope="shared", layout=s_layout)
 
-        with Tx.cta():
-            A_smem = Tx.alloc_buffer(g_shape, dtype, scope="shared", layout=s_layout)
-
-            Tx.copy(A_smem[tuple(copy_slice)], A[tuple(copy_slice)])
-            Tx.cuda.cta_sync()
-            if op_type == "add":
-                if operands_type == "const_region":
-                    Tx.add(A_smem[tuple(map_slice_res)], const, A_smem[tuple(map_slice_a)])
-                elif operands_type == "region_const":
-                    Tx.add(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], const)
-            elif op_type == "sub":
-                if operands_type == "const_region":
-                    Tx.sub(A_smem[tuple(map_slice_res)], const, A_smem[tuple(map_slice_a)])
-                elif operands_type == "region_const":
-                    Tx.sub(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], const)
-            elif op_type == "mul":
-                if operands_type == "const_region":
-                    Tx.mul(A_smem[tuple(map_slice_res)], const, A_smem[tuple(map_slice_a)])
-                elif operands_type == "region_const":
-                    Tx.mul(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], const)
-            elif op_type == "fdiv":
-                if operands_type == "const_region":
-                    Tx.fdiv(A_smem[tuple(map_slice_res)], const, A_smem[tuple(map_slice_a)])
-                elif operands_type == "region_const":
-                    Tx.fdiv(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], const)
-            Tx.cuda.cta_sync()
-            Tx.copy(A[tuple(copy_slice)], A_smem[tuple(copy_slice)])
+        Tx.cta.copy(A_smem[tuple(copy_slice)], A[tuple(copy_slice)])
+        Tx.cuda.cta_sync()
+        if op_type == "add":
+            if operands_type == "const_region":
+                Tx.cta.add(A_smem[tuple(map_slice_res)], const, A_smem[tuple(map_slice_a)])
+            elif operands_type == "region_const":
+                Tx.cta.add(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], const)
+        elif op_type == "sub":
+            if operands_type == "const_region":
+                Tx.cta.sub(A_smem[tuple(map_slice_res)], const, A_smem[tuple(map_slice_a)])
+            elif operands_type == "region_const":
+                Tx.cta.sub(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], const)
+        elif op_type == "mul":
+            if operands_type == "const_region":
+                Tx.cta.mul(A_smem[tuple(map_slice_res)], const, A_smem[tuple(map_slice_a)])
+            elif operands_type == "region_const":
+                Tx.cta.mul(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], const)
+        elif op_type == "fdiv":
+            if operands_type == "const_region":
+                Tx.cta.fdiv(A_smem[tuple(map_slice_res)], const, A_smem[tuple(map_slice_a)])
+            elif operands_type == "region_const":
+                Tx.cta.fdiv(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)], const)
+        Tx.cuda.cta_sync()
+        Tx.cta.copy(A[tuple(copy_slice)], A_smem[tuple(copy_slice)])
         # fmt: on
 
     def get_prim_func(operands_type):
@@ -214,12 +210,11 @@ def test_binary_non_commutative_const_lhs_rejected(op_type):
             Tx.device_entry()
             _bx = Tx.cta_id([1])
             _tid = Tx.thread_id([64])
-            with Tx.cta():
-                A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=layout)
-                if op_type == "sub":
-                    Tx.sub(A_smem, const, A_smem)
-                elif op_type == "fdiv":
-                    Tx.fdiv(A_smem, const, A_smem)
+            A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=layout)
+            if op_type == "sub":
+                Tx.cta.sub(A_smem, const, A_smem)
+            elif op_type == "fdiv":
+                Tx.cta.fdiv(A_smem, const, A_smem)
 
         target = tvm.target.Target("cuda")
         with target:
@@ -246,22 +241,19 @@ def test_binary_op_shared_subcta_scope(exec_scope, op_type):
         wg_id = Tx.warpgroup_id([(256) // 128])
         _bx = Tx.cta_id([1])
         _tid = Tx.thread_id([256])
-        with Tx.cta():
-            A_smem = Tx.alloc_buffer(g_shape, dtype, scope="shared", layout=TileLayout(S[g_shape]))
-            B_smem = Tx.alloc_buffer(g_shape, dtype, scope="shared", layout=TileLayout(S[g_shape]))
-            Tx.copy(A_smem, A)
-            Tx.copy(B_smem, B)
-            Tx.cuda.cta_sync()
-            if exec_scope == "warp":
-                if warp_id == 5:
-                    with Tx.warp():
-                        tx_op(A_smem, A_smem, B_smem)
-            elif exec_scope == "warpgroup":
-                if wg_id == 1:
-                    with Tx.warpgroup():
-                        tx_op(A_smem, A_smem, B_smem)
-            Tx.cuda.cta_sync()
-            Tx.copy(A, A_smem)
+        A_smem = Tx.alloc_buffer(g_shape, dtype, scope="shared", layout=TileLayout(S[g_shape]))
+        B_smem = Tx.alloc_buffer(g_shape, dtype, scope="shared", layout=TileLayout(S[g_shape]))
+        Tx.cta.copy(A_smem, A)
+        Tx.cta.copy(B_smem, B)
+        Tx.cuda.cta_sync()
+        if exec_scope == "warp":
+            if warp_id == 5:
+                tx_op(A_smem, A_smem, B_smem)
+        elif exec_scope == "warpgroup":
+            if wg_id == 1:
+                tx_op(A_smem, A_smem, B_smem)
+        Tx.cuda.cta_sync()
+        Tx.cta.copy(A, A_smem)
 
     target = tvm.target.Target("cuda")
     with target:
@@ -309,53 +301,43 @@ def test_binary_op_local_subcta_trivial(exec_scope, rhs_kind, op_type):
         _bx = Tx.cta_id([1])
         _tid = Tx.thread_id([256])
         tid_in_scope = tid_in_scope_fn([n_threads])
+        b_n = Tx.meta_var(n if rhs_kind == "region" else 1)
+        A_local = Tx.alloc_buffer((m, n), dtype, scope="local", layout=TileLayout(S[(m, n)]))
+        C_local = Tx.alloc_buffer((m, n), dtype, scope="local", layout=TileLayout(S[(m, n)]))
+        B_local = Tx.alloc_buffer((m, b_n), dtype, scope="local", layout=TileLayout(S[(m, b_n)]))
 
-        with Tx.cta():
-            b_n = Tx.meta_var(n if rhs_kind == "region" else 1)
-            A_local = Tx.alloc_buffer((m, n), dtype, scope="local", layout=TileLayout(S[(m, n)]))
-            C_local = Tx.alloc_buffer((m, n), dtype, scope="local", layout=TileLayout(S[(m, n)]))
-            B_local = Tx.alloc_buffer(
-                (m, b_n), dtype, scope="local", layout=TileLayout(S[(m, b_n)])
-            )
+        if thr_str <= _tid and _tid < thr_str + n_threads:
+            for i in Tx.serial(m):
+                for j in Tx.serial(n):
+                    A_local[i, j] = A[tid_in_scope, i, j]
+            if rhs_kind != "const":
+                for i in Tx.serial(m):
+                    for j in Tx.serial(b_n):
+                        B_local[i, j] = B[tid_in_scope, i, j]
 
-            if thr_str <= _tid and _tid < thr_str + n_threads:
-                with Tx.thread():
-                    for i in Tx.serial(m):
-                        for j in Tx.serial(n):
-                            A_local[i, j] = A[tid_in_scope, i, j]
-                    if rhs_kind != "const":
-                        for i in Tx.serial(m):
-                            for j in Tx.serial(b_n):
-                                B_local[i, j] = B[tid_in_scope, i, j]
-                    # Tx.cuda.cta_sync()
-
-            if exec_scope == "cta":
-                with Tx.cta():
-                    if rhs_kind == "const":
-                        tx_op(C_local, A_local, const)
-                    else:
-                        tx_op(C_local, A_local, B_local)
-            elif exec_scope == "warpgroup":
-                if wg_id == 1:
-                    with Tx.warpgroup():
-                        if rhs_kind == "const":
-                            tx_op(C_local, A_local, const)
-                        else:
-                            tx_op(C_local, A_local, B_local)
+        if exec_scope == "cta":
+            if rhs_kind == "const":
+                tx_op(C_local, A_local, const)
             else:
-                if warp_id == 3:
-                    with Tx.warp():
-                        if rhs_kind == "const":
-                            tx_op(C_local, A_local, const)
-                        else:
-                            tx_op(C_local, A_local, B_local)
-                    # Tx.cuda.cta_sync()
+                tx_op(C_local, A_local, B_local)
+        elif exec_scope == "warpgroup":
+            if wg_id == 1:
+                if rhs_kind == "const":
+                    tx_op(C_local, A_local, const)
+                else:
+                    tx_op(C_local, A_local, B_local)
+        else:
+            if warp_id == 3:
+                if rhs_kind == "const":
+                    tx_op(C_local, A_local, const)
+                else:
+                    tx_op(C_local, A_local, B_local)
+                # Tx.cuda.cta_sync()
 
-            if thr_str <= _tid and _tid < thr_str + n_threads:
-                with Tx.thread():
-                    for i in Tx.serial(m):
-                        for j in Tx.serial(n):
-                            C[tid_in_scope, i, j] = C_local[i, j]
+        if thr_str <= _tid and _tid < thr_str + n_threads:
+            for i in Tx.serial(m):
+                for j in Tx.serial(n):
+                    C[tid_in_scope, i, j] = C_local[i, j]
 
     target = tvm.target.Target("cuda")
     with target:
@@ -421,33 +403,30 @@ def test_binary_op_vectorized(input, storage_scope, exec_scope, op_type, dtype):
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         tx = Tx.thread_id([thread_cnt])
-        with Tx.cta():
-            if storage_scope == "shared":
-                A_smem = Tx.alloc_buffer(
-                    a_shape, dtype, scope="shared", layout=TileLayout(S[a_shape])
-                )
-                B_smem = Tx.alloc_buffer(
-                    b_shape, dtype, scope="shared", layout=TileLayout(S[b_shape])
-                )
-                Tx.copy(A_smem, A)
-                Tx.copy(B_smem, B)
-                Tx.cuda.cta_sync()
-                tx_op(A_smem, A_smem, B_smem)
-                Tx.cuda.cta_sync()
-                Tx.copy(A, A_smem)
-        with Tx.thread():
-            if storage_scope == "local":
-                A_local = Tx.alloc_buffer(
-                    a_shape[1:], dtype, scope="local", layout=TileLayout(S[a_shape[1:]])
-                )
-                B_local = Tx.alloc_buffer(
-                    b_shape[1:], dtype, scope="local", layout=TileLayout(S[b_shape[1:]])
-                )
-                Tx.copy(A_local, A[tx])
-                Tx.copy(B_local, B[tx])
-                with Tx.cta():
-                    tx_op(A_local, A_local, B_local)
-                Tx.copy(A[tx], A_local)
+        if storage_scope == "shared":
+            A_smem = Tx.alloc_buffer(
+                a_shape, dtype, scope="shared", layout=TileLayout(S[a_shape])
+            )
+            B_smem = Tx.alloc_buffer(
+                b_shape, dtype, scope="shared", layout=TileLayout(S[b_shape])
+            )
+            Tx.cta.copy(A_smem, A)
+            Tx.cta.copy(B_smem, B)
+            Tx.cuda.cta_sync()
+            tx_op(A_smem, A_smem, B_smem)
+            Tx.cuda.cta_sync()
+            Tx.cta.copy(A, A_smem)
+        if storage_scope == "local":
+            A_local = Tx.alloc_buffer(
+                a_shape[1:], dtype, scope="local", layout=TileLayout(S[a_shape[1:]])
+            )
+            B_local = Tx.alloc_buffer(
+                b_shape[1:], dtype, scope="local", layout=TileLayout(S[b_shape[1:]])
+            )
+            Tx.copy(A_local, A[tx])
+            Tx.copy(B_local, B[tx])
+            tx_op(A_local, A_local, B_local)
+            Tx.copy(A[tx], A_local)
 
     @Tx.prim_func
     def test_binary_thread(A_ptr: Tx.handle, B_ptr: Tx.handle) -> None:
@@ -457,32 +436,30 @@ def test_binary_op_vectorized(input, storage_scope, exec_scope, op_type, dtype):
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         tx = Tx.thread_id([thread_cnt])
-
-        with Tx.thread():
-            if storage_scope == "shared":
-                A_smem = Tx.alloc_buffer(
-                    a_shape, dtype, scope="shared", layout=TileLayout(S[a_shape])
-                )
-                B_smem = Tx.alloc_buffer(
-                    b_shape, dtype, scope="shared", layout=TileLayout(S[b_shape])
-                )
-                Tx.copy(A_smem, A)
-                Tx.copy(B_smem, B)
-                Tx.cuda.cta_sync()
-                tx_op(A_smem, A_smem, B_smem)
-                Tx.cuda.cta_sync()
-                Tx.copy(A, A_smem)
-            elif storage_scope == "local":
-                A_local = Tx.alloc_buffer(
-                    a_shape[1:], dtype, scope="local", layout=TileLayout(S[a_shape[1:]])
-                )
-                B_local = Tx.alloc_buffer(
-                    b_shape[1:], dtype, scope="local", layout=TileLayout(S[b_shape[1:]])
-                )
-                Tx.copy(A_local, A[tx])
-                Tx.copy(B_local, B[tx])
-                tx_op(A_local, A_local, B_local)
-                Tx.copy(A[tx], A_local)
+        if storage_scope == "shared":
+            A_smem = Tx.alloc_buffer(
+                a_shape, dtype, scope="shared", layout=TileLayout(S[a_shape])
+            )
+            B_smem = Tx.alloc_buffer(
+                b_shape, dtype, scope="shared", layout=TileLayout(S[b_shape])
+            )
+            Tx.copy(A_smem, A)
+            Tx.copy(B_smem, B)
+            Tx.cuda.cta_sync()
+            tx_op(A_smem, A_smem, B_smem)
+            Tx.cuda.cta_sync()
+            Tx.copy(A, A_smem)
+        elif storage_scope == "local":
+            A_local = Tx.alloc_buffer(
+                a_shape[1:], dtype, scope="local", layout=TileLayout(S[a_shape[1:]])
+            )
+            B_local = Tx.alloc_buffer(
+                b_shape[1:], dtype, scope="local", layout=TileLayout(S[b_shape[1:]])
+            )
+            Tx.copy(A_local, A[tx])
+            Tx.copy(B_local, B[tx])
+            tx_op(A_local, A_local, B_local)
+            Tx.copy(A[tx], A_local)
         # fmt: on
 
     def get_prim_func():
@@ -537,22 +514,21 @@ def test_binary_op_packed_f32x2_auto_dispatch(op_type):
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         tx = Tx.thread_id([64])
-        with Tx.thread():
-            A_local = Tx.alloc_buffer(
-                a_shape[1:], dtype, scope="local", layout=TileLayout(S[a_shape[1:]])
-            )
-            B_local = Tx.alloc_buffer(
-                b_shape[1:], dtype, scope="local", layout=TileLayout(S[b_shape[1:]])
-            )
-            Tx.copy(A_local, A[tx])
-            Tx.copy(B_local, B[tx])
-            if op_type == "add":
-                Tx.add(A_local, A_local, B_local)
-            elif op_type == "sub":
-                Tx.sub(A_local, A_local, B_local)
-            elif op_type == "mul":
-                Tx.mul(A_local, A_local, B_local)
-            Tx.copy(A[tx], A_local)
+        A_local = Tx.alloc_buffer(
+            a_shape[1:], dtype, scope="local", layout=TileLayout(S[a_shape[1:]])
+        )
+        B_local = Tx.alloc_buffer(
+            b_shape[1:], dtype, scope="local", layout=TileLayout(S[b_shape[1:]])
+        )
+        Tx.copy(A_local, A[tx])
+        Tx.copy(B_local, B[tx])
+        if op_type == "add":
+            Tx.add(A_local, A_local, B_local)
+        elif op_type == "sub":
+            Tx.sub(A_local, A_local, B_local)
+        elif op_type == "mul":
+            Tx.mul(A_local, A_local, B_local)
+        Tx.copy(A[tx], A_local)
 
     with target:
         np.random.seed(0)
@@ -607,28 +583,22 @@ def test_binary_op_warpgroup_wg_local_layout(op_name):
         lhs = Tx.alloc_buffer((rows, cols), dtype, scope="local", layout=wg_local_layout(cols))
         rhs = Tx.alloc_buffer((rows, cols), dtype, scope="local", layout=wg_local_layout(cols))
         out = Tx.alloc_buffer((rows, cols), dtype, scope="local", layout=wg_local_layout(cols))
-
-        with Tx.thread():
-            lhs_row = lhs.local(cols)
-            rhs_row = rhs.local(cols)
-            out_row = out.local(cols)
-            for i in Tx.serial(cols):
-                lhs_row[i] = A[tid, i]
-                rhs_row[i] = B[tid, i]
-                out_row[i] = Tx.float32(0)
-
-        with Tx.warpgroup():
-            if op_name == "add":
-                Tx.add(out, lhs, rhs)
-            elif op_name == "sub":
-                Tx.sub(out, lhs, rhs)
-            elif op_name == "mul":
-                Tx.mul(out, lhs, rhs)
-
-        with Tx.thread():
-            out_row = out.local(cols)
-            for i in Tx.serial(cols):
-                C[tid, i] = out_row[i]
+        lhs_row = lhs.local(cols)
+        rhs_row = rhs.local(cols)
+        out_row = out.local(cols)
+        for i in Tx.serial(cols):
+            lhs_row[i] = A[tid, i]
+            rhs_row[i] = B[tid, i]
+            out_row[i] = Tx.float32(0)
+        if op_name == "add":
+            Tx.wg.add(out, lhs, rhs)
+        elif op_name == "sub":
+            Tx.wg.sub(out, lhs, rhs)
+        elif op_name == "mul":
+            Tx.wg.mul(out, lhs, rhs)
+        out_row_1 = out.local(cols)
+        for i in Tx.serial(cols):
+            C[tid, i] = out_row_1[i]
 
     with target:
         np.random.seed(0)
@@ -687,28 +657,22 @@ def test_binary_op_warpgroup_wg_local_emits_packed_f32x2(op_name, ptx_op):
         lhs = Tx.alloc_buffer((rows, cols), dtype, scope="local", layout=wg_local_layout(cols))
         rhs = Tx.alloc_buffer((rows, cols), dtype, scope="local", layout=wg_local_layout(cols))
         out = Tx.alloc_buffer((rows, cols), dtype, scope="local", layout=wg_local_layout(cols))
-
-        with Tx.thread():
-            lhs_row = lhs.local(cols)
-            rhs_row = rhs.local(cols)
-            out_row = out.local(cols)
-            for i in Tx.serial(cols):
-                lhs_row[i] = A[tid, i]
-                rhs_row[i] = B[tid, i]
-                out_row[i] = Tx.float32(0)
-
-        with Tx.warpgroup():
-            if op_name == "add":
-                Tx.add(out, lhs, rhs)
-            elif op_name == "sub":
-                Tx.sub(out, lhs, rhs)
-            else:
-                Tx.mul(out, lhs, rhs)
-
-        with Tx.thread():
-            out_row = out.local(cols)
-            for i in Tx.serial(cols):
-                C[tid, i] = out_row[i]
+        lhs_row = lhs.local(cols)
+        rhs_row = rhs.local(cols)
+        out_row = out.local(cols)
+        for i in Tx.serial(cols):
+            lhs_row[i] = A[tid, i]
+            rhs_row[i] = B[tid, i]
+            out_row[i] = Tx.float32(0)
+        if op_name == "add":
+            Tx.wg.add(out, lhs, rhs)
+        elif op_name == "sub":
+            Tx.wg.sub(out, lhs, rhs)
+        else:
+            Tx.wg.mul(out, lhs, rhs)
+        out_row_1 = out.local(cols)
+        for i in Tx.serial(cols):
+            C[tid, i] = out_row_1[i]
 
     with target:
         mod = tvm.IRModule({"main": test_func})
@@ -745,19 +709,13 @@ def test_fma_warpgroup_wg_local_emits_packed_f32x2():
         tid = Tx.thread_id_in_wg([rows])
 
         buf = Tx.alloc_buffer((rows, cols), dtype, scope="local", layout=wg_local_layout(cols))
-
-        with Tx.thread():
-            buf_row = buf.local(cols)
-            for i in Tx.serial(cols):
-                buf_row[i] = A[tid, i]
-
-        with Tx.warpgroup():
-            Tx.fma(buf, buf, Tx.float32(2.0), Tx.float32(0.5))
-
-        with Tx.thread():
-            buf_row = buf.local(cols)
-            for i in Tx.serial(cols):
-                C[tid, i] = buf_row[i]
+        buf_row = buf.local(cols)
+        for i in Tx.serial(cols):
+            buf_row[i] = A[tid, i]
+        Tx.wg.fma(buf, buf, Tx.float32(2.0), Tx.float32(0.5))
+        buf_row_1 = buf.local(cols)
+        for i in Tx.serial(cols):
+            C[tid, i] = buf_row_1[i]
 
     with target:
         mod = tvm.IRModule({"main": test_func})
@@ -787,17 +745,12 @@ def test_binary_add_f32_sm100_packed_f32x2_dispatch():
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         tx = Tx.thread_id([64])
-        with Tx.thread():
-            ra = Tx.alloc_buffer(
-                shape[1:], "float32", scope="local", layout=TileLayout(S[shape[1:]])
-            )
-            rb = Tx.alloc_buffer(
-                shape[1:], "float32", scope="local", layout=TileLayout(S[shape[1:]])
-            )
-            Tx.copy(ra, A[tx])
-            Tx.copy(rb, B[tx])
-            Tx.add(ra, ra, rb)
-            Tx.copy(A[tx], ra)
+        ra = Tx.alloc_buffer(shape[1:], "float32", scope="local", layout=TileLayout(S[shape[1:]]))
+        rb = Tx.alloc_buffer(shape[1:], "float32", scope="local", layout=TileLayout(S[shape[1:]]))
+        Tx.copy(ra, A[tx])
+        Tx.copy(rb, B[tx])
+        Tx.add(ra, ra, rb)
+        Tx.copy(A[tx], ra)
 
     target = tvm.target.Target({"kind": "cuda", "arch": "sm_100a"})
     with target:
@@ -821,17 +774,12 @@ def test_binary_add_f16_scalar_fallback_dispatch():
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         tx = Tx.thread_id([64])
-        with Tx.thread():
-            ra = Tx.alloc_buffer(
-                shape[1:], "float16", scope="local", layout=TileLayout(S[shape[1:]])
-            )
-            rb = Tx.alloc_buffer(
-                shape[1:], "float16", scope="local", layout=TileLayout(S[shape[1:]])
-            )
-            Tx.copy(ra, A[tx])
-            Tx.copy(rb, B[tx])
-            Tx.add(ra, ra, rb)
-            Tx.copy(A[tx], ra)
+        ra = Tx.alloc_buffer(shape[1:], "float16", scope="local", layout=TileLayout(S[shape[1:]]))
+        rb = Tx.alloc_buffer(shape[1:], "float16", scope="local", layout=TileLayout(S[shape[1:]]))
+        Tx.copy(ra, A[tx])
+        Tx.copy(rb, B[tx])
+        Tx.add(ra, ra, rb)
+        Tx.copy(A[tx], ra)
 
     target = tvm.target.Target({"kind": "cuda", "arch": "sm_80"})
     with target:

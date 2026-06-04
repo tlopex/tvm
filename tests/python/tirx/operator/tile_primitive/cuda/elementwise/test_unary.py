@@ -76,17 +76,15 @@ def test_unary_op_shared(input, op_type, src_dtype, dst_dtype):
             Tx.device_entry()
             _bx = Tx.cta_id([1])
             _tx = Tx.thread_id([thread_cnt])
-
-            with Tx.cta():
-                A_smem = Tx.alloc_buffer(s_shape, src_dtype, scope="shared", layout=s_layout)
-                Tx.copy(A_smem[tuple(copy_slice)], A[tuple(copy_slice)])
-                Tx.cuda.cta_sync()
-                if op_type == "zero":
-                    Tx.zero(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)])
-                elif op_type == "sqrt":
-                    Tx.sqrt(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)])
-                Tx.cuda.cta_sync()
-                Tx.copy(A[tuple(copy_slice)], A_smem[tuple(copy_slice)])
+            A_smem = Tx.alloc_buffer(s_shape, src_dtype, scope="shared", layout=s_layout)
+            Tx.cta.copy(A_smem[tuple(copy_slice)], A[tuple(copy_slice)])
+            Tx.cuda.cta_sync()
+            if op_type == "zero":
+                Tx.cta.zero(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)])
+            elif op_type == "sqrt":
+                Tx.cta.sqrt(A_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)])
+            Tx.cuda.cta_sync()
+            Tx.cta.copy(A[tuple(copy_slice)], A_smem[tuple(copy_slice)])
             # fmt: on
     else:
         # fmt: off
@@ -98,18 +96,16 @@ def test_unary_op_shared(input, op_type, src_dtype, dst_dtype):
             Tx.device_entry()
             _bx = Tx.cta_id([1])
             _tx = Tx.thread_id([thread_cnt])
-
-            with Tx.cta():
-                A_smem = Tx.alloc_buffer(s_shape, src_dtype, scope="shared", layout=s_layout)
-                B_smem = Tx.alloc_buffer(s_shape, dst_dtype, scope="shared", layout=s_layout)
-                Tx.copy(A_smem[tuple(copy_slice)], A[tuple(copy_slice)])
-                Tx.cuda.cta_sync()
-                if op_type == "zero":
-                    Tx.zero(B_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)])
-                elif op_type == "sqrt":
-                    Tx.sqrt(B_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)])
-                Tx.cuda.cta_sync()
-                Tx.copy(B[tuple(map_slice_res)], B_smem[tuple(map_slice_res)])
+            A_smem = Tx.alloc_buffer(s_shape, src_dtype, scope="shared", layout=s_layout)
+            B_smem = Tx.alloc_buffer(s_shape, dst_dtype, scope="shared", layout=s_layout)
+            Tx.cta.copy(A_smem[tuple(copy_slice)], A[tuple(copy_slice)])
+            Tx.cuda.cta_sync()
+            if op_type == "zero":
+                Tx.cta.zero(B_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)])
+            elif op_type == "sqrt":
+                Tx.cta.sqrt(B_smem[tuple(map_slice_res)], A_smem[tuple(map_slice_a)])
+            Tx.cuda.cta_sync()
+            Tx.cta.copy(B[tuple(map_slice_res)], B_smem[tuple(map_slice_res)])
             # fmt: on
 
     def get_ref(A_np):
@@ -164,20 +160,17 @@ def test_unary_op_shared_subcta_scope(exec_scope):
         wg_id = Tx.warpgroup_id([(256) // 128])
         _bx = Tx.cta_id([1])
         _tid = Tx.thread_id([256])
-        with Tx.cta():
-            A_smem = Tx.alloc_buffer(g_shape, dtype, scope="shared", layout=TileLayout(S[g_shape]))
-            Tx.copy(A_smem, A)
-            Tx.cuda.cta_sync()
-            if exec_scope == "warp":
-                if warp_id == 5:
-                    with Tx.warp():
-                        Tx.zero(A_smem, A_smem)
-            elif exec_scope == "warpgroup":
-                if wg_id == 1:
-                    with Tx.warpgroup():
-                        Tx.zero(A_smem, A_smem)
-            Tx.cuda.cta_sync()
-            Tx.copy(A, A_smem)
+        A_smem = Tx.alloc_buffer(g_shape, dtype, scope="shared", layout=TileLayout(S[g_shape]))
+        Tx.cta.copy(A_smem, A)
+        Tx.cuda.cta_sync()
+        if exec_scope == "warp":
+            if warp_id == 5:
+                Tx.warp.zero(A_smem, A_smem)
+        elif exec_scope == "warpgroup":
+            if wg_id == 1:
+                Tx.wg.zero(A_smem, A_smem)
+        Tx.cuda.cta_sync()
+        Tx.cta.copy(A, A_smem)
 
     target = tvm.target.Target("cuda")
     with target:
@@ -250,45 +243,43 @@ def test_unary_op_shared_with_bias_scale(input, op_type, bias_type, src_dtype, d
             Tx.device_entry()
             _bx = Tx.cta_id([1])
             _tx = Tx.thread_id([thread_cnt])
-
-            with Tx.cta():
-                A_smem = Tx.alloc_buffer(s_shape, src_dtype, scope="shared", layout=s_layout)
-                bias_smem = Tx.alloc_buffer(s_shape, src_dtype, scope="shared", layout=s_layout)
-                Tx.copy(A_smem[tuple(copy_slice)], A[tuple(copy_slice)])
-                Tx.copy(bias_smem[tuple(copy_slice)], bias[tuple(copy_slice)])
-                Tx.cuda.cta_sync()
-                if bias_type == "const":
-                    if op_type == "sqrt":
-                        Tx.sqrt(
-                            A_smem[tuple(map_slice_res)],
-                            A_smem[tuple(map_slice_a)],
-                            const_bias,
-                            scale,
-                        )
-                    elif op_type == "exp":
-                        Tx.exp(
-                            A_smem[tuple(map_slice_res)],
-                            A_smem[tuple(map_slice_a)],
-                            const_bias,
-                            scale,
-                        )
-                elif bias_type == "region":
-                    if op_type == "sqrt":
-                        Tx.sqrt(
-                            A_smem[tuple(map_slice_res)],
-                            A_smem[tuple(map_slice_a)],
-                            bias_smem[tuple(map_slice_a)],
-                            scale,
-                        )
-                    elif op_type == "exp":
-                        Tx.exp(
-                            A_smem[tuple(map_slice_res)],
-                            A_smem[tuple(map_slice_a)],
-                            bias_smem[tuple(map_slice_a)],
-                            scale,
-                        )
-                Tx.cuda.cta_sync()
-                Tx.copy(A[tuple(copy_slice)], A_smem[tuple(copy_slice)])
+            A_smem = Tx.alloc_buffer(s_shape, src_dtype, scope="shared", layout=s_layout)
+            bias_smem = Tx.alloc_buffer(s_shape, src_dtype, scope="shared", layout=s_layout)
+            Tx.cta.copy(A_smem[tuple(copy_slice)], A[tuple(copy_slice)])
+            Tx.cta.copy(bias_smem[tuple(copy_slice)], bias[tuple(copy_slice)])
+            Tx.cuda.cta_sync()
+            if bias_type == "const":
+                if op_type == "sqrt":
+                    Tx.cta.sqrt(
+                        A_smem[tuple(map_slice_res)],
+                        A_smem[tuple(map_slice_a)],
+                        const_bias,
+                        scale,
+                    )
+                elif op_type == "exp":
+                    Tx.cta.exp(
+                        A_smem[tuple(map_slice_res)],
+                        A_smem[tuple(map_slice_a)],
+                        const_bias,
+                        scale,
+                    )
+            elif bias_type == "region":
+                if op_type == "sqrt":
+                    Tx.cta.sqrt(
+                        A_smem[tuple(map_slice_res)],
+                        A_smem[tuple(map_slice_a)],
+                        bias_smem[tuple(map_slice_a)],
+                        scale,
+                    )
+                elif op_type == "exp":
+                    Tx.cta.exp(
+                        A_smem[tuple(map_slice_res)],
+                        A_smem[tuple(map_slice_a)],
+                        bias_smem[tuple(map_slice_a)],
+                        scale,
+                    )
+            Tx.cuda.cta_sync()
+            Tx.cta.copy(A[tuple(copy_slice)], A_smem[tuple(copy_slice)])
     else:
 
         @Tx.prim_func
@@ -300,46 +291,44 @@ def test_unary_op_shared_with_bias_scale(input, op_type, bias_type, src_dtype, d
             Tx.device_entry()
             _bx = Tx.cta_id([1])
             _tx = Tx.thread_id([thread_cnt])
-
-            with Tx.cta():
-                A_smem = Tx.alloc_buffer(s_shape, src_dtype, scope="shared", layout=s_layout)
-                B_smem = Tx.alloc_buffer(s_shape, dst_dtype, scope="shared", layout=s_layout)
-                bias_smem = Tx.alloc_buffer(s_shape, src_dtype, scope="shared", layout=s_layout)
-                Tx.copy(A_smem[tuple(copy_slice)], A[tuple(copy_slice)])
-                Tx.copy(bias_smem[tuple(copy_slice)], bias[tuple(copy_slice)])
-                Tx.cuda.cta_sync()
-                if bias_type == "const":
-                    if op_type == "sqrt":
-                        Tx.sqrt(
-                            B_smem[tuple(map_slice_res)],
-                            A_smem[tuple(map_slice_a)],
-                            const_bias,
-                            scale,
-                        )
-                    elif op_type == "exp":
-                        Tx.exp(
-                            B_smem[tuple(map_slice_res)],
-                            A_smem[tuple(map_slice_a)],
-                            const_bias,
-                            scale,
-                        )
-                elif bias_type == "region":
-                    if op_type == "sqrt":
-                        Tx.sqrt(
-                            B_smem[tuple(map_slice_res)],
-                            A_smem[tuple(map_slice_a)],
-                            bias_smem[tuple(map_slice_a)],
-                            scale,
-                        )
-                    elif op_type == "exp":
-                        Tx.exp(
-                            B_smem[tuple(map_slice_res)],
-                            A_smem[tuple(map_slice_a)],
-                            bias_smem[tuple(map_slice_a)],
-                            scale,
-                        )
-                Tx.cuda.cta_sync()
-                Tx.copy(B[tuple(map_slice_res)], B_smem[tuple(map_slice_res)])
+            A_smem = Tx.alloc_buffer(s_shape, src_dtype, scope="shared", layout=s_layout)
+            B_smem = Tx.alloc_buffer(s_shape, dst_dtype, scope="shared", layout=s_layout)
+            bias_smem = Tx.alloc_buffer(s_shape, src_dtype, scope="shared", layout=s_layout)
+            Tx.cta.copy(A_smem[tuple(copy_slice)], A[tuple(copy_slice)])
+            Tx.cta.copy(bias_smem[tuple(copy_slice)], bias[tuple(copy_slice)])
+            Tx.cuda.cta_sync()
+            if bias_type == "const":
+                if op_type == "sqrt":
+                    Tx.cta.sqrt(
+                        B_smem[tuple(map_slice_res)],
+                        A_smem[tuple(map_slice_a)],
+                        const_bias,
+                        scale,
+                    )
+                elif op_type == "exp":
+                    Tx.cta.exp(
+                        B_smem[tuple(map_slice_res)],
+                        A_smem[tuple(map_slice_a)],
+                        const_bias,
+                        scale,
+                    )
+            elif bias_type == "region":
+                if op_type == "sqrt":
+                    Tx.cta.sqrt(
+                        B_smem[tuple(map_slice_res)],
+                        A_smem[tuple(map_slice_a)],
+                        bias_smem[tuple(map_slice_a)],
+                        scale,
+                    )
+                elif op_type == "exp":
+                    Tx.cta.exp(
+                        B_smem[tuple(map_slice_res)],
+                        A_smem[tuple(map_slice_a)],
+                        bias_smem[tuple(map_slice_a)],
+                        scale,
+                    )
+            Tx.cuda.cta_sync()
+            Tx.cta.copy(B[tuple(map_slice_res)], B_smem[tuple(map_slice_res)])
 
     def get_ref(A_np, bias_np):
         if in_place:
@@ -466,57 +455,50 @@ def test_unary_op_local(input, op_type, src_dtype, dst_dtype):
         wg_id = Tx.warpgroup_id([N_GROUPS])
         warp_id_in_wg = Tx.warp_id_in_wg([N_WARPS // N_GROUPS])
         lane_id = Tx.lane_id([thread_cnt])
+        # acc layout
+        atom = Tx.TileLayout(Tx.S[(1, 2) : (2, 1)])
+        warp_layout = Tx.TileLayout(Tx.S[(8, 4) : (4 @ laneid, 1 @ laneid)])
+        warp_atom = atom.tile(warp_layout, (8, 4), (1, 2))
+        tile = Tx.TileLayout(Tx.S[(2, NUM_COL // 8) : (1, 2)])
+        acc_layout = warp_atom.tile(tile, (2, NUM_COL // 8), (8, 8))
+        acc = Tx.alloc_buffer(
+            [2, NUM_COL // 4],
+            dtype=src_dtype,
+            scope="local",
+            layout=atom.tile(tile, (2, NUM_COL // 8), (1, 2)),
+        )
+        res = Tx.alloc_buffer(
+            [2, NUM_COL // 4],
+            dtype=dst_dtype,
+            scope="local",
+            layout=atom.tile(tile, (2, NUM_COL // 8), (1, 2)),
+        )
+        for i in Tx.serial(NUM_COL // 8):
+            for j in Tx.unroll(2):
+                for vec in Tx.vectorized(2):
+                    acc[j, i * 2 + vec] = A[
+                        wg_id * 64 + warp_id_in_wg * 16 + j * 8 + lane_id // 4,
+                        i * 8 + lane_id % 4 * 2 + vec,
+                    ]
 
-        with Tx.thread():
-            # acc layout
-            atom = Tx.TileLayout(Tx.S[(1, 2) : (2, 1)])
-            warp_layout = Tx.TileLayout(Tx.S[(8, 4) : (4 @ laneid, 1 @ laneid)])
-            warp_atom = atom.tile(warp_layout, (8, 4), (1, 2))
-            tile = Tx.TileLayout(Tx.S[(2, NUM_COL // 8) : (1, 2)])
-            acc_layout = warp_atom.tile(tile, (2, NUM_COL // 8), (8, 8))
-            acc = Tx.alloc_buffer(
-                [2, NUM_COL // 4],
-                dtype=src_dtype,
-                scope="local",
-                layout=atom.tile(tile, (2, NUM_COL // 8), (1, 2)),
-            )
-            res = Tx.alloc_buffer(
-                [2, NUM_COL // 4],
-                dtype=dst_dtype,
-                scope="local",
-                layout=atom.tile(tile, (2, NUM_COL // 8), (1, 2)),
-            )
+            # unary op
+        acc_view = acc.view(*acc_shape, layout=acc_layout)
+        res_view = res.view(*red_shape, layout=acc_layout)
+        if op_type == "reciprocal":
+            Tx.warp.reciprocal(res_view, acc_view)
+        elif op_type == "exp":
+            Tx.warp.exp(res_view, acc_view)
+        elif op_type == "exp2":
+            Tx.warp.exp2(res_view, acc_view)
 
-            # load A into acc
-            with Tx.thread():
-                for i in Tx.serial(NUM_COL // 8):
-                    for j in Tx.unroll(2):
-                        for vec in Tx.vectorized(2):
-                            acc[j, i * 2 + vec] = A[
-                                wg_id * 64 + warp_id_in_wg * 16 + j * 8 + lane_id // 4,
-                                i * 8 + lane_id % 4 * 2 + vec,
-                            ]
-
-                    # unary op
-            with Tx.warp():
-                acc_view = acc.view(*acc_shape, layout=acc_layout)
-                res_view = res.view(*red_shape, layout=acc_layout)
-                if op_type == "reciprocal":
-                    Tx.reciprocal(res_view, acc_view)
-                elif op_type == "exp":
-                    Tx.exp(res_view, acc_view)
-                elif op_type == "exp2":
-                    Tx.exp2(res_view, acc_view)
-
-                    # write res into B
-            with Tx.thread():
-                for i in Tx.serial(NUM_COL // 8):
-                    for j in Tx.unroll(2):
-                        for vec in Tx.vectorized(2):
-                            B[
-                                wg_id * 64 + warp_id_in_wg * 16 + j * 8 + lane_id // 4,
-                                i * 8 + lane_id % 4 * 2 + vec,
-                            ] = res[j, i * 2 + vec]
+            # write res into B
+        for i in Tx.serial(NUM_COL // 8):
+            for j in Tx.unroll(2):
+                for vec in Tx.vectorized(2):
+                    B[
+                        wg_id * 64 + warp_id_in_wg * 16 + j * 8 + lane_id // 4,
+                        i * 8 + lane_id % 4 * 2 + vec,
+                    ] = res[j, i * 2 + vec]
 
         # fmt: on
 
@@ -600,77 +582,69 @@ def test_unary_op_local_with_bias_scale(input, op_type, bias_type, src_dtype, ds
         wg_id = Tx.warpgroup_id([N_GROUPS])
         warp_id_in_wg = Tx.warp_id_in_wg([N_WARPS // N_GROUPS])
         lane_id = Tx.lane_id([thread_cnt])
+        # acc layout
+        atom = Tx.TileLayout(Tx.S[(1, 2) : (2, 1)])
+        warp_layout = Tx.TileLayout(Tx.S[(8, 4) : (4 @ laneid, 1 @ laneid)])
+        warp_atom = atom.tile(warp_layout, (8, 4), (1, 2))
+        tile = Tx.TileLayout(Tx.S[(2, NUM_COL // 8) : (1, 2)])
+        acc_layout = warp_atom.tile(tile, (2, NUM_COL // 8), (8, 8))
+        acc = Tx.alloc_buffer(
+            [2, NUM_COL // 4],
+            dtype=src_dtype,
+            scope="local",
+            layout=atom.tile(tile, (2, NUM_COL // 8), (1, 2)),
+        )
+        bias_local = Tx.alloc_buffer(
+            [2, NUM_COL // 4],
+            dtype=src_dtype,
+            scope="local",
+            layout=atom.tile(tile, (2, NUM_COL // 8), (1, 2)),
+        )
+        res = Tx.alloc_buffer(
+            [2, NUM_COL // 4],
+            dtype=dst_dtype,
+            scope="local",
+            layout=atom.tile(tile, (2, NUM_COL // 8), (1, 2)),
+        )
+        for i in Tx.serial(NUM_COL // 8):
+            for j in Tx.unroll(2):
+                for vec in Tx.vectorized(2):
+                    acc[j, i * 2 + vec] = A[
+                        wg_id * 64 + warp_id_in_wg * 16 + j * 8 + lane_id // 4,
+                        i * 8 + lane_id % 4 * 2 + vec,
+                    ]
+            # load bias into bias_local
+        for i in Tx.serial(NUM_COL // 8):
+            for j in Tx.unroll(2):
+                for vec in Tx.vectorized(2):
+                    bias_local[j, i * 2 + vec] = bias[
+                        wg_id * 64 + warp_id_in_wg * 16 + j * 8 + lane_id // 4,
+                        i * 8 + lane_id % 4 * 2 + vec,
+                    ]
 
-        with Tx.thread():
-            # acc layout
-            atom = Tx.TileLayout(Tx.S[(1, 2) : (2, 1)])
-            warp_layout = Tx.TileLayout(Tx.S[(8, 4) : (4 @ laneid, 1 @ laneid)])
-            warp_atom = atom.tile(warp_layout, (8, 4), (1, 2))
-            tile = Tx.TileLayout(Tx.S[(2, NUM_COL // 8) : (1, 2)])
-            acc_layout = warp_atom.tile(tile, (2, NUM_COL // 8), (8, 8))
-            acc = Tx.alloc_buffer(
-                [2, NUM_COL // 4],
-                dtype=src_dtype,
-                scope="local",
-                layout=atom.tile(tile, (2, NUM_COL // 8), (1, 2)),
-            )
-            bias_local = Tx.alloc_buffer(
-                [2, NUM_COL // 4],
-                dtype=src_dtype,
-                scope="local",
-                layout=atom.tile(tile, (2, NUM_COL // 8), (1, 2)),
-            )
-            res = Tx.alloc_buffer(
-                [2, NUM_COL // 4],
-                dtype=dst_dtype,
-                scope="local",
-                layout=atom.tile(tile, (2, NUM_COL // 8), (1, 2)),
-            )
+            # unary op
+        acc_view = acc.view(*acc_shape, layout=acc_layout)
+        res_view = res.view(*red_shape, layout=acc_layout)
+        bias_view = bias_local.view(*bias_shape, layout=acc_layout)
+        if bias_type == "const":
+            if op_type == "sqrt":
+                Tx.warp.sqrt(res_view, acc_view, const_bias, scale)
+            elif op_type == "exp":
+                Tx.warp.exp(res_view, acc_view, const_bias, scale)
+        elif bias_type == "region":
+            if op_type == "sqrt":
+                Tx.warp.sqrt(res_view, acc_view, bias_view, scale)
+            elif op_type == "exp":
+                Tx.warp.exp(res_view, acc_view, bias_view, scale)
 
-            # load A into acc
-            with Tx.thread():
-                for i in Tx.serial(NUM_COL // 8):
-                    for j in Tx.unroll(2):
-                        for vec in Tx.vectorized(2):
-                            acc[j, i * 2 + vec] = A[
-                                wg_id * 64 + warp_id_in_wg * 16 + j * 8 + lane_id // 4,
-                                i * 8 + lane_id % 4 * 2 + vec,
-                            ]
-                    # load bias into bias_local
-            with Tx.thread():
-                for i in Tx.serial(NUM_COL // 8):
-                    for j in Tx.unroll(2):
-                        for vec in Tx.vectorized(2):
-                            bias_local[j, i * 2 + vec] = bias[
-                                wg_id * 64 + warp_id_in_wg * 16 + j * 8 + lane_id // 4,
-                                i * 8 + lane_id % 4 * 2 + vec,
-                            ]
-
-                    # unary op
-            with Tx.warp():
-                acc_view = acc.view(*acc_shape, layout=acc_layout)
-                res_view = res.view(*red_shape, layout=acc_layout)
-                bias_view = bias_local.view(*bias_shape, layout=acc_layout)
-                if bias_type == "const":
-                    if op_type == "sqrt":
-                        Tx.sqrt(res_view, acc_view, const_bias, scale)
-                    elif op_type == "exp":
-                        Tx.exp(res_view, acc_view, const_bias, scale)
-                elif bias_type == "region":
-                    if op_type == "sqrt":
-                        Tx.sqrt(res_view, acc_view, bias_view, scale)
-                    elif op_type == "exp":
-                        Tx.exp(res_view, acc_view, bias_view, scale)
-
-                    # write res into B
-            with Tx.thread():
-                for i in Tx.serial(NUM_COL // 8):
-                    for j in Tx.unroll(2):
-                        for vec in Tx.vectorized(2):
-                            B[
-                                wg_id * 64 + warp_id_in_wg * 16 + j * 8 + lane_id // 4,
-                                i * 8 + lane_id % 4 * 2 + vec,
-                            ] = res[j, i * 2 + vec]
+            # write res into B
+        for i in Tx.serial(NUM_COL // 8):
+            for j in Tx.unroll(2):
+                for vec in Tx.vectorized(2):
+                    B[
+                        wg_id * 64 + warp_id_in_wg * 16 + j * 8 + lane_id // 4,
+                        i * 8 + lane_id % 4 * 2 + vec,
+                    ] = res[j, i * 2 + vec]
 
     def get_ref(A_np, bias_np):
         A_ref = A_np.copy()
@@ -727,19 +701,18 @@ def test_unary_op_vectorized(shape, op_type, exec_scope, storage_scope):
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         tx = Tx.thread_id([128])
-        with Tx.thread():
-            if storage_scope == "shared":
-                a_smem = Tx.alloc_buffer(
-                    shape, dtype=dtype, layout=TileLayout(S[shape]), scope="shared"
-                )
-                Tx.fill(a_smem[tx], value)
-                Tx.copy(A[tx], a_smem[tx])
-            elif storage_scope == "local":
-                a_local = Tx.alloc_buffer(
-                    shape[1:], dtype=dtype, layout=TileLayout(S[shape[1:]]), scope="local"
-                )
-                Tx.fill(a_local, value)
-                Tx.copy(A[tx], a_local)
+        if storage_scope == "shared":
+            a_smem = Tx.alloc_buffer(
+                shape, dtype=dtype, layout=TileLayout(S[shape]), scope="shared"
+            )
+            Tx.fill(a_smem[tx], value)
+            Tx.copy(A[tx], a_smem[tx])
+        elif storage_scope == "local":
+            a_local = Tx.alloc_buffer(
+                shape[1:], dtype=dtype, layout=TileLayout(S[shape[1:]]), scope="local"
+            )
+            Tx.fill(a_local, value)
+            Tx.copy(A[tx], a_local)
 
     @Tx.prim_func
     def test_unary_cta(A_ptr: Tx.handle) -> None:
@@ -747,13 +720,12 @@ def test_unary_op_vectorized(shape, op_type, exec_scope, storage_scope):
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         _tid = Tx.thread_id([128])
-        with Tx.cta():
-            if storage_scope == "shared":
-                a_smem = Tx.alloc_buffer(
-                    shape, dtype=dtype, layout=TileLayout(S[shape]), scope="shared"
-                )
-                Tx.fill(a_smem, value)
-                Tx.copy(A, a_smem)
+        if storage_scope == "shared":
+            a_smem = Tx.alloc_buffer(
+                shape, dtype=dtype, layout=TileLayout(S[shape]), scope="shared"
+            )
+            Tx.cta.fill(a_smem, value)
+            Tx.cta.copy(A, a_smem)
         # fmt: on
 
     target = tvm.target.Target("cuda")
@@ -781,22 +753,21 @@ def test_unary_op_local_thread_wise(op_type, dtype):
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         tid = Tx.thread_id([64])
-        with Tx.thread():
-            a_local = Tx.alloc_buffer(
-                local_shape, dtype, scope="local", layout=TileLayout(S[local_shape])
-            )
-            Tx.copy(a_local, A[tid])
-            if op_type == "zero":
-                Tx.zero(a_local, a_local)
-            elif op_type == "sqrt":
-                Tx.sqrt(a_local, a_local)
-            elif op_type == "reciprocal":
-                Tx.reciprocal(a_local, a_local)
-            elif op_type == "exp":
-                Tx.exp(a_local, a_local)
-            elif op_type == "silu":
-                Tx.silu(a_local, a_local)
-            Tx.copy(A[tid], a_local)
+        a_local = Tx.alloc_buffer(
+            local_shape, dtype, scope="local", layout=TileLayout(S[local_shape])
+        )
+        Tx.copy(a_local, A[tid])
+        if op_type == "zero":
+            Tx.zero(a_local, a_local)
+        elif op_type == "sqrt":
+            Tx.sqrt(a_local, a_local)
+        elif op_type == "reciprocal":
+            Tx.reciprocal(a_local, a_local)
+        elif op_type == "exp":
+            Tx.exp(a_local, a_local)
+        elif op_type == "silu":
+            Tx.silu(a_local, a_local)
+        Tx.copy(A[tid], a_local)
 
     target = tvm.target.Target("cuda")
     with target:
@@ -843,12 +814,11 @@ def test_cast_thread_local(shape, A_dtype, B_dtype):
         Tx.device_entry()
         cta_id = Tx.cta_id([1])
         tid = Tx.thread_id([256])
-        with Tx.thread():
-            A_local = Tx.alloc_local(shape, dtype=A_dtype, layout=TileLayout(S[shape]))
-            B_local = Tx.alloc_local(shape, dtype=B_dtype, layout=TileLayout(S[shape]))
-            Tx.copy(A_local, A)
-            Tx.cast(B_local, A_local)
-            Tx.copy(B, B_local)
+        A_local = Tx.alloc_local(shape, dtype=A_dtype, layout=TileLayout(S[shape]))
+        B_local = Tx.alloc_local(shape, dtype=B_dtype, layout=TileLayout(S[shape]))
+        Tx.copy(A_local, A)
+        Tx.cast(B_local, A_local)
+        Tx.copy(B, B_local)
         # fmt: on
 
     target = tvm.target.Target("cuda")
@@ -893,20 +863,15 @@ def test_cast_warpgroup_local_view(A_dtype, B_dtype):
         cta_id = Tx.cta_id([1])
         wg_id = Tx.warpgroup_id([1])
         tid_in_wg = Tx.thread_id_in_wg([N_THREADS])
-
-        with Tx.thread():
-            reg_src = Tx.alloc_buffer((LOCAL_LEN,), A_dtype, scope="local")
-            reg_dst = Tx.alloc_buffer((LOCAL_LEN,), B_dtype, scope="local")
-            with Tx.thread():
-                for i in Tx.serial(LOCAL_LEN):
-                    reg_src[i] = A[tid_in_wg, i]
-            with Tx.warpgroup():
-                reg_src_view = reg_src.view(N_THREADS, LOCAL_LEN, layout=cast_layout)
-                reg_dst_view = reg_dst.view(N_THREADS, LOCAL_LEN, layout=cast_layout)
-                Tx.cast(reg_dst_view, reg_src_view)
-            with Tx.thread():
-                for i in Tx.serial(LOCAL_LEN):
-                    B[tid_in_wg, i] = reg_dst[i]
+        reg_src = Tx.alloc_buffer((LOCAL_LEN,), A_dtype, scope="local")
+        reg_dst = Tx.alloc_buffer((LOCAL_LEN,), B_dtype, scope="local")
+        for i in Tx.serial(LOCAL_LEN):
+            reg_src[i] = A[tid_in_wg, i]
+        reg_src_view = reg_src.view(N_THREADS, LOCAL_LEN, layout=cast_layout)
+        reg_dst_view = reg_dst.view(N_THREADS, LOCAL_LEN, layout=cast_layout)
+        Tx.wg.cast(reg_dst_view, reg_src_view)
+        for i in Tx.serial(LOCAL_LEN):
+            B[tid_in_wg, i] = reg_dst[i]
         # fmt: on
 
     target = tvm.target.Target("cuda")
@@ -949,25 +914,20 @@ def test_cast_warpgroup_src_layout_to_flat_uses_vec2_intrinsic(A_dtype, B_dtype)
         cta_id = Tx.cta_id([1])
         wg_id = Tx.warpgroup_id([1])
         tid = Tx.thread_id_in_wg([N_THREADS])
-
-        with Tx.thread():
-            for no in Tx.unroll(N_CHUNKS):
-                reg_src = Tx.alloc_buffer((LOCAL_LEN,), A_dtype, scope="local")
-                Dreg_chunk = Tx.alloc_buffer((LOCAL_LEN,), B_dtype, scope="local")
-                with Tx.thread():
-                    for i in Tx.serial(LOCAL_LEN):
-                        reg_src[i] = A[tid, no * LOCAL_LEN + i]
-                with Tx.warpgroup():
-                    reg_src_view = reg_src.view(
-                        N_THREADS, LOCAL_LEN, layout=wg_local_layout(LOCAL_LEN)
-                    )
-                    Dreg_chunk_view = Dreg_chunk.view(
-                        N_THREADS, LOCAL_LEN, layout=wg_local_layout(LOCAL_LEN)
-                    )
-                    Tx.cast(Dreg_chunk_view, reg_src_view)
-                with Tx.thread():
-                    for i in Tx.serial(LOCAL_LEN):
-                        B[tid, no * LOCAL_LEN + i] = Dreg_chunk[i]
+        for no in Tx.unroll(N_CHUNKS):
+            reg_src = Tx.alloc_buffer((LOCAL_LEN,), A_dtype, scope="local")
+            Dreg_chunk = Tx.alloc_buffer((LOCAL_LEN,), B_dtype, scope="local")
+            for i in Tx.serial(LOCAL_LEN):
+                reg_src[i] = A[tid, no * LOCAL_LEN + i]
+            reg_src_view = reg_src.view(
+                N_THREADS, LOCAL_LEN, layout=wg_local_layout(LOCAL_LEN)
+            )
+            Dreg_chunk_view = Dreg_chunk.view(
+                N_THREADS, LOCAL_LEN, layout=wg_local_layout(LOCAL_LEN)
+            )
+            Tx.wg.cast(Dreg_chunk_view, reg_src_view)
+            for i in Tx.serial(LOCAL_LEN):
+                B[tid, no * LOCAL_LEN + i] = Dreg_chunk[i]
         # fmt: on
 
     target = tvm.target.Target("cuda")
@@ -1007,20 +967,15 @@ def test_cast_cta_local_view(A_dtype, B_dtype):
         Tx.device_entry()
         cta_id = Tx.cta_id([1])
         tx_var = Tx.thread_id([N_THREADS])
-
-        with Tx.thread():
-            reg_src = Tx.alloc_buffer((LOCAL_LEN,), A_dtype, scope="local")
-            reg_dst = Tx.alloc_buffer((LOCAL_LEN,), B_dtype, scope="local")
-            with Tx.thread():
-                for i in Tx.serial(LOCAL_LEN):
-                    reg_src[i] = A[tx_var, i]
-            with Tx.cta():
-                reg_src_view = reg_src.view(N_THREADS, LOCAL_LEN, layout=cast_layout)
-                reg_dst_view = reg_dst.view(N_THREADS, LOCAL_LEN, layout=cast_layout)
-                Tx.cast(reg_dst_view, reg_src_view)
-            with Tx.thread():
-                for i in Tx.serial(LOCAL_LEN):
-                    B[tx_var, i] = reg_dst[i]
+        reg_src = Tx.alloc_buffer((LOCAL_LEN,), A_dtype, scope="local")
+        reg_dst = Tx.alloc_buffer((LOCAL_LEN,), B_dtype, scope="local")
+        for i in Tx.serial(LOCAL_LEN):
+            reg_src[i] = A[tx_var, i]
+        reg_src_view = reg_src.view(N_THREADS, LOCAL_LEN, layout=cast_layout)
+        reg_dst_view = reg_dst.view(N_THREADS, LOCAL_LEN, layout=cast_layout)
+        Tx.cta.cast(reg_dst_view, reg_src_view)
+        for i in Tx.serial(LOCAL_LEN):
+            B[tx_var, i] = reg_dst[i]
         # fmt: on
 
     target = tvm.target.Target("cuda")
@@ -1056,22 +1011,18 @@ def test_cast_local_view_sliced(A_dtype, B_dtype, slice_start, slice_end):
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         tx = Tx.thread_id([N_THREADS])
-        with Tx.thread():
-            reg_src = Tx.alloc_buffer((LOCAL_LEN,), A_dtype, scope="local")
-            reg_dst = Tx.alloc_buffer((LOCAL_LEN,), B_dtype, scope="local")
-            with Tx.thread():
-                for i in Tx.serial(LOCAL_LEN):
-                    reg_src[i] = A[tx, i]
-            with Tx.cta():
-                reg_src_view = reg_src.view(N_THREADS, LOCAL_LEN, layout=cast_layout)
-                reg_dst_view = reg_dst.view(N_THREADS, LOCAL_LEN, layout=cast_layout)
-                Tx.cast(
-                    reg_dst_view[0:N_THREADS, slice_start:slice_end],
-                    reg_src_view[0:N_THREADS, slice_start:slice_end],
-                )
-            with Tx.thread():
-                for i in Tx.serial(LOCAL_LEN):
-                    B[tx, i] = reg_dst[i]
+        reg_src = Tx.alloc_buffer((LOCAL_LEN,), A_dtype, scope="local")
+        reg_dst = Tx.alloc_buffer((LOCAL_LEN,), B_dtype, scope="local")
+        for i in Tx.serial(LOCAL_LEN):
+            reg_src[i] = A[tx, i]
+        reg_src_view = reg_src.view(N_THREADS, LOCAL_LEN, layout=cast_layout)
+        reg_dst_view = reg_dst.view(N_THREADS, LOCAL_LEN, layout=cast_layout)
+        Tx.cta.cast(
+            reg_dst_view[0:N_THREADS, slice_start:slice_end],
+            reg_src_view[0:N_THREADS, slice_start:slice_end],
+        )
+        for i in Tx.serial(LOCAL_LEN):
+            B[tx, i] = reg_dst[i]
         # fmt: on
 
     target = tvm.target.Target("cuda")
@@ -1166,24 +1117,20 @@ def test_cast_mixed_axes_and_subregion(slice_start, slice_end):
         cta_id = Tx.cta_id([1])
         warp_id = Tx.warp_id([N_WARPS])
         lane_id = Tx.lane_id([LANES])
-        with Tx.thread():
-            reg_src = Tx.alloc_buffer((LOCAL_LEN,), "float32", scope="local")
-            reg_dst = Tx.alloc_buffer((LOCAL_LEN,), "float16", scope="local")
-            with Tx.thread():
-                j, k = lane_id // 4, lane_id % 4
-                for i in Tx.serial(LOCAL_LEN):
-                    reg_src[i] = A[j, warp_id, k, i]
-            with Tx.cta():
-                reg_src_view = reg_src.view(*full_shape, layout=cast_layout)
-                reg_dst_view = reg_dst.view(*full_shape, layout=cast_layout)
-                Tx.cast(
-                    reg_dst_view[0:8, 0:N_WARPS, 0:4, slice_start:slice_end],
-                    reg_src_view[0:8, 0:N_WARPS, 0:4, slice_start:slice_end],
-                )
-            with Tx.thread():
-                j, k = lane_id // 4, lane_id % 4
-                for i in Tx.serial(LOCAL_LEN):
-                    B[j, warp_id, k, i] = reg_dst[i]
+        reg_src = Tx.alloc_buffer((LOCAL_LEN,), "float32", scope="local")
+        reg_dst = Tx.alloc_buffer((LOCAL_LEN,), "float16", scope="local")
+        j, k = lane_id // 4, lane_id % 4
+        for i in Tx.serial(LOCAL_LEN):
+            reg_src[i] = A[j, warp_id, k, i]
+        reg_src_view = reg_src.view(*full_shape, layout=cast_layout)
+        reg_dst_view = reg_dst.view(*full_shape, layout=cast_layout)
+        Tx.cta.cast(
+            reg_dst_view[0:8, 0:N_WARPS, 0:4, slice_start:slice_end],
+            reg_src_view[0:8, 0:N_WARPS, 0:4, slice_start:slice_end],
+        )
+        j_1, k_1 = lane_id // 4, lane_id % 4
+        for i in Tx.serial(LOCAL_LEN):
+            B[j_1, warp_id, k_1, i] = reg_dst[i]
 
     target = tvm.target.Target("cuda")
     with target:
@@ -1244,21 +1191,17 @@ def test_cast_validate_extent_mismatch_rejected():
         cta_id = Tx.cta_id([1])
         warp_id = Tx.warp_id([2])
         lane_id = Tx.lane_id([32])
-        with Tx.thread():
-            reg_src = Tx.alloc_buffer((8,), "float32", scope="local")
-            reg_dst = Tx.alloc_buffer((8,), "float16", scope="local")
-            with Tx.thread():
-                j, k = lane_id // 4, lane_id % 4
-                for i in Tx.serial(8):
-                    reg_src[i] = A[warp_id, j, k, i]
-            with Tx.cta():
-                reg_src_view = reg_src.view(*view_shape, layout=src_layout)
-                reg_dst_view = reg_dst.view(*view_shape, layout=dst_layout)
-                Tx.cast(reg_dst_view, reg_src_view)
-            with Tx.thread():
-                j, k = lane_id // 4, lane_id % 4
-                for i in Tx.serial(8):
-                    B[warp_id, j, k, i] = reg_dst[i]
+        reg_src = Tx.alloc_buffer((8,), "float32", scope="local")
+        reg_dst = Tx.alloc_buffer((8,), "float16", scope="local")
+        j, k = lane_id // 4, lane_id % 4
+        for i in Tx.serial(8):
+            reg_src[i] = A[warp_id, j, k, i]
+        reg_src_view = reg_src.view(*view_shape, layout=src_layout)
+        reg_dst_view = reg_dst.view(*view_shape, layout=dst_layout)
+        Tx.cta.cast(reg_dst_view, reg_src_view)
+        j_1, k_1 = lane_id // 4, lane_id % 4
+        for i in Tx.serial(8):
+            B[warp_id, j_1, k_1, i] = reg_dst[i]
 
     target = tvm.target.Target("cuda")
     with target:
@@ -1284,13 +1227,11 @@ def test_unary_exp_f16_shared_scalar_fallback_dispatch():
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         _tx = Tx.thread_id([64])
-        with Tx.thread():
-            sa = Tx.alloc_buffer(shape, "float16", scope="shared", layout=lay)
-            sb = Tx.alloc_buffer(shape, "float16", scope="shared", layout=lay)
-            Tx.copy(sa, A)
-            with Tx.cta():
-                Tx.exp(sb, sa)
-            Tx.copy(B, sb)
+        sa = Tx.alloc_buffer(shape, "float16", scope="shared", layout=lay)
+        sb = Tx.alloc_buffer(shape, "float16", scope="shared", layout=lay)
+        Tx.copy(sa, A)
+        Tx.cta.exp(sb, sa)
+        Tx.copy(B, sb)
 
     target = tvm.target.Target({"kind": "cuda", "arch": "sm_80"})
     with target:
@@ -1319,16 +1260,11 @@ def test_cast_vec2_packed_dispatch(src_dtype, dst_dtype, intrinsic):
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         tx = Tx.thread_id([64])
-        with Tx.thread():
-            ra = Tx.alloc_buffer(
-                shape[1:], src_dtype, scope="local", layout=TileLayout(S[shape[1:]])
-            )
-            rb = Tx.alloc_buffer(
-                shape[1:], dst_dtype, scope="local", layout=TileLayout(S[shape[1:]])
-            )
-            Tx.copy(ra, A[tx])
-            Tx.cast(rb, ra)
-            Tx.copy(B[tx], rb)
+        ra = Tx.alloc_buffer(shape[1:], src_dtype, scope="local", layout=TileLayout(S[shape[1:]]))
+        rb = Tx.alloc_buffer(shape[1:], dst_dtype, scope="local", layout=TileLayout(S[shape[1:]]))
+        Tx.copy(ra, A[tx])
+        Tx.cast(rb, ra)
+        Tx.copy(B[tx], rb)
 
     target = tvm.target.Target({"kind": "cuda", "arch": "sm_80"})
     with target:

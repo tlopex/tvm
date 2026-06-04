@@ -248,7 +248,7 @@ class TMEMPool:
         # tcgen05 alloc/dealloc are warp-uniform PTX instructions: every lane
         # in the chosen warp must participate, and exactly one warp in the
         # CTA must execute them. The pool emits its own
-        # ``if warp_id() == target_warp: with Tx.warp(): tcgen05.alloc(...)``
+        # ``if warp_id() == target_warp: tcgen05.alloc(...)``
         # guard, using the cta->warp scope id ``Tx.warp_id()``.
         # NOTE: synccheck currently false-deadlocks on kernels that declare a
         # second warp-scope id (cpusim binds only one warp var); the generated
@@ -279,8 +279,7 @@ class TMEMPool:
         warp_id = Tx.warp_id()
         with Tx.If(warp_id == target_warp):
             with Tx.Then():
-                with Tx.warp():
-                    emit()
+                emit()
 
     def _resolve_cols(self, shape, dtype, cols, layout=None):
         if cols is not None:

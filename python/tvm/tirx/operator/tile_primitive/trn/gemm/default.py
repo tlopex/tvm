@@ -110,8 +110,8 @@ def get_pf_dim_from_buffer_region(
 def matmul_trn(op: TilePrimitiveCall, sctx: DispatchContext) -> PrimFunc | None:
     """Schedule GEMM operation on Trainium."""
     # Basic validation checks
-    if not (sctx.is_trn() and sctx.scope_kind == "kernel"):
-        fail("requires Trainium target and kernel exec_scope")
+    if not (sctx.is_trn() and sctx.scope_kind == "thread"):
+        fail("requires Trainium target and thread exec_scope")
 
     # Extract arguments
     (
@@ -294,7 +294,7 @@ def matmul_trn(op: TilePrimitiveCall, sctx: DispatchContext) -> PrimFunc | None:
         predicate(
             "exec_scope",
             lambda op, sctx: (
-                sctx.scope_kind == "kernel",
+                sctx.scope_kind == "thread",
                 f"unsupported exec_scope {sctx.scope_kind}",
             ),
         )

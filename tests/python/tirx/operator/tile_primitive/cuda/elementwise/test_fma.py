@@ -59,11 +59,10 @@ def test_fma_scalar_scalar():
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         tx = Tx.thread_id([N])
-        with Tx.thread():
-            buf = Tx.alloc_buffer((1,), dtype, scope="local", layout=TileLayout(S[1]))
-            Tx.copy(buf, A[tx : tx + 1])
-            Tx.fma(buf, buf, Tx.float32(scale_val), Tx.float32(bias_val))
-            Tx.copy(A[tx : tx + 1], buf)
+        buf = Tx.alloc_buffer((1,), dtype, scope="local", layout=TileLayout(S[1]))
+        Tx.copy(buf, A[tx : tx + 1])
+        Tx.fma(buf, buf, Tx.float32(scale_val), Tx.float32(bias_val))
+        Tx.copy(A[tx : tx + 1], buf)
 
     with target:
         A_np = np.random.rand(N).astype(dtype)
@@ -97,13 +96,12 @@ def test_fma_buffer_scale_scalar_bias():
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         _tx = Tx.thread_id([1])
-        with Tx.thread():
-            acc = Tx.alloc_buffer((N,), dtype, scope="local", layout=TileLayout(S[N]))
-            frac = Tx.alloc_buffer((N,), dtype, scope="local", layout=TileLayout(S[N]))
-            Tx.copy(acc, A[0:N])
-            Tx.copy(frac, B[0:N])
-            Tx.fma(acc, acc, frac, Tx.float32(coeff))
-            Tx.copy(A[0:N], acc)
+        acc = Tx.alloc_buffer((N,), dtype, scope="local", layout=TileLayout(S[N]))
+        frac = Tx.alloc_buffer((N,), dtype, scope="local", layout=TileLayout(S[N]))
+        Tx.copy(acc, A[0:N])
+        Tx.copy(frac, B[0:N])
+        Tx.fma(acc, acc, frac, Tx.float32(coeff))
+        Tx.copy(A[0:N], acc)
 
     with target:
         A_np = np.random.rand(N).astype(dtype)
@@ -137,13 +135,12 @@ def test_mul_scalar_broadcast():
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         _tx = Tx.thread_id([1])
-        with Tx.thread():
-            a_local = Tx.alloc_buffer((N,), dtype, scope="local", layout=TileLayout(S[N]))
-            s_local = Tx.alloc_buffer((1,), dtype, scope="local", layout=TileLayout(S[1]))
-            Tx.copy(a_local, A[0:N])
-            Tx.copy(s_local, Scale[0:1])
-            Tx.mul(a_local, a_local, s_local[0])
-            Tx.copy(A[0:N], a_local)
+        a_local = Tx.alloc_buffer((N,), dtype, scope="local", layout=TileLayout(S[N]))
+        s_local = Tx.alloc_buffer((1,), dtype, scope="local", layout=TileLayout(S[1]))
+        Tx.copy(a_local, A[0:N])
+        Tx.copy(s_local, Scale[0:1])
+        Tx.mul(a_local, a_local, s_local[0])
+        Tx.copy(A[0:N], a_local)
 
     with target:
         A_np = np.random.rand(N).astype(dtype)
@@ -178,11 +175,10 @@ def test_add_rounding_mode():
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         _tx = Tx.thread_id([1])
-        with Tx.thread():
-            buf = Tx.alloc_buffer((N,), dtype, scope="local", layout=TileLayout(S[N]))
-            Tx.copy(buf, A[0:N])
-            Tx.add(buf, buf, Tx.float32(round_const), rounding_mode="rm")
-            Tx.copy(A[0:N], buf)
+        buf = Tx.alloc_buffer((N,), dtype, scope="local", layout=TileLayout(S[N]))
+        Tx.copy(buf, A[0:N])
+        Tx.add(buf, buf, Tx.float32(round_const), rounding_mode="rm")
+        Tx.copy(A[0:N], buf)
 
     with target:
         A_np = np.array([1.3, 2.7], dtype=dtype)
@@ -221,13 +217,12 @@ def test_fma_no_layout():
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         _tx = Tx.thread_id([1])
-        with Tx.thread():
-            buf = Tx.alloc_local([N], dtype)
-            for i in Tx.serial(N):
-                buf[i] = A[i]
-            Tx.fma(buf[0:N], buf[0:N], Tx.float32(scale_val), Tx.float32(bias_val))
-            for i in Tx.serial(N):
-                A[i] = buf[i]
+        buf = Tx.alloc_local([N], dtype)
+        for i in Tx.serial(N):
+            buf[i] = A[i]
+        Tx.fma(buf[0:N], buf[0:N], Tx.float32(scale_val), Tx.float32(bias_val))
+        for i in Tx.serial(N):
+            A[i] = buf[i]
 
     with target:
         A_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=dtype)
@@ -259,13 +254,12 @@ def test_sub_buffer_buffer_rounding():
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         _tx = Tx.thread_id([1])
-        with Tx.thread():
-            a_buf = Tx.alloc_buffer((N,), dtype, scope="local", layout=TileLayout(S[N]))
-            b_buf = Tx.alloc_buffer((N,), dtype, scope="local", layout=TileLayout(S[N]))
-            Tx.copy(a_buf, A[0:N])
-            Tx.copy(b_buf, B[0:N])
-            Tx.sub(a_buf, a_buf, b_buf, rounding_mode="rn")
-            Tx.copy(A[0:N], a_buf)
+        a_buf = Tx.alloc_buffer((N,), dtype, scope="local", layout=TileLayout(S[N]))
+        b_buf = Tx.alloc_buffer((N,), dtype, scope="local", layout=TileLayout(S[N]))
+        Tx.copy(a_buf, A[0:N])
+        Tx.copy(b_buf, B[0:N])
+        Tx.sub(a_buf, a_buf, b_buf, rounding_mode="rn")
+        Tx.copy(A[0:N], a_buf)
 
     with target:
         A_np = np.array([3.14, 2.71], dtype=dtype)
@@ -301,19 +295,13 @@ def test_fma_warpgroup_wg_local_layout():
         tid = Tx.thread_id_in_wg([rows])
 
         reg = Tx.alloc_buffer((rows, cols), dtype, scope="local", layout=wg_local_layout(cols))
-
-        with Tx.thread():
-            reg_row = reg.local(cols)
-            for i in Tx.serial(cols):
-                reg_row[i] = A[tid, i]
-
-        with Tx.warpgroup():
-            Tx.fma(reg, reg, Tx.float32(scale_val), Tx.float32(bias_val))
-
-        with Tx.thread():
-            reg_row = reg.local(cols)
-            for i in Tx.serial(cols):
-                B[tid, i] = reg_row[i]
+        reg_row = reg.local(cols)
+        for i in Tx.serial(cols):
+            reg_row[i] = A[tid, i]
+        Tx.wg.fma(reg, reg, Tx.float32(scale_val), Tx.float32(bias_val))
+        reg_row_1 = reg.local(cols)
+        for i in Tx.serial(cols):
+            B[tid, i] = reg_row_1[i]
 
     with target:
         np.random.seed(0)
@@ -347,24 +335,15 @@ def test_fma_f32_sm100_packed_f32x2_dispatch():
         Tx.device_entry()
         _bx = Tx.cta_id([1])
         tx = Tx.thread_id([64])
-        with Tx.thread():
-            ra = Tx.alloc_buffer(
-                shape[1:], "float32", scope="local", layout=TileLayout(S[shape[1:]])
-            )
-            rb = Tx.alloc_buffer(
-                shape[1:], "float32", scope="local", layout=TileLayout(S[shape[1:]])
-            )
-            rc = Tx.alloc_buffer(
-                shape[1:], "float32", scope="local", layout=TileLayout(S[shape[1:]])
-            )
-            rd = Tx.alloc_buffer(
-                shape[1:], "float32", scope="local", layout=TileLayout(S[shape[1:]])
-            )
-            Tx.copy(ra, A[tx])
-            Tx.copy(rb, B[tx])
-            Tx.copy(rc, C[tx])
-            Tx.fma(rd, ra, rb, rc)
-            Tx.copy(D[tx], rd)
+        ra = Tx.alloc_buffer(shape[1:], "float32", scope="local", layout=TileLayout(S[shape[1:]]))
+        rb = Tx.alloc_buffer(shape[1:], "float32", scope="local", layout=TileLayout(S[shape[1:]]))
+        rc = Tx.alloc_buffer(shape[1:], "float32", scope="local", layout=TileLayout(S[shape[1:]]))
+        rd = Tx.alloc_buffer(shape[1:], "float32", scope="local", layout=TileLayout(S[shape[1:]]))
+        Tx.copy(ra, A[tx])
+        Tx.copy(rb, B[tx])
+        Tx.copy(rc, C[tx])
+        Tx.fma(rd, ra, rb, rc)
+        Tx.copy(D[tx], rd)
 
     target = tvm.target.Target({"kind": "cuda", "arch": "sm_100a"})
     with target:

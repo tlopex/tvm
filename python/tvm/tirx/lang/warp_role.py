@@ -40,14 +40,17 @@ from tvm.script import tirx as Tx
 
 class WarpRole:
     """A warp-level role that guards a block of code by warp_id comparison
-    and wraps it in ``Tx.warp()`` with optional register budget.
+    with optional register budget.
 
     Generates::
 
         if <warp_id_var> == <warp_id_val>:
-            with Tx.warp():
-                Tx.ptx.setmaxnreg(<increase>, <regs>)  # if regs specified
-                <user code>
+            Tx.ptx.setmaxnreg(<increase>, <regs>)  # if regs specified
+            <user code>
+
+    The ``if`` guard narrows the active set to the single warp; individual
+    tile-primitive calls inside ``<user code>`` carry their own exec scope via
+    a scope-namespace prefix (e.g. ``Tx.warp.copy(...)``).
 
     Parameters
     ----------
@@ -73,14 +76,11 @@ class WarpRole:
         self._if_frame.__enter__()
         self._then_frame = Tx.Then()
         self._then_frame.__enter__()
-        self._warp_frame = Tx.warp()
-        self._warp_frame.__enter__()
         if self.regs is not None:
             Tx.evaluate(Tx.ptx.setmaxnreg(self.increase, self.regs))
         return self
 
     def __exit__(self, *exc):
-        self._warp_frame.__exit__(*exc)
         self._then_frame.__exit__(*exc)
         self._if_frame.__exit__(*exc)
         return False
@@ -88,21 +88,23 @@ class WarpRole:
 
 class WarpgroupRole:
     """A warpgroup-level role that guards by wg_id comparison,
-    wraps in ``Tx.warpgroup()``, with optional register budget.
+    with optional register budget.
 
     Generates (single wg_id)::
 
         if <wg_id_var> == <wg_id_val>:
-            with Tx.warpgroup():
-                Tx.ptx.setmaxnreg(<increase>, <regs>)  # if regs specified
-                <user code>
+            Tx.ptx.setmaxnreg(<increase>, <regs>)  # if regs specified
+            <user code>
 
     Generates (range of wg_ids, e.g. ``wg_id_val=(0, 2)``)::
 
         if 0 <= <wg_id_var> and <wg_id_var> < 2:
-            with Tx.warpgroup():
-                Tx.ptx.setmaxnreg(<increase>, <regs>)
-                <user code>
+            Tx.ptx.setmaxnreg(<increase>, <regs>)
+            <user code>
+
+    The ``if`` guard narrows the active set to the target warpgroup(s);
+    individual tile-primitive calls inside ``<user code>`` carry their own exec
+    scope via a scope-namespace prefix (e.g. ``Tx.wg.copy(...)``).
 
     Parameters
     ----------
@@ -132,14 +134,11 @@ class WarpgroupRole:
         self._if_frame.__enter__()
         self._then_frame = Tx.Then()
         self._then_frame.__enter__()
-        self._wg_frame = Tx.warpgroup()
-        self._wg_frame.__enter__()
         if self.regs is not None:
             Tx.evaluate(Tx.ptx.setmaxnreg(self.increase, self.regs))
         return self
 
     def __exit__(self, *exc):
-        self._wg_frame.__exit__(*exc)
         self._then_frame.__exit__(*exc)
         self._if_frame.__exit__(*exc)
         return False

@@ -70,62 +70,53 @@ def _make_2d_kernel(
         tmem_addr = Tx.alloc_shared([1], "uint32")
         cp_mbar = Tx.alloc_shared([1], "uint64")
         if wg_id == 0:
-            with Tx.warpgroup():
-                if warp_id == 0:
-                    with Tx.warp():
-                        Tx.ptx.tcgen05.alloc(
-                            Tx.address_of(tmem_addr),
-                            n_cols=n_tmem_cols_total,
-                            cta_group=cta_group,
-                        )
-                if tid_in_wg == 0:
-                    with Tx.thread():
-                        Tx.ptx.mbarrier.init(cp_mbar.ptr_to([0]), 1)
-                Tx.ptx.fence.proxy_async("shared::cta")
-                Tx.cuda.cta_sync()
-                with Tx.cta():
-                    Tx.copy(A_smem[:, :], A[:, :])
-                Tx.cuda.cta_sync()
-                tmem = Tx.decl_buffer(
-                    t_full_shape,
-                    dtype,
-                    scope="tmem",
-                    allocated_addr=tmem_addr[0],
-                    layout=t_full,
+            if warp_id == 0:
+                Tx.ptx.tcgen05.alloc(
+                    Tx.address_of(tmem_addr),
+                    n_cols=n_tmem_cols_total,
+                    cta_group=cta_group,
                 )
-                if tid_in_wg == 0:
-                    with Tx.thread():
-                        Tx.copy_async(
-                            tmem[t_r0:t_r1, t_c0:t_c1],
-                            A_smem[s_r0:s_r1, s_c0:s_c1],
-                            cta_group=cta_group,
-                        )
-                        Tx.ptx.tcgen05.commit(cp_mbar.ptr_to([0]), cta_group=cta_group)
-                Tx.ptx.mbarrier.try_wait(cp_mbar.ptr_to([0]), 0)
-                Tx.cuda.cta_sync()
-                Tx.ptx.tcgen05.fence.after_thread_sync()
-                if warp_id == 0:
-                    with Tx.warp():
-                        reg = Tx.alloc_buffer((4,), "uint32", scope="local")
-                        for i in range(4):
-                            Tx.ptx.tcgen05.ld(
-                                tmem.allocated_addr[0],
-                                reg[i],
-                                shape="32x32b",
-                                num=1,
-                                row=0,
-                                col=i,
-                            )
-                        Tx.ptx.tcgen05.wait.ld()
-                        B_bytes = reg.view(dtype)
-                        for i in range(OUT_BYTES):
-                            B[lane_id, i] = B_bytes[i]
-                if warp_id == 0:
-                    with Tx.warp():
-                        Tx.ptx.tcgen05.relinquish_alloc_permit(cta_group=cta_group)
-                        Tx.ptx.tcgen05.dealloc(
-                            tmem_addr[0], n_cols=n_tmem_cols_total, cta_group=cta_group
-                        )
+            if tid_in_wg == 0:
+                Tx.ptx.mbarrier.init(cp_mbar.ptr_to([0]), 1)
+            Tx.ptx.fence.proxy_async("shared::cta")
+            Tx.cuda.cta_sync()
+            Tx.cta.copy(A_smem[:, :], A[:, :])
+            Tx.cuda.cta_sync()
+            tmem = Tx.decl_buffer(
+                t_full_shape,
+                dtype,
+                scope="tmem",
+                allocated_addr=tmem_addr[0],
+                layout=t_full,
+            )
+            if tid_in_wg == 0:
+                Tx.copy_async(
+                    tmem[t_r0:t_r1, t_c0:t_c1],
+                    A_smem[s_r0:s_r1, s_c0:s_c1],
+                    cta_group=cta_group,
+                )
+                Tx.ptx.tcgen05.commit(cp_mbar.ptr_to([0]), cta_group=cta_group)
+            Tx.ptx.mbarrier.try_wait(cp_mbar.ptr_to([0]), 0)
+            Tx.cuda.cta_sync()
+            Tx.ptx.tcgen05.fence.after_thread_sync()
+            if warp_id == 0:
+                reg = Tx.alloc_buffer((4,), "uint32", scope="local")
+                for i in range(4):
+                    Tx.ptx.tcgen05.ld(
+                        tmem.allocated_addr[0],
+                        reg[i],
+                        shape="32x32b",
+                        num=1,
+                        row=0,
+                        col=i,
+                    )
+                Tx.ptx.tcgen05.wait.ld()
+                B_bytes = reg.view(dtype)
+                for i in range(OUT_BYTES):
+                    B[lane_id, i] = B_bytes[i]
+            if warp_id == 0:
+                Tx.ptx.tcgen05.relinquish_alloc_permit(cta_group=cta_group)
+                Tx.ptx.tcgen05.dealloc(tmem_addr[0], n_cols=n_tmem_cols_total, cta_group=cta_group)
 
     return kernel
 
@@ -147,62 +138,53 @@ def _make_3d_4tile_kernel(s_full, t_full, s_full_shape, t_full_shape, dtype, cta
         tmem_addr = Tx.alloc_shared([1], "uint32")
         cp_mbar = Tx.alloc_shared([1], "uint64")
         if wg_id == 0:
-            with Tx.warpgroup():
-                if warp_id == 0:
-                    with Tx.warp():
-                        Tx.ptx.tcgen05.alloc(
-                            Tx.address_of(tmem_addr),
-                            n_cols=n_tmem_cols_total,
-                            cta_group=cta_group,
-                        )
-                if tid_in_wg == 0:
-                    with Tx.thread():
-                        Tx.ptx.mbarrier.init(cp_mbar.ptr_to([0]), 1)
-                Tx.ptx.fence.proxy_async("shared::cta")
-                Tx.cuda.cta_sync()
-                with Tx.cta():
-                    Tx.copy(A_smem[:, :, :], A[:, :, :])
-                Tx.cuda.cta_sync()
-                tmem = Tx.decl_buffer(
-                    t_full_shape,
-                    dtype,
-                    scope="tmem",
-                    allocated_addr=tmem_addr[0],
-                    layout=t_full,
+            if warp_id == 0:
+                Tx.ptx.tcgen05.alloc(
+                    Tx.address_of(tmem_addr),
+                    n_cols=n_tmem_cols_total,
+                    cta_group=cta_group,
                 )
-                if tid_in_wg == 0:
-                    with Tx.thread():
-                        Tx.copy_async(
-                            tmem[:, :, :],
-                            A_smem[:, :, :],
-                            cta_group=cta_group,
-                        )
-                        Tx.ptx.tcgen05.commit(cp_mbar.ptr_to([0]), cta_group=cta_group)
-                Tx.ptx.mbarrier.try_wait(cp_mbar.ptr_to([0]), 0)
-                Tx.cuda.cta_sync()
-                Tx.ptx.tcgen05.fence.after_thread_sync()
-                if warp_id == 0:
-                    with Tx.warp():
-                        reg = Tx.alloc_buffer((4,), "uint32", scope="local")
-                        for i in range(4):
-                            Tx.ptx.tcgen05.ld(
-                                tmem.allocated_addr[0],
-                                reg[i],
-                                shape="32x32b",
-                                num=1,
-                                row=0,
-                                col=i,
-                            )
-                        Tx.ptx.tcgen05.wait.ld()
-                        B_bytes = reg.view(dtype)
-                        for i in range(16):
-                            B[lane_id, i] = B_bytes[i]
-                if warp_id == 0:
-                    with Tx.warp():
-                        Tx.ptx.tcgen05.relinquish_alloc_permit(cta_group=cta_group)
-                        Tx.ptx.tcgen05.dealloc(
-                            tmem_addr[0], n_cols=n_tmem_cols_total, cta_group=cta_group
-                        )
+            if tid_in_wg == 0:
+                Tx.ptx.mbarrier.init(cp_mbar.ptr_to([0]), 1)
+            Tx.ptx.fence.proxy_async("shared::cta")
+            Tx.cuda.cta_sync()
+            Tx.cta.copy(A_smem[:, :, :], A[:, :, :])
+            Tx.cuda.cta_sync()
+            tmem = Tx.decl_buffer(
+                t_full_shape,
+                dtype,
+                scope="tmem",
+                allocated_addr=tmem_addr[0],
+                layout=t_full,
+            )
+            if tid_in_wg == 0:
+                Tx.copy_async(
+                    tmem[:, :, :],
+                    A_smem[:, :, :],
+                    cta_group=cta_group,
+                )
+                Tx.ptx.tcgen05.commit(cp_mbar.ptr_to([0]), cta_group=cta_group)
+            Tx.ptx.mbarrier.try_wait(cp_mbar.ptr_to([0]), 0)
+            Tx.cuda.cta_sync()
+            Tx.ptx.tcgen05.fence.after_thread_sync()
+            if warp_id == 0:
+                reg = Tx.alloc_buffer((4,), "uint32", scope="local")
+                for i in range(4):
+                    Tx.ptx.tcgen05.ld(
+                        tmem.allocated_addr[0],
+                        reg[i],
+                        shape="32x32b",
+                        num=1,
+                        row=0,
+                        col=i,
+                    )
+                Tx.ptx.tcgen05.wait.ld()
+                B_bytes = reg.view(dtype)
+                for i in range(16):
+                    B[lane_id, i] = B_bytes[i]
+            if warp_id == 0:
+                Tx.ptx.tcgen05.relinquish_alloc_permit(cta_group=cta_group)
+                Tx.ptx.tcgen05.dealloc(tmem_addr[0], n_cols=n_tmem_cols_total, cta_group=cta_group)
 
     return kernel
 
@@ -340,54 +322,47 @@ def test_align_middle_2_to_1_nvfp4_sfb():
         tmem_addr = Tx.alloc_shared([1], "uint32")
         cp_mbar = Tx.alloc_shared([1], "uint64")
         if wg_id == 0:
-            with Tx.warpgroup():
-                if warp_id == 0:
-                    with Tx.warp():
-                        Tx.ptx.tcgen05.alloc(
-                            Tx.address_of(tmem_addr), n_cols=n_tmem_cols_total, cta_group=1
-                        )
-                if tid_in_wg == 0:
-                    with Tx.thread():
-                        Tx.ptx.mbarrier.init(cp_mbar.ptr_to([0]), 1)
-                Tx.ptx.fence.proxy_async("shared::cta")
-                Tx.cuda.cta_sync()
-                with Tx.cta():
-                    Tx.copy(A_smem[:, :], A[:, :])
-                Tx.cuda.cta_sync()
-                tmem = Tx.decl_buffer(
-                    t_full_shape,
-                    "uint8",
-                    scope="tmem",
-                    allocated_addr=tmem_addr[0],
-                    layout=t_full,
+            if warp_id == 0:
+                Tx.ptx.tcgen05.alloc(
+                    Tx.address_of(tmem_addr), n_cols=n_tmem_cols_total, cta_group=1
                 )
-                if tid_in_wg == 0:
-                    with Tx.thread():
-                        Tx.copy_async(tmem[:, :], A_smem[:, :], cta_group=1)
-                        Tx.ptx.tcgen05.commit(cp_mbar.ptr_to([0]), cta_group=1)
-                Tx.ptx.mbarrier.try_wait(cp_mbar.ptr_to([0]), 0)
-                Tx.cuda.cta_sync()
-                Tx.ptx.tcgen05.fence.after_thread_sync()
-                if warp_id == 0:
-                    with Tx.warp():
-                        reg = Tx.alloc_buffer((4,), "uint32", scope="local")
-                        for i in range(4):
-                            Tx.ptx.tcgen05.ld(
-                                tmem.allocated_addr[0],
-                                reg[i],
-                                shape="32x32b",
-                                num=1,
-                                row=0,
-                                col=i,
-                            )
-                        Tx.ptx.tcgen05.wait.ld()
-                        B_bytes = reg.view("uint8")
-                        for i in range(16):
-                            B[lane_id, i] = B_bytes[i]
-                if warp_id == 0:
-                    with Tx.warp():
-                        Tx.ptx.tcgen05.relinquish_alloc_permit(cta_group=1)
-                        Tx.ptx.tcgen05.dealloc(tmem_addr[0], n_cols=n_tmem_cols_total, cta_group=1)
+            if tid_in_wg == 0:
+                Tx.ptx.mbarrier.init(cp_mbar.ptr_to([0]), 1)
+            Tx.ptx.fence.proxy_async("shared::cta")
+            Tx.cuda.cta_sync()
+            Tx.cta.copy(A_smem[:, :], A[:, :])
+            Tx.cuda.cta_sync()
+            tmem = Tx.decl_buffer(
+                t_full_shape,
+                "uint8",
+                scope="tmem",
+                allocated_addr=tmem_addr[0],
+                layout=t_full,
+            )
+            if tid_in_wg == 0:
+                Tx.copy_async(tmem[:, :], A_smem[:, :], cta_group=1)
+                Tx.ptx.tcgen05.commit(cp_mbar.ptr_to([0]), cta_group=1)
+            Tx.ptx.mbarrier.try_wait(cp_mbar.ptr_to([0]), 0)
+            Tx.cuda.cta_sync()
+            Tx.ptx.tcgen05.fence.after_thread_sync()
+            if warp_id == 0:
+                reg = Tx.alloc_buffer((4,), "uint32", scope="local")
+                for i in range(4):
+                    Tx.ptx.tcgen05.ld(
+                        tmem.allocated_addr[0],
+                        reg[i],
+                        shape="32x32b",
+                        num=1,
+                        row=0,
+                        col=i,
+                    )
+                Tx.ptx.tcgen05.wait.ld()
+                B_bytes = reg.view("uint8")
+                for i in range(16):
+                    B[lane_id, i] = B_bytes[i]
+            if warp_id == 0:
+                Tx.ptx.tcgen05.relinquish_alloc_permit(cta_group=1)
+                Tx.ptx.tcgen05.dealloc(tmem_addr[0], n_cols=n_tmem_cols_total, cta_group=1)
 
     A_np = (np.arange(256 * 16, dtype=np.int32) & 0xFF).astype(np.uint8).reshape(256, 16)
 

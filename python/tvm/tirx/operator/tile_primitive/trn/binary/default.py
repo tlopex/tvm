@@ -32,8 +32,8 @@ def binary_trn(
     op: TilePrimitiveCall, binary_op: MapOpType, sctx: DispatchContext
 ) -> PrimFunc | None:
     """Generate a binary operation schedule for Trainium."""
-    if not (sctx.is_trn() and sctx.scope_kind == "kernel"):
-        fail("requires Trainium target and kernel exec_scope")
+    if not (sctx.is_trn() and sctx.scope_kind == "thread"):
+        fail("requires Trainium target and thread exec_scope")
 
     assert binary_op in binary_map_ops, f"Unsupported binary operation {binary_op}"
 

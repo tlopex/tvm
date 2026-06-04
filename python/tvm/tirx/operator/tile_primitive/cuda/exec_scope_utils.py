@@ -63,8 +63,7 @@ def thread_selector(sctx: DispatchContext, inner_impl, macro: bool = False) -> C
         def impl():
             Tx.lane_id([32])
             if Tx.ptx.elect_sync():
-                with Tx.thread():
-                    inner_impl()
+                inner_impl()
 
         return macro_or_prim_func(impl, need_macro=macro)
     if name == "warp":
@@ -73,8 +72,7 @@ def thread_selector(sctx: DispatchContext, inner_impl, macro: bool = False) -> C
         def impl():
             Tx.lane_id([32])
             if Tx.ptx.elect_sync():
-                with Tx.thread():
-                    inner_impl()
+                inner_impl()
 
         return macro_or_prim_func(impl, need_macro=macro)
     if name == "warpgroup":
@@ -84,10 +82,8 @@ def thread_selector(sctx: DispatchContext, inner_impl, macro: bool = False) -> C
             warp_id = Tx.warp_id_in_wg([4])
             Tx.lane_id([32])
             if warp_id == 0:
-                with Tx.warp():
-                    if Tx.ptx.elect_sync():
-                        with Tx.thread():
-                            inner_impl()
+                if Tx.ptx.elect_sync():
+                    inner_impl()
 
         return macro_or_prim_func(impl, need_macro=macro)
     raise ValueError(f"thread_selector: unsupported exec_scope {name!r}")

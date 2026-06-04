@@ -108,13 +108,11 @@ def _build_tiled(Mt, Nt, Kt, kinst, *, beta=0.0, dtype="float16", store=False):
             _cta = Tx.cta_id([1])
             _warp = Tx.warp_id([1])
             _lane = Tx.lane_id([32])
-            with Tx.cta():
-                A = Tx.alloc_buffer((M, K), dtype, scope="local", layout=Al)
-                B = Tx.alloc_buffer((K, N), dtype, scope="local", layout=Bl)
-                C = Tx.alloc_buffer((M, N), "float32", scope="local", layout=Dl)
-                D = Tx.alloc_buffer((M, N), "float32", scope="local", layout=Dl)
-                with Tx.warp():
-                    Tx.gemm(D, A, B, C, transpose_A=False, transpose_B=False, alpha=1.0, beta=beta)
+            A = Tx.alloc_buffer((M, K), dtype, scope="local", layout=Al)
+            B = Tx.alloc_buffer((K, N), dtype, scope="local", layout=Bl)
+            C = Tx.alloc_buffer((M, N), "float32", scope="local", layout=Dl)
+            D = Tx.alloc_buffer((M, N), "float32", scope="local", layout=Dl)
+            Tx.warp.gemm(D, A, B, C, transpose_A=False, transpose_B=False, alpha=1.0, beta=beta)
 
         return gemm
 
@@ -125,22 +123,20 @@ def _build_tiled(Mt, Nt, Kt, kinst, *, beta=0.0, dtype="float16", store=False):
         _cta = Tx.cta_id([1])
         _warp = Tx.warp_id([1])
         lane = Tx.lane_id([32])
-        with Tx.cta():
-            A = Tx.alloc_buffer((M, K), dtype, scope="local", layout=Al)
-            B = Tx.alloc_buffer((K, N), dtype, scope="local", layout=Bl)
-            C = Tx.alloc_buffer((M, N), "float32", scope="local", layout=Dl)
-            D = Tx.alloc_buffer((M, N), "float32", scope="local", layout=Dl)
-            with Tx.warp():
-                Tx.gemm(D, A, B, C, transpose_A=False, transpose_B=False, alpha=1.0, beta=beta)
-                # Decode D's per-thread registers (c = ((mt*Nt + nt)*2 + rM)*2 + rN)
-                # back to logical (M, N) and store, exercising the whole tiling.
-                D_reg = D.local(Mt * Nt * 4)
-                for c in Tx.unroll(Mt * Nt * 4):
-                    rN = c % 2
-                    rM = (c // 2) % 2
-                    nt = (c // 4) % Nt
-                    mt = c // (4 * Nt)
-                    D_g[mt * 16 + lane // 4 + rM * 8, nt * 8 + (lane % 4) * 2 + rN] = D_reg[c]
+        A = Tx.alloc_buffer((M, K), dtype, scope="local", layout=Al)
+        B = Tx.alloc_buffer((K, N), dtype, scope="local", layout=Bl)
+        C = Tx.alloc_buffer((M, N), "float32", scope="local", layout=Dl)
+        D = Tx.alloc_buffer((M, N), "float32", scope="local", layout=Dl)
+        Tx.warp.gemm(D, A, B, C, transpose_A=False, transpose_B=False, alpha=1.0, beta=beta)
+        # Decode D's per-thread registers (c = ((mt*Nt + nt)*2 + rM)*2 + rN)
+        # back to logical (M, N) and store, exercising the whole tiling.
+        D_reg = D.local(Mt * Nt * 4)
+        for c in Tx.unroll(Mt * Nt * 4):
+            rN = c % 2
+            rM = (c // 2) % 2
+            nt = (c // 4) % Nt
+            mt = c // (4 * Nt)
+            D_g[mt * 16 + lane // 4 + rM * 8, nt * 8 + (lane % 4) * 2 + rN] = D_reg[c]
 
     return gemm
 
@@ -153,13 +149,11 @@ def _build_gemm(alpha=1.0, beta=0.0, dtype="bfloat16"):
         Tx.device_entry()
         _cta = Tx.cta_id([1])
         _tid = Tx.thread_id([32])
-        with Tx.cta():
-            D = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
-            C = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
-            A = Tx.alloc_buffer((16, 16), dtype, scope="local", layout=A_FRAG)
-            B = Tx.alloc_buffer((16, 8), dtype, scope="local", layout=B_FRAG)
-            with Tx.warp():
-                Tx.gemm(D, A, B, C, transpose_A=False, transpose_B=False, alpha=alpha, beta=beta)
+        D = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
+        C = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
+        A = Tx.alloc_buffer((16, 16), dtype, scope="local", layout=A_FRAG)
+        B = Tx.alloc_buffer((16, 8), dtype, scope="local", layout=B_FRAG)
+        Tx.warp.gemm(D, A, B, C, transpose_A=False, transpose_B=False, alpha=alpha, beta=beta)
 
     return gemm_min
 
@@ -179,22 +173,20 @@ def _build_transpose(transpose_A, transpose_B, *, store=False):
             _cta = Tx.cta_id([1])
             _warp = Tx.warp_id([1])
             _lane = Tx.lane_id([32])
-            with Tx.cta():
-                A = Tx.alloc_buffer(A_shape, "float16", scope="local", layout=Al)
-                B = Tx.alloc_buffer(B_shape, "float16", scope="local", layout=Bl)
-                C = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
-                D = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
-                with Tx.warp():
-                    Tx.gemm(
-                        D,
-                        A,
-                        B,
-                        C,
-                        transpose_A=transpose_A,
-                        transpose_B=transpose_B,
-                        alpha=1.0,
-                        beta=0.0,
-                    )
+            A = Tx.alloc_buffer(A_shape, "float16", scope="local", layout=Al)
+            B = Tx.alloc_buffer(B_shape, "float16", scope="local", layout=Bl)
+            C = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
+            D = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
+            Tx.warp.gemm(
+                D,
+                A,
+                B,
+                C,
+                transpose_A=transpose_A,
+                transpose_B=transpose_B,
+                alpha=1.0,
+                beta=0.0,
+            )
 
         return gemm
 
@@ -205,25 +197,23 @@ def _build_transpose(transpose_A, transpose_B, *, store=False):
         _cta = Tx.cta_id([1])
         _warp = Tx.warp_id([1])
         lane = Tx.lane_id([32])
-        with Tx.cta():
-            A = Tx.alloc_buffer(A_shape, "float16", scope="local", layout=Al)
-            B = Tx.alloc_buffer(B_shape, "float16", scope="local", layout=Bl)
-            C = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
-            D = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
-            with Tx.warp():
-                Tx.gemm(
-                    D,
-                    A,
-                    B,
-                    C,
-                    transpose_A=transpose_A,
-                    transpose_B=transpose_B,
-                    alpha=1.0,
-                    beta=0.0,
-                )
-                D_reg = D.local(4)
-                for c in Tx.unroll(4):
-                    D_g[lane // 4 + (c // 2) * 8, (lane % 4) * 2 + c % 2] = D_reg[c]
+        A = Tx.alloc_buffer(A_shape, "float16", scope="local", layout=Al)
+        B = Tx.alloc_buffer(B_shape, "float16", scope="local", layout=Bl)
+        C = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
+        D = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
+        Tx.warp.gemm(
+            D,
+            A,
+            B,
+            C,
+            transpose_A=transpose_A,
+            transpose_B=transpose_B,
+            alpha=1.0,
+            beta=0.0,
+        )
+        D_reg = D.local(4)
+        for c in Tx.unroll(4):
+            D_g[lane // 4 + (c // 2) * 8, (lane % 4) * 2 + c % 2] = D_reg[c]
 
     return gemm
 
@@ -236,13 +226,11 @@ def _build_dtypes(a_dtype, b_dtype, c_dtype, d_dtype):
         Tx.device_entry()
         _cta = Tx.cta_id([1])
         _tid = Tx.thread_id([32])
-        with Tx.cta():
-            D = Tx.alloc_buffer((16, 8), d_dtype, scope="local", layout=D_FRAG)
-            C = Tx.alloc_buffer((16, 8), c_dtype, scope="local", layout=D_FRAG)
-            A = Tx.alloc_buffer((16, 16), a_dtype, scope="local", layout=A_FRAG)
-            B = Tx.alloc_buffer((16, 8), b_dtype, scope="local", layout=B_FRAG)
-            with Tx.warp():
-                Tx.gemm(D, A, B, C, transpose_A=False, transpose_B=False, alpha=1.0, beta=0.0)
+        D = Tx.alloc_buffer((16, 8), d_dtype, scope="local", layout=D_FRAG)
+        C = Tx.alloc_buffer((16, 8), c_dtype, scope="local", layout=D_FRAG)
+        A = Tx.alloc_buffer((16, 16), a_dtype, scope="local", layout=A_FRAG)
+        B = Tx.alloc_buffer((16, 8), b_dtype, scope="local", layout=B_FRAG)
+        Tx.warp.gemm(D, A, B, C, transpose_A=False, transpose_B=False, alpha=1.0, beta=0.0)
 
     return gemm_min
 
@@ -272,38 +260,32 @@ def _build_tiled_numeric(Mt, Nt, Kt, kinst, beta, dtype):
         _cta = Tx.cta_id([1])
         _warp = Tx.warp_id([1])
         lane = Tx.lane_id([32])
-        with Tx.cta():
-            A_f = Tx.alloc_buffer((M, K), dtype, scope="local", layout=Al)
-            B_f = Tx.alloc_buffer((K, N), dtype, scope="local", layout=Bl)
-            C_f = Tx.alloc_buffer((M, N), "float32", scope="local", layout=Dl)
-            D_f = Tx.alloc_buffer((M, N), "float32", scope="local", layout=Dl)
-            with Tx.warp():
-                A_reg = A_f.local(Mt, 2, Kt, kHi_n, KP)
-                for mt, rM, kt, kHi, kp in Tx.grid(Mt, 2, Kt, kHi_n, KP):
-                    A_reg[mt, rM, kt, kHi, kp] = A_g[
-                        mt * 16 + lane // 4 + 8 * rM,
-                        kt * kinst + kHi * 8 + 2 * (lane % 4) + kp,
-                    ]
-                B_reg = B_f.local(Kt, kHi_n, KP, Nt)
-                for kt, kHi, kp, nt in Tx.grid(Kt, kHi_n, KP, Nt):
-                    B_reg[kt, kHi, kp, nt] = B_g[
-                        kt * kinst + kHi * 8 + 2 * (lane % 4) + kp,
-                        nt * 8 + lane // 4,
-                    ]
-                if beta == 1.0:
-                    C_reg = C_f.local(Mt, 2, Nt, 2)
-                    for mt, rM, nt, rN in Tx.grid(Mt, 2, Nt, 2):
-                        C_reg[mt, rM, nt, rN] = C_g[
-                            mt * 16 + lane // 4 + 8 * rM, nt * 8 + 2 * (lane % 4) + rN
-                        ]
-                Tx.gemm(
-                    D_f, A_f, B_f, C_f, transpose_A=False, transpose_B=False, alpha=1.0, beta=beta
-                )
-                D_reg = D_f.local(Mt, 2, Nt, 2)
-                for mt, rM, nt, rN in Tx.grid(Mt, 2, Nt, 2):
-                    D_g[mt * 16 + lane // 4 + 8 * rM, nt * 8 + 2 * (lane % 4) + rN] = D_reg[
-                        mt, rM, nt, rN
-                    ]
+        A_f = Tx.alloc_buffer((M, K), dtype, scope="local", layout=Al)
+        B_f = Tx.alloc_buffer((K, N), dtype, scope="local", layout=Bl)
+        C_f = Tx.alloc_buffer((M, N), "float32", scope="local", layout=Dl)
+        D_f = Tx.alloc_buffer((M, N), "float32", scope="local", layout=Dl)
+        A_reg = A_f.local(Mt, 2, Kt, kHi_n, KP)
+        for mt, rM, kt, kHi, kp in Tx.grid(Mt, 2, Kt, kHi_n, KP):
+            A_reg[mt, rM, kt, kHi, kp] = A_g[
+                mt * 16 + lane // 4 + 8 * rM,
+                kt * kinst + kHi * 8 + 2 * (lane % 4) + kp,
+            ]
+        B_reg = B_f.local(Kt, kHi_n, KP, Nt)
+        for kt, kHi, kp, nt in Tx.grid(Kt, kHi_n, KP, Nt):
+            B_reg[kt, kHi, kp, nt] = B_g[
+                kt * kinst + kHi * 8 + 2 * (lane % 4) + kp,
+                nt * 8 + lane // 4,
+            ]
+        if beta == 1.0:
+            C_reg = C_f.local(Mt, 2, Nt, 2)
+            for mt, rM, nt, rN in Tx.grid(Mt, 2, Nt, 2):
+                C_reg[mt, rM, nt, rN] = C_g[
+                    mt * 16 + lane // 4 + 8 * rM, nt * 8 + 2 * (lane % 4) + rN
+                ]
+        Tx.warp.gemm(D_f, A_f, B_f, C_f, transpose_A=False, transpose_B=False, alpha=1.0, beta=beta)
+        D_reg = D_f.local(Mt, 2, Nt, 2)
+        for mt, rM, nt, rN in Tx.grid(Mt, 2, Nt, 2):
+            D_g[mt * 16 + lane // 4 + 8 * rM, nt * 8 + 2 * (lane % 4) + rN] = D_reg[mt, rM, nt, rN]
 
     return gemm, M, N, K
 
@@ -331,41 +313,39 @@ def _build_transpose_numeric(transpose_A, transpose_B, dtype="float16"):
         _cta = Tx.cta_id([1])
         _warp = Tx.warp_id([1])
         lane = Tx.lane_id([32])
-        with Tx.cta():
-            A_f = Tx.alloc_buffer(A_shape, dtype, scope="local", layout=Al)
-            B_f = Tx.alloc_buffer(B_shape, dtype, scope="local", layout=Bl)
-            D_f = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
-            with Tx.warp():
-                A_reg = A_f.local(2, 2, 2)
-                if transpose_A:
-                    # A_KM_FRAG register order is [kHi, kp, rM]; buffer is [K, M].
-                    for kHi, kp, rM in Tx.grid(2, 2, 2):
-                        A_reg[kHi, kp, rM] = A_g[2 * (lane % 4) + kp + 8 * kHi, lane // 4 + 8 * rM]
-                else:
-                    # A_FRAG register order is [rM, kHi, kp]; buffer is [M, K].
-                    for rM, kHi, kp in Tx.grid(2, 2, 2):
-                        A_reg[rM, kHi, kp] = A_g[lane // 4 + 8 * rM, 2 * (lane % 4) + kp + 8 * kHi]
-                B_reg = B_f.local(2, 2)
-                if transpose_B:
-                    # B_NK_FRAG buffer is [N, K].
-                    for kHi, kp in Tx.grid(2, 2):
-                        B_reg[kHi, kp] = B_g[lane // 4, 2 * (lane % 4) + kp + 8 * kHi]
-                else:
-                    for kHi, kp in Tx.grid(2, 2):
-                        B_reg[kHi, kp] = B_g[2 * (lane % 4) + kp + 8 * kHi, lane // 4]
-                Tx.gemm(
-                    D_f,
-                    A_f,
-                    B_f,
-                    D_f,
-                    transpose_A=transpose_A,
-                    transpose_B=transpose_B,
-                    alpha=1.0,
-                    beta=0.0,
-                )
-                D_reg = D_f.local(2, 2)
-                for rM, rN in Tx.grid(2, 2):
-                    D_g[lane // 4 + 8 * rM, 2 * (lane % 4) + rN] = D_reg[rM, rN]
+        A_f = Tx.alloc_buffer(A_shape, dtype, scope="local", layout=Al)
+        B_f = Tx.alloc_buffer(B_shape, dtype, scope="local", layout=Bl)
+        D_f = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
+        A_reg = A_f.local(2, 2, 2)
+        if transpose_A:
+            # A_KM_FRAG register order is [kHi, kp, rM]; buffer is [K, M].
+            for kHi, kp, rM in Tx.grid(2, 2, 2):
+                A_reg[kHi, kp, rM] = A_g[2 * (lane % 4) + kp + 8 * kHi, lane // 4 + 8 * rM]
+        else:
+            # A_FRAG register order is [rM, kHi, kp]; buffer is [M, K].
+            for rM, kHi, kp in Tx.grid(2, 2, 2):
+                A_reg[rM, kHi, kp] = A_g[lane // 4 + 8 * rM, 2 * (lane % 4) + kp + 8 * kHi]
+        B_reg = B_f.local(2, 2)
+        if transpose_B:
+            # B_NK_FRAG buffer is [N, K].
+            for kHi, kp in Tx.grid(2, 2):
+                B_reg[kHi, kp] = B_g[lane // 4, 2 * (lane % 4) + kp + 8 * kHi]
+        else:
+            for kHi, kp in Tx.grid(2, 2):
+                B_reg[kHi, kp] = B_g[2 * (lane % 4) + kp + 8 * kHi, lane // 4]
+        Tx.warp.gemm(
+            D_f,
+            A_f,
+            B_f,
+            D_f,
+            transpose_A=transpose_A,
+            transpose_B=transpose_B,
+            alpha=1.0,
+            beta=0.0,
+        )
+        D_reg = D_f.local(2, 2)
+        for rM, rN in Tx.grid(2, 2):
+            D_g[lane // 4 + 8 * rM, 2 * (lane % 4) + rN] = D_reg[rM, rN]
 
     return gemm
 
@@ -462,30 +442,26 @@ def test_cuda_gemm_mma_numerical(dtype):
         _cta = Tx.cta_id([1])
         _warp = Tx.warp_id([1])
         lane = Tx.lane_id([32])
-        with Tx.cta():
-            A_f = Tx.alloc_buffer((16, 16), dtype, scope="local", layout=A_FRAG)
-            B_f = Tx.alloc_buffer((16, 8), dtype, scope="local", layout=B_FRAG)
-            D_f = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
-            with Tx.warp():
-                A_reg = A_f.local(8)
-                for s in Tx.unroll(8):
-                    kp = s % 2
-                    kHi = (s // 2) % 2
-                    rM = s // 4
-                    A_reg[s] = A_g[lane // 4 + 8 * rM, 2 * (lane % 4) + kp + 8 * kHi]
-                B_reg = B_f.local(4)
-                for s in Tx.unroll(4):
-                    kp = s % 2
-                    kHi = s // 2
-                    B_reg[s] = B_g[2 * (lane % 4) + kp + 8 * kHi, lane // 4]
-                Tx.gemm(
-                    D_f, A_f, B_f, D_f, transpose_A=False, transpose_B=False, alpha=1.0, beta=0.0
-                )
-                D_reg = D_f.local(4)
-                for s in Tx.unroll(4):
-                    rN = s % 2
-                    rM = s // 2
-                    D_g[lane // 4 + 8 * rM, 2 * (lane % 4) + rN] = D_reg[s]
+        A_f = Tx.alloc_buffer((16, 16), dtype, scope="local", layout=A_FRAG)
+        B_f = Tx.alloc_buffer((16, 8), dtype, scope="local", layout=B_FRAG)
+        D_f = Tx.alloc_buffer((16, 8), "float32", scope="local", layout=D_FRAG)
+        A_reg = A_f.local(8)
+        for s in Tx.unroll(8):
+            kp = s % 2
+            kHi = (s // 2) % 2
+            rM = s // 4
+            A_reg[s] = A_g[lane // 4 + 8 * rM, 2 * (lane % 4) + kp + 8 * kHi]
+        B_reg = B_f.local(4)
+        for s in Tx.unroll(4):
+            kp = s % 2
+            kHi = s // 2
+            B_reg[s] = B_g[2 * (lane % 4) + kp + 8 * kHi, lane // 4]
+        Tx.warp.gemm(D_f, A_f, B_f, D_f, transpose_A=False, transpose_B=False, alpha=1.0, beta=0.0)
+        D_reg = D_f.local(4)
+        for s in Tx.unroll(4):
+            rN = s % 2
+            rM = s // 2
+            D_g[lane // 4 + 8 * rM, 2 * (lane % 4) + rN] = D_reg[s]
 
     dev = tvm.cuda(0)
     with tvm.target.Target("cuda"):

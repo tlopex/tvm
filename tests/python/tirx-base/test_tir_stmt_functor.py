@@ -670,8 +670,7 @@ def create_test_statements():
     # OpCall
     @T.prim_func(s_tir=True)
     def op_call(A: T.Buffer((10,), "int32"), B: T.Buffer((10,), "int32")):
-        with T.thread():
-            T.add(A, B, 1.0)
+        T.add(A, B, 1.0)
 
     return {
         "evaluate": evaluate_stmt,
@@ -684,7 +683,7 @@ def create_test_statements():
         "if_then_else": if_then_else,
         "for_with_break": func.body,
         "decl_buffer": buffer_decl,
-        "op_call": op_call.body.body,
+        "op_call": op_call.body,
     }
 
 

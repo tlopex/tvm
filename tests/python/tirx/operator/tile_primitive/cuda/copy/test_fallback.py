@@ -82,12 +82,10 @@ def _build_round_trip_kernel(scope, n_threads, shape, dtype):
             Tx.cta_id([1])
             Tx.lane_id([32])
             Tx.thread_id([n_threads])
-            with Tx.cta():
-                A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
-                with Tx.warp():
-                    Tx.copy(A_smem[full], A[full])
-                    Tx.cuda.cta_sync()
-                    Tx.copy(B[full], A_smem[full])
+            A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+            Tx.warp.copy(A_smem[full], A[full])
+            Tx.cuda.cta_sync()
+            Tx.warp.copy(B[full], A_smem[full])
 
     elif scope == "warpgroup":
 
@@ -102,12 +100,10 @@ def _build_round_trip_kernel(scope, n_threads, shape, dtype):
             Tx.lane_id([32])
             Tx.thread_id_in_wg([128])
             Tx.thread_id([n_threads])
-            with Tx.cta():
-                A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
-                with Tx.warpgroup():
-                    Tx.copy(A_smem[full], A[full])
-                    Tx.cuda.cta_sync()
-                    Tx.copy(B[full], A_smem[full])
+            A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+            Tx.wg.copy(A_smem[full], A[full])
+            Tx.cuda.cta_sync()
+            Tx.wg.copy(B[full], A_smem[full])
 
     elif scope == "cta":
 
@@ -120,11 +116,10 @@ def _build_round_trip_kernel(scope, n_threads, shape, dtype):
             Tx.warp_id([n_threads // 32])
             Tx.lane_id([32])
             Tx.thread_id([n_threads])
-            with Tx.cta():
-                A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
-                Tx.copy(A_smem[full], A[full])
-                Tx.cuda.cta_sync()
-                Tx.copy(B[full], A_smem[full])
+            A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+            Tx.cta.copy(A_smem[full], A[full])
+            Tx.cuda.cta_sync()
+            Tx.cta.copy(B[full], A_smem[full])
 
     else:
         raise ValueError(f"unsupported scope {scope!r}")
@@ -179,11 +174,10 @@ def test_fallback_thread_scope():
         Tx.device_entry()
         Tx.cta_id([1])
         Tx.thread_id([1])
-        with Tx.thread():
-            A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
-            Tx.copy(A_smem[full], A[full])
-            Tx.cuda.cta_sync()
-            Tx.copy(B[full], A_smem[full])
+        A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+        Tx.copy(A_smem[full], A[full])
+        Tx.cuda.cta_sync()
+        Tx.copy(B[full], A_smem[full])
 
     dev = tvm.cuda(0)
     target = tvm.target.Target("cuda")
@@ -218,10 +212,9 @@ def test_fallback_emits_gate():
         Tx.warp_id([8])  # 256 threads => 8 warps
         Tx.lane_id([32])
         Tx.thread_id([256])
-        with Tx.cta():
-            A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
-            Tx.copy(A_smem[full], A[full])
-            Tx.copy(B[full], A_smem[full])
+        A_smem = Tx.alloc_buffer(shape, dtype, scope="shared", layout=s_layout)
+        Tx.cta.copy(A_smem[full], A[full])
+        Tx.cta.copy(B[full], A_smem[full])
 
     target = tvm.target.Target("cuda")
     with target, pytest.warns(UserWarning, match="copy/fallback"):

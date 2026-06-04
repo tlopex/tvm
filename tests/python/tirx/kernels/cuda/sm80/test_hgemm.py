@@ -245,79 +245,75 @@ def test_hgemm_ampere():
         Tx.device_entry()
         bx, by = Tx.cta_id([M // MI, N // NI])
         tx, ty, tz = Tx.thread_id([32, 2, 2])
+        # 4-pipeline + ld_matrix + ptx_mma
+        SA = Tx.alloc_buffer([4, MI, KI], dtype="float16", scope="shared.dyn")
+        SB = Tx.alloc_buffer([4, NI, KI], dtype="float16", scope="shared.dyn")
+        C_smem = Tx.alloc_buffer([MI, NI], dtype="float32", scope="shared.dyn")
 
-        with Tx.cta():
-            # 4-pipeline + ld_matrix + ptx_mma
-            SA = Tx.alloc_buffer([4, MI, KI], dtype="float16", scope="shared.dyn")
-            SB = Tx.alloc_buffer([4, NI, KI], dtype="float16", scope="shared.dyn")
-            C_smem = Tx.alloc_buffer([MI, NI], dtype="float32", scope="shared.dyn")
+        fragA = Tx.alloc_buffer([2, 16], dtype="uint32", scope="local")
+        fragB = Tx.alloc_buffer([2, 16], dtype="uint32", scope="local")
+        Accum = Tx.alloc_buffer([128], dtype="float32", scope="local")
+        for idx in Tx.serial(128):
+            Accum[idx] = 0.0
 
-            fragA = Tx.alloc_buffer([2, 16], dtype="uint32", scope="local")
-            fragB = Tx.alloc_buffer([2, 16], dtype="uint32", scope="local")
-            Accum = Tx.alloc_buffer([128], dtype="float32", scope="local")
+        load_global_to_shared_A(tz, ty, tx, by, SA, 0, A, 0, KI, K)
+        load_global_to_shared_B(tz, ty, tx, bx, SB, 0, B, 0, KI, K)
+        Tx.ptx.cp_async.commit_group()
 
-            with Tx.thread():
-                for idx in Tx.serial(128):
-                    Accum[idx] = 0.0
+        load_global_to_shared_A(tz, ty, tx, by, SA, 1, A, 1, KI, K)
+        load_global_to_shared_B(tz, ty, tx, bx, SB, 1, B, 1, KI, K)
+        Tx.ptx.cp_async.commit_group()
 
-                load_global_to_shared_A(tz, ty, tx, by, SA, 0, A, 0, KI, K)
-                load_global_to_shared_B(tz, ty, tx, bx, SB, 0, B, 0, KI, K)
-                Tx.ptx.cp_async.commit_group()
+        load_global_to_shared_A(tz, ty, tx, by, SA, 2, A, 2, KI, K)
+        load_global_to_shared_B(tz, ty, tx, bx, SB, 2, B, 2, KI, K)
+        Tx.ptx.cp_async.commit_group()
 
-                load_global_to_shared_A(tz, ty, tx, by, SA, 1, A, 1, KI, K)
-                load_global_to_shared_B(tz, ty, tx, bx, SB, 1, B, 1, KI, K)
-                Tx.ptx.cp_async.commit_group()
+        Tx.ptx.cp_async.wait_group(2)
+        Tx.cuda.cta_sync()
 
-                load_global_to_shared_A(tz, ty, tx, by, SA, 2, A, 2, KI, K)
-                load_global_to_shared_B(tz, ty, tx, bx, SB, 2, B, 2, KI, K)
-                Tx.ptx.cp_async.commit_group()
+        loadFragA(fragA, 0, SA, 0, 0, tx, tz)
+        loadFragB(fragB, 0, SB, 0, 0, tx, ty)
 
-                Tx.ptx.cp_async.wait_group(2)
-                Tx.cuda.cta_sync()
+        for ko_idx in Tx.serial(K // KI):
+            ko = Tx.meta_var(ko_idx)
 
-                loadFragA(fragA, 0, SA, 0, 0, tx, tz)
-                loadFragB(fragB, 0, SB, 0, 0, tx, ty)
+            slice_in: Tx.let = ko % 4
+            loadFragA(fragA, 1, SA, slice_in, 1, tx, tz)
+            loadFragB(fragB, 1, SB, slice_in, 1, tx, ty)
 
-                for ko_idx in Tx.serial(K // KI):
-                    ko = Tx.meta_var(ko_idx)
+            for mii in Tx.serial(MII // wmmaM):
+                for nii in Tx.serial(NII // wmmaN):
+                    n = (NII // wmmaN - 1 - nii) if Tx.meta_var(mii & 1) else nii
+                    mmaSync(fragA, mii * 4, fragB, n * 4, Accum, mii * 32 + n * 8)
 
-                    slice_in: Tx.let = ko % 4
-                    loadFragA(fragA, 1, SA, slice_in, 1, tx, tz)
-                    loadFragB(fragB, 1, SB, slice_in, 1, tx, ty)
+            if ko + 3 < K // KI:
+                slice_out = (ko + 3) % 4
+                load_global_to_shared_A(tz, ty, tx, by, SA, slice_out, A, ko + 3, KI, K)
+                load_global_to_shared_B(tz, ty, tx, bx, SB, slice_out, B, ko + 3, KI, K)
 
-                    for mii in Tx.serial(MII // wmmaM):
-                        for nii in Tx.serial(NII // wmmaN):
-                            n = (NII // wmmaN - 1 - nii) if Tx.meta_var(mii & 1) else nii
-                            mmaSync(fragA, mii * 4, fragB, n * 4, Accum, mii * 32 + n * 8)
+            Tx.ptx.cp_async.commit_group()
+            Tx.ptx.cp_async.wait_group(2)
+            Tx.cuda.cta_sync()
 
-                    if ko + 3 < K // KI:
-                        slice_out = (ko + 3) % 4
-                        load_global_to_shared_A(tz, ty, tx, by, SA, slice_out, A, ko + 3, KI, K)
-                        load_global_to_shared_B(tz, ty, tx, bx, SB, slice_out, B, ko + 3, KI, K)
+            next_slice = (ko + 1) % 4
+            loadFragA(fragA, 0, SA, next_slice, 0, tx, tz)
+            loadFragB(fragB, 0, SB, next_slice, 0, tx, ty)
 
-                    Tx.ptx.cp_async.commit_group()
-                    Tx.ptx.cp_async.wait_group(2)
-                    Tx.cuda.cta_sync()
+            for mii in Tx.serial(MII // wmmaM):
+                for nii in Tx.serial(NII // wmmaN):
+                    n = (NII // wmmaN - 1 - nii) if Tx.meta_var(mii & 1) else nii
+                    mmaSync(
+                        fragA,
+                        16 * 1 + mii * 4,
+                        fragB,
+                        16 * 1 + n * 4,
+                        Accum,
+                        mii * 32 + n * 8,
+                    )
 
-                    next_slice = (ko + 1) % 4
-                    loadFragA(fragA, 0, SA, next_slice, 0, tx, tz)
-                    loadFragB(fragB, 0, SB, next_slice, 0, tx, ty)
-
-                    for mii in Tx.serial(MII // wmmaM):
-                        for nii in Tx.serial(NII // wmmaN):
-                            n = (NII // wmmaN - 1 - nii) if Tx.meta_var(mii & 1) else nii
-                            mmaSync(
-                                fragA,
-                                16 * 1 + mii * 4,
-                                fragB,
-                                16 * 1 + n * 4,
-                                Accum,
-                                mii * 32 + n * 8,
-                            )
-
-                store_accum_to_shared(tz, ty, tx, C_smem, Accum)
-                Tx.cuda.cta_sync()
-                store_shared_to_global(tz, ty, tx, bx, by, C, C_smem)
+        store_accum_to_shared(tz, ty, tx, C_smem, Accum)
+        Tx.cuda.cta_sync()
+        store_shared_to_global(tz, ty, tx, bx, by, C, C_smem)
 
     np.random.seed(0)
     A_np = np.random.randn(M, K).astype(np.float16)

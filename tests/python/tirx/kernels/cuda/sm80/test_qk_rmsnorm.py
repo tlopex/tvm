@@ -93,81 +93,79 @@ def get_qk_norm_kernel(head_dim, dtype="float16"):
         Tx.device_entry()
         bx = Tx.cta_id([cta_count])
         tx, ty = Tx.thread_id([bdx, bdy])
+                # Load scalar parameters
+        eps = Tx.alloc_local([1], "float32")
+        weight_bias = Tx.alloc_local([1], "float32")
+        bound_m = Tx.alloc_local([1], "int32")
+        q_job_cnt = Tx.alloc_local([1], "int32")
+        total_jobs = Tx.alloc_local([1], "int32")
 
-        with Tx.thread():
-                    # Load scalar parameters
-            eps = Tx.alloc_local([1], "float32")
-            weight_bias = Tx.alloc_local([1], "float32")
-            bound_m = Tx.alloc_local([1], "int32")
-            q_job_cnt = Tx.alloc_local([1], "int32")
-            total_jobs = Tx.alloc_local([1], "int32")
+        eps[0] = eps_global[0]
+        weight_bias[0] = weight_bias_global[0]
+        bound_m[0] = bound_m_global[0]
+        q_job_cnt[0] = Tx.min(num_tokens, bound_m[0]) * qo_heads
+        total_jobs[0] = q_job_cnt[0] + Tx.min(num_tokens, bound_m[0]) * kv_heads
 
-            eps[0] = eps_global[0]
-            weight_bias[0] = weight_bias_global[0]
-            bound_m[0] = bound_m_global[0]
-            q_job_cnt[0] = Tx.min(num_tokens, bound_m[0]) * qo_heads
-            total_jobs[0] = q_job_cnt[0] + Tx.min(num_tokens, bound_m[0]) * kv_heads
+                # Register allocation for single-pass algorithm
+        x_reg = Tx.alloc_local([vec_size], dtype)
+        x_reg_f32 = Tx.alloc_local([vec_size], "float32")
+        weight_reg = Tx.alloc_local([vec_size], dtype)
+        weight_reg_f32 = Tx.alloc_local([vec_size], "float32")
+        out_reg = Tx.alloc_local([vec_size], dtype)
+        sum_sq = Tx.alloc_local([1], "float32")
+        rms_inv = Tx.alloc_local([1], "float32")
+        row_idx = Tx.alloc_local([1], "int32")
+        actual_row = Tx.alloc_local([1], "int32")
 
-                    # Register allocation for single-pass algorithm
-            x_reg = Tx.alloc_local([vec_size], dtype)
-            x_reg_f32 = Tx.alloc_local([vec_size], "float32")
-            weight_reg = Tx.alloc_local([vec_size], dtype)
-            weight_reg_f32 = Tx.alloc_local([vec_size], "float32")
-            out_reg = Tx.alloc_local([vec_size], dtype)
-            sum_sq = Tx.alloc_local([1], "float32")
-            rms_inv = Tx.alloc_local([1], "float32")
-            row_idx = Tx.alloc_local([1], "int32")
-            actual_row = Tx.alloc_local([1], "int32")
+                # Non-persistent: each CTA handles one batch of rows
+        row_idx[0] = bx * rows_per_cta + ty
 
-                    # Non-persistent: each CTA handles one batch of rows
-            row_idx[0] = bx * rows_per_cta + ty
+        if row_idx[0] < total_jobs[0]:
+                        # Determine Q or K
+                is_q = Tx.meta_var(row_idx[0] < q_job_cnt[0])
+                qk_ptr: Tx.let[Tx.Var(name="qk_ptr", dtype=PointerType(PrimType(dtype)))] = Tx.if_then_else(is_q, q.data, k.data)  # noqa: E501
+                weight_ptr: Tx.let[Tx.Var(name="weight_ptr", dtype=PointerType(PrimType(dtype)))] = Tx.if_then_else(is_q, q_weight.data, k_weight.data)  # noqa: E501
+                batch_size = Tx.meta_var(Tx.if_then_else(is_q, num_tokens * qo_heads, num_tokens * kv_heads))  # noqa: E501
 
-            if row_idx[0] < total_jobs[0]:
-                            # Determine Q or K
-                    is_q = Tx.meta_var(row_idx[0] < q_job_cnt[0])
-                    qk_ptr: Tx.let[Tx.Var(name="qk_ptr", dtype=PointerType(PrimType(dtype)))] = Tx.if_then_else(is_q, q.data, k.data)  # noqa: E501
-                    weight_ptr: Tx.let[Tx.Var(name="weight_ptr", dtype=PointerType(PrimType(dtype)))] = Tx.if_then_else(is_q, q_weight.data, k_weight.data)  # noqa: E501
-                    batch_size = Tx.meta_var(Tx.if_then_else(is_q, num_tokens * qo_heads, num_tokens * kv_heads))  # noqa: E501
+                if is_q:
+                    actual_row[0] = row_idx[0]
+                else:
+                    actual_row[0] = row_idx[0] - q_job_cnt[0]
 
-                    if is_q:
-                        actual_row[0] = row_idx[0]
-                    else:
-                        actual_row[0] = row_idx[0] - q_job_cnt[0]
+                qk = Tx.decl_buffer(data=qk_ptr, shape=[batch_size, head_dim], dtype=dtype)
+                weight = Tx.decl_buffer(data=weight_ptr, shape=[head_dim], dtype=dtype)
 
-                    qk = Tx.decl_buffer(data=qk_ptr, shape=[batch_size, head_dim], dtype=dtype)
-                    weight = Tx.decl_buffer(data=weight_ptr, shape=[head_dim], dtype=dtype)
+                        # ============ SINGLE PASS: Load + Sum Squares ============
+                col_offset = Tx.meta_var(tx * vec_size)
 
-                            # ============ SINGLE PASS: Load + Sum Squares ============
-                    col_offset = Tx.meta_var(tx * vec_size)
+                Tx.copy(x_reg[:], qk[actual_row[0], col_offset:col_offset + vec_size])
+                Tx.cast(x_reg_f32[:], x_reg[:])
 
-                    Tx.copy(x_reg[:], qk[actual_row[0], col_offset:col_offset + vec_size])
-                    Tx.cast(x_reg_f32[:], x_reg[:])
+                sum_sq[0] = 0.0
+                for vi in Tx.unroll(vec_size):
+                    sum_sq[0] += x_reg_f32[vi] * x_reg_f32[vi]
 
-                    sum_sq[0] = 0.0
-                    for vi in Tx.unroll(vec_size):
-                        sum_sq[0] += x_reg_f32[vi] * x_reg_f32[vi]
+                        # ============ Warp Reduction for sum_sq ============
+                        # Reduce within threads_per_row threads handling the same row
+                for kr in Tx.unroll(shuffle_steps):
+                    mask = Tx.meta_var(threads_per_row >> (kr + 1))
+                    if mask > 0:
+                        sum_sq[0] = sum_sq[0] + Tx.tvm_warp_shuffle_xor(0xFFFFFFFF, sum_sq[0], mask, 32, 32)  # noqa: E501
 
-                            # ============ Warp Reduction for sum_sq ============
-                            # Reduce within threads_per_row threads handling the same row
-                    for kr in Tx.unroll(shuffle_steps):
-                        mask = Tx.meta_var(threads_per_row >> (kr + 1))
-                        if mask > 0:
-                            sum_sq[0] = sum_sq[0] + Tx.tvm_warp_shuffle_xor(0xFFFFFFFF, sum_sq[0], mask, 32, 32)  # noqa: E501
+                        # Compute RMS inverse
+                rms_inv[0] = Tx.rsqrt(sum_sq[0] / head_dim + eps[0])
 
-                            # Compute RMS inverse
-                    rms_inv[0] = Tx.rsqrt(sum_sq[0] / head_dim + eps[0])
+                        # ============ SINGLE PASS: Normalize + Write Back ============
+                        # Load weight directly from global memory to registers
+                Tx.copy(weight_reg[:], weight[col_offset:col_offset + vec_size])
+                Tx.cast(weight_reg_f32[:], weight_reg[:])
 
-                            # ============ SINGLE PASS: Normalize + Write Back ============
-                            # Load weight directly from global memory to registers
-                    Tx.copy(weight_reg[:], weight[col_offset:col_offset + vec_size])
-                    Tx.cast(weight_reg_f32[:], weight_reg[:])
+                for vi in Tx.unroll(vec_size):
+                    weight_reg_f32[vi] = weight_reg_f32[vi] + weight_bias[0]
+                    x_reg_f32[vi] = x_reg_f32[vi] * rms_inv[0] * weight_reg_f32[vi]
 
-                    for vi in Tx.unroll(vec_size):
-                        weight_reg_f32[vi] = weight_reg_f32[vi] + weight_bias[0]
-                        x_reg_f32[vi] = x_reg_f32[vi] * rms_inv[0] * weight_reg_f32[vi]
-
-                    Tx.cast(out_reg[:], x_reg_f32[:])
-                    Tx.copy(qk[actual_row[0], col_offset:col_offset + vec_size], out_reg[:])
+                Tx.cast(out_reg[:], x_reg_f32[:])
+                Tx.copy(qk[actual_row[0], col_offset:col_offset + vec_size], out_reg[:])
 
         # fmt: on
 

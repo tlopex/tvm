@@ -284,10 +284,9 @@ def _emit_32x32b_path(
     # fmt: off
     @Tx.prim_func(check_well_formed=False)
     def impl():
-        with Tx.warp():
-            local_storage = local_buf.view(local_buf.shape[1] * elem_per_32b, layout=TileLayout(S[num * elem_per_32b]))  # noqa: E501
-            local_32b = local_storage.view("uint32")
-            op(tmem_buf.allocated_addr[0], *[local_32b[local_st[1] // elem_per_32b+i] for i in range(num)], shape="32x32b", num=num, row=0, col=offset_32b)  # noqa: E501
+        local_storage = local_buf.view(local_buf.shape[1] * elem_per_32b, layout=TileLayout(S[num * elem_per_32b]))  # noqa: E501
+        local_32b = local_storage.view("uint32")
+        op(tmem_buf.allocated_addr[0], *[local_32b[local_st[1] // elem_per_32b+i] for i in range(num)], shape="32x32b", num=num, row=0, col=offset_32b)  # noqa: E501
     # fmt: on
     return impl
 
@@ -407,19 +406,18 @@ def _emit_16xnb_path(
     # fmt: off
     @Tx.prim_func(check_well_formed=False)
     def impl():
-        with Tx.warp():
-            # Per-thread 1-D flat view of the local storage, then a uint32 view
-            # for the register-pointer arguments of the PTX builtin.
-            local_storage = local_buf.view(per_thread_elems, layout=TileLayout(S[per_thread_elems]))
-            local_32b = local_storage.view("uint32")
-            local_reg_base = local_col_off_elems // elem_per_32b
-            for slab in range(n_slabs):
-                reg_base = slab * regs_per_thread_per_slab
-                op(
-                    tmem_buf.allocated_addr[0],
-                    *[local_32b[local_reg_base + reg_base + i] for i in range(regs_per_thread_per_slab)],  # noqa: E501
-                    shape=shape, num=num, row=slab * 16, col=col_off_32b,
-                )
+        # Per-thread 1-D flat view of the local storage, then a uint32 view
+        # for the register-pointer arguments of the PTX builtin.
+        local_storage = local_buf.view(per_thread_elems, layout=TileLayout(S[per_thread_elems]))
+        local_32b = local_storage.view("uint32")
+        local_reg_base = local_col_off_elems // elem_per_32b
+        for slab in range(n_slabs):
+            reg_base = slab * regs_per_thread_per_slab
+            op(
+                tmem_buf.allocated_addr[0],
+                *[local_32b[local_reg_base + reg_base + i] for i in range(regs_per_thread_per_slab)],  # noqa: E501
+                shape=shape, num=num, row=slab * 16, col=col_off_32b,
+            )
     # fmt: on
     return impl
 

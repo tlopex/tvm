@@ -83,14 +83,13 @@ def test_copy_g2s_s2g_cta_vec_load(task, dtype):
         Tx.device_entry()
         cta_id = Tx.cta_id([1])
         tid = Tx.thread_id([thread_cnt])
-        with Tx.cta():
-            A_smem = Tx.alloc_buffer(s_shape, dtype, scope="shared", layout=layoutS)
+        A_smem = Tx.alloc_buffer(s_shape, dtype, scope="shared", layout=layoutS)
 
-            Tx.copy_async(A_smem[tuple(r_smem)], A[tuple(r_gmem)], dispatch="ldgsts")
-            Tx.ptx.cp_async.commit_group()
-            Tx.ptx.cp_async.wait_group()
-            Tx.cuda.cta_sync()
-            Tx.copy(B[tuple(r_gmem)], A_smem[tuple(r_smem)])
+        Tx.cta.copy_async(A_smem[tuple(r_smem)], A[tuple(r_gmem)], dispatch="ldgsts")
+        Tx.ptx.cp_async.commit_group()
+        Tx.ptx.cp_async.wait_group()
+        Tx.cuda.cta_sync()
+        Tx.cta.copy(B[tuple(r_gmem)], A_smem[tuple(r_smem)])
         # fmt: on
 
     np_dtype = tvm.testing.np_dtype_from_str(dtype)

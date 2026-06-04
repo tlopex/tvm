@@ -28,8 +28,6 @@ target = tvm.target.Target("aws/trn1/trn1.2xlarge")
 
 def _strip_exec_scope_stmt(stmt):
     def _postorder(node):
-        if isinstance(node, tvm.tirx.ExecScopeStmt):
-            return node.body
         if isinstance(node, tvm.tirx.AttrStmt) and node.attr_key == "tirx.device_entry":
             return node.body
         return node
@@ -38,7 +36,7 @@ def _strip_exec_scope_stmt(stmt):
         stmt,
         preorder=lambda _node: None,
         postorder=_postorder,
-        only_enable=["tirx.ExecScopeStmt", "tirx.AttrStmt"],
+        only_enable=["tirx.AttrStmt"],
     )
 
 
@@ -75,21 +73,19 @@ def test_simple_unary(op_type):
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "unary"})
-
-        with Tx.thread():
-            A_sbuf = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
-            for b_loop in Tx.serial(0, 1):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                    for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
-                        if op_type == "reciprocal":
-                            Tx.nki.reciprocal(
-                                B_sbuf[p_loop, f_loop], A_sbuf[p_loop, f_loop]
-                            )
-                        elif op_type == "memset":
-                            Tx.nki.memset(B_sbuf[p_loop, f_loop], 0.0)
-                # fmt: on
+        A_sbuf = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
+        for b_loop in Tx.serial(0, 1):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
+                    if op_type == "reciprocal":
+                        Tx.nki.reciprocal(
+                            B_sbuf[p_loop, f_loop], A_sbuf[p_loop, f_loop]
+                        )
+                    elif op_type == "memset":
+                        Tx.nki.memset(B_sbuf[p_loop, f_loop], 0.0)
+            # fmt: on
     with target:
         mod = tvm.IRModule({"main": unary})
         mod = tvm.tirx.transform.LowerTIRx()(mod)
@@ -122,21 +118,19 @@ def test_unary_in_a_loop(op_type):
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "unary"})
-
-        with Tx.thread():
-            A_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
-            A_sbuf_view = Tx.decl_buffer((128, 4096), data=A_sbuf.data, scope="trn.sbuf", layout=None)  # noqa: E501
-            B_sbuf_view = Tx.decl_buffer((128, 2048), data=B_sbuf.data, scope="trn.sbuf", layout=None)  # noqa: E501
-            for i, b_loop in Tx.grid(4, 1):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                    for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
-                        if op_type == "reciprocal":
-                            Tx.nki.reciprocal(B_sbuf_view[p_loop, i * 512 + f_loop], A_sbuf_view[p_loop, i * 1024 + f_loop])  # noqa: E501
-                        elif op_type == "memset":
-                            Tx.nki.memset(B_sbuf[p_loop, i * 512 + f_loop], 0.0)
-                # fmt: on
+        A_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
+        A_sbuf_view = Tx.decl_buffer((128, 4096), data=A_sbuf.data, scope="trn.sbuf", layout=None)
+        B_sbuf_view = Tx.decl_buffer((128, 2048), data=B_sbuf.data, scope="trn.sbuf", layout=None)
+        for i, b_loop in Tx.grid(4, 1):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
+                    if op_type == "reciprocal":
+                        Tx.nki.reciprocal(B_sbuf_view[p_loop, i * 512 + f_loop], A_sbuf_view[p_loop, i * 1024 + f_loop])  # noqa: E501
+                    elif op_type == "memset":
+                        Tx.nki.memset(B_sbuf[p_loop, i * 512 + f_loop], 0.0)
+            # fmt: on
     with target:
         mod = tvm.IRModule({"main": unary})
         mod = tvm.tirx.transform.LowerTIRx()(mod)
@@ -157,15 +151,13 @@ def test_unary_complex1():
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "unary"})
-
-        with Tx.thread():
-            A_sbuf = Tx.alloc_buffer((128, 8192), scope="trn.sbuf")
-            for b_loop in Tx.serial(0, 16):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                    for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
-                        Tx.nki.memset(A_sbuf[p_loop, b_loop * 512 + f_loop], Tx.float32(0.0))
-                # fmt: on
+        A_sbuf = Tx.alloc_buffer((128, 8192), scope="trn.sbuf")
+        for b_loop in Tx.serial(0, 16):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
+                    Tx.nki.memset(A_sbuf[p_loop, b_loop * 512 + f_loop], Tx.float32(0.0))
+            # fmt: on
     with target:
         mod = tvm.IRModule({"main": unary})
         mod = tvm.tirx.transform.LowerTIRx()(mod)
@@ -195,17 +187,15 @@ def test_unary_with_bias_scale(op_type):
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "unary"})
-
-        with Tx.thread():
-            A_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 4), scope="trn.sbuf")
-            C_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
-            for b_loop in Tx.serial(0, 8):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                    for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
-                        Tx.nki.activation(C_sbuf[p_loop, b_loop * 512  + f_loop], A_sbuf[p_loop, b_loop * 512 + f_loop], op_type, B_sbuf[p_loop, b_loop//2], Tx.float32(2.0))  # noqa: E501
-                # fmt: off
+        A_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 4), scope="trn.sbuf")
+        C_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
+        for b_loop in Tx.serial(0, 8):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
+                    Tx.nki.activation(C_sbuf[p_loop, b_loop * 512  + f_loop], A_sbuf[p_loop, b_loop * 512 + f_loop], op_type, B_sbuf[p_loop, b_loop//2], Tx.float32(2.0))  # noqa: E501
+            # fmt: off
     with target:
         mod = tvm.IRModule({"main": unary})
         mod = tvm.tirx.transform.LowerTIRx()(mod)
@@ -233,21 +223,19 @@ def test_unary_with_bias_scale_2(op_type):
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "unary"})
-
-        with Tx.thread():
-            const_bias = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
-            with Tx.attr(0, "tensorized_nki_instruction", 1):
-                for p_loop in Tx.serial(128, annotations={"nki_dim": "P"}):
-                    for f_loop in Tx.serial(512, annotations={"nki_dim": "F"}):
-                        Tx.nki.memset(const_bias[p_loop, f_loop], Tx.float32(1.0))
-            A_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
-            C_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
-            for b_loop in Tx.serial(0, 8):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(128, annotations={"nki_dim": "P"}):
-                    for f_loop in Tx.serial(512, annotations={"nki_dim": "F"}):
-                        Tx.nki.activation(C_sbuf[p_loop, b_loop * 512 + f_loop], A_sbuf[p_loop, b_loop * 512 + f_loop], op_type, const_bias[p_loop, f_loop], Tx.float32(2.0))  # noqa: E501
-                # fmt: off
+        const_bias = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
+        with Tx.attr(0, "tensorized_nki_instruction", 1):
+            for p_loop in Tx.serial(128, annotations={"nki_dim": "P"}):
+                for f_loop in Tx.serial(512, annotations={"nki_dim": "F"}):
+                    Tx.nki.memset(const_bias[p_loop, f_loop], Tx.float32(1.0))
+        A_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
+        C_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
+        for b_loop in Tx.serial(0, 8):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(128, annotations={"nki_dim": "P"}):
+                for f_loop in Tx.serial(512, annotations={"nki_dim": "F"}):
+                    Tx.nki.activation(C_sbuf[p_loop, b_loop * 512 + f_loop], A_sbuf[p_loop, b_loop * 512 + f_loop], op_type, const_bias[p_loop, f_loop], Tx.float32(2.0))  # noqa: E501
+            # fmt: off
     with target:
         mod = tvm.IRModule({"main": unary})
         mod = tvm.tirx.transform.trn.TrnPrivateBufferAlloc()(mod)
@@ -278,18 +266,16 @@ def test_unary_with_guard():
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "unary"})
-
-        with Tx.thread():
-            A_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 4), scope="trn.sbuf")
-            C_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
-            for i, j, b_loop in Tx.grid(4, 4, 8):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                    for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
-                        if b_loop // 2 - i < 1 and b_loop % 2 * 512 + f_loop < j * 256 + 256:
-                            Tx.nki.activation(C_sbuf[p_loop, b_loop * 512 + f_loop], A_sbuf[p_loop, b_loop * 512 + f_loop], "sqrt", B_sbuf[p_loop, b_loop // 2], Tx.float32(2.0))  # noqa: E501
-                 # fmt: off
+        A_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 4), scope="trn.sbuf")
+        C_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
+        for i, j, b_loop in Tx.grid(4, 4, 8):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
+                    if b_loop // 2 - i < 1 and b_loop % 2 * 512 + f_loop < j * 256 + 256:
+                        Tx.nki.activation(C_sbuf[p_loop, b_loop * 512 + f_loop], A_sbuf[p_loop, b_loop * 512 + f_loop], "sqrt", B_sbuf[p_loop, b_loop // 2], Tx.float32(2.0))  # noqa: E501
+             # fmt: off
     with target:
         mod = tvm.IRModule({"main": unary})
         mod = tvm.tirx.transform.LowerTIRx()(mod)

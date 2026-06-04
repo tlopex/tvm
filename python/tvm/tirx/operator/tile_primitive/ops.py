@@ -19,7 +19,7 @@
 
 from tvm.ir import Op
 from tvm.tirx import PrimExpr
-from tvm.tirx.stmt import TilePrimitiveCall, _ffi_api, normalize_const_arg
+from tvm.tirx.stmt import TilePrimitiveCall
 
 
 def get_tirx_op(op_name: str):
@@ -605,25 +605,3 @@ class PermuteLayout(TilePrimitiveCall):
     @property
     def dsts(self) -> list[PrimExpr]:
         return [self.dst]
-
-
-class GenericOp(TilePrimitiveCall):
-    """Generic operator for dynamically-resolved TIRx ops."""
-
-    def __init__(self, *args, op_name=None, workspace=None, config=None, dispatch=None):
-        workspace = workspace or {}
-        config = config or {}
-        tirx_name = f"tirx.{op_name}"
-        try:
-            resolved_op = Op.get(tirx_name)
-        except Exception:
-            from tvm.ir import _ffi_api as ir_ffi
-            from tvm.ir.op import register_op_attr
-
-            ir_ffi.RegisterOp(tirx_name, f"Dynamic tirx op: {op_name}")
-            register_op_attr(tirx_name, "TIsTIRxOp", True)
-            resolved_op = Op.get(tirx_name)
-        args = list(map(normalize_const_arg, args))
-        self.__init_handle_by_constructor__(
-            _ffi_api.TilePrimitiveCall, resolved_op, args, workspace, config, dispatch
-        )

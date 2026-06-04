@@ -69,7 +69,6 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   TIRFrameNode::RegisterReflection();
   PrimFuncFrameNode::RegisterReflection();
   SBlockFrameNode::RegisterReflection();
-  ExecScopeFrameNode::RegisterReflection();
   BlockInitFrameNode::RegisterReflection();
   ForFrameNode::RegisterReflection();
   AssertFrameNode::RegisterReflection();
@@ -198,22 +197,6 @@ void SBlockFrameNode::ExitWithScope() {
     AddToParent(tvm::tirx::SBlockRealize(iter_values,
                                          predicate.value_or(IntImm(DataType::Bool(), 1)), block));
   }
-}
-
-void ExecScopeFrameNode::ExitWithScope() {
-  TIRFrameNode::ExitWithScope();
-  TVM_FFI_ICHECK(exec_scope.defined())
-      << "InternalError: ExecScopeFrame must have an execution scope";
-  tvm::tirx::Stmt body = AsStmt(stmts);
-  tvm::tirx::Stmt stmt = tvm::tirx::ExecScopeStmt(exec_scope.value(), body);
-  ffi::Optional<PrimExpr> guard = std::nullopt;
-  for (const PrimExpr& predicate : guards) {
-    guard = guard.defined() ? PrimExpr(guard.value() && predicate) : predicate;
-  }
-  if (guard.defined()) {
-    stmt = tvm::tirx::IfThenElse(guard.value(), stmt);
-  }
-  AddToParent(stmt);
 }
 
 void BlockInitFrameNode::EnterWithScope() {

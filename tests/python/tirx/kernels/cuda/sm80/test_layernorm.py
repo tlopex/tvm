@@ -69,58 +69,57 @@ def test_layernorm(dtype):
         tid = Tx.thread_id([NUM_WORKERS * 32])
         warp_id = Tx.warp_id([NUM_WORKERS])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            x_smem = Tx.alloc_buffer([NUM_WORKERS, PIPELINE_DEPTH, ATTN_D], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[NUM_WORKERS, PIPELINE_DEPTH, ATTN_D]))  # noqa: E501
-            resid_smem = Tx.alloc_buffer([NUM_WORKERS, PIPELINE_DEPTH, ATTN_D], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[NUM_WORKERS, PIPELINE_DEPTH, ATTN_D]))  # noqa: E501
-            norm_weight_smem = Tx.alloc_buffer([ATTN_D,], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[ATTN_D]))  # noqa: E501
-            norm_bias_smem = Tx.alloc_buffer([ATTN_D,], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[ATTN_D]))  # noqa: E501
-            mean = Tx.alloc_buffer([NUM_WORKERS, 1, 1], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[NUM_WORKERS, 1, 1]), align=8)  # noqa: E501
-            var = Tx.alloc_buffer([NUM_WORKERS, 1, 1], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[NUM_WORKERS, 1, 1]), align=8)  # noqa: E501
+        x_smem = Tx.alloc_buffer([NUM_WORKERS, PIPELINE_DEPTH, ATTN_D], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[NUM_WORKERS, PIPELINE_DEPTH, ATTN_D]))  # noqa: E501
+        resid_smem = Tx.alloc_buffer([NUM_WORKERS, PIPELINE_DEPTH, ATTN_D], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[NUM_WORKERS, PIPELINE_DEPTH, ATTN_D]))  # noqa: E501
+        norm_weight_smem = Tx.alloc_buffer([ATTN_D,], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[ATTN_D]))  # noqa: E501
+        norm_bias_smem = Tx.alloc_buffer([ATTN_D,], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[ATTN_D]))  # noqa: E501
+        mean = Tx.alloc_buffer([NUM_WORKERS, 1, 1], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[NUM_WORKERS, 1, 1]), align=8)  # noqa: E501
+        var = Tx.alloc_buffer([NUM_WORKERS, 1, 1], dtype, scope="shared", layout=Tx.TileLayout(Tx.S[NUM_WORKERS, 1, 1]), align=8)  # noqa: E501
 
-            Tx.copy(norm_bias_smem[:], norm_bias[:])
-            Tx.copy(norm_weight_smem[:], norm_weight[:])
+        Tx.cta.copy(norm_bias_smem[:], norm_bias[:])
+        Tx.cta.copy(norm_weight_smem[:], norm_weight[:])
+        Tx.cuda.cta_sync()
+
+        # two cp.async
+        non_bulk_copy = Tx.meta_var({"dispatch": "ldgsts"})
+        Tx.cta.copy_async(x_smem[:, 0, :], inp[by, 0, slice(bx * NUM_WORKERS, (bx + 1) * NUM_WORKERS), :], **non_bulk_copy)  # noqa: E501
+        Tx.cta.copy_async(resid_smem[:, 0, :], inp_resid[by, 0, slice(bx * NUM_WORKERS, (bx + 1) * NUM_WORKERS), :], **non_bulk_copy)  # noqa: E501
+        Tx.ptx.cp_async.commit_group()
+        Tx.cuda.cta_sync()
+
+        # main loop
+        n_loops = Tx.meta_var(Tx.ceildiv(N_PER_TILE, NUM_WORKERS))
+        for k in Tx.serial(n_loops):
+            curr_idx = Tx.meta_var((k + 0) * NUM_WORKERS)
+            next_idx = Tx.meta_var((k + 1) * NUM_WORKERS)
+
+            if k < n_loops - 1:
+                # TODO(@kathy): support pipeline token flip when pipeline is long
+                Tx.cta.copy_async(x_smem[:, 1, :], inp[by, 0, slice(bx * NUM_WORKERS + next_idx, (bx + 1) * NUM_WORKERS + next_idx), :], **non_bulk_copy)  # noqa: E501
+                Tx.cta.copy_async(resid_smem[:, 1, :], inp_resid[by, 0, slice(bx * NUM_WORKERS + next_idx, (bx + 1) * NUM_WORKERS + next_idx), :], **non_bulk_copy)  # noqa: E501
+                Tx.ptx.cp_async.commit_group()
+            Tx.ptx.cp_async.wait_group(0)
             Tx.cuda.cta_sync()
 
-            # two cp.async
-            non_bulk_copy = Tx.meta_var({"dispatch": "ldgsts"})
-            Tx.copy_async(x_smem[:, 0, :], inp[by, 0, slice(bx * NUM_WORKERS, (bx + 1) * NUM_WORKERS), :], **non_bulk_copy)  # noqa: E501
-            Tx.copy_async(resid_smem[:, 0, :], inp_resid[by, 0, slice(bx * NUM_WORKERS, (bx + 1) * NUM_WORKERS), :], **non_bulk_copy)  # noqa: E501
-            Tx.ptx.cp_async.commit_group()
-            Tx.cuda.cta_sync()
-
-            # main loop
-            n_loops = Tx.meta_var(Tx.ceildiv(N_PER_TILE, NUM_WORKERS))
-            for k in Tx.serial(n_loops):
-                curr_idx = Tx.meta_var((k + 0) * NUM_WORKERS)
-                next_idx = Tx.meta_var((k + 1) * NUM_WORKERS)
-
-                if k < n_loops - 1:
-                    # TODO(@kathy): support pipeline token flip when pipeline is long
-                    Tx.copy_async(x_smem[:, 1, :], inp[by, 0, slice(bx * NUM_WORKERS + next_idx, (bx + 1) * NUM_WORKERS + next_idx), :], **non_bulk_copy)  # noqa: E501
-                    Tx.copy_async(resid_smem[:, 1, :], inp_resid[by, 0, slice(bx * NUM_WORKERS + next_idx, (bx + 1) * NUM_WORKERS + next_idx), :], **non_bulk_copy)  # noqa: E501
-                    Tx.ptx.cp_async.commit_group()
-                Tx.ptx.cp_async.wait_group(0)
-                Tx.cuda.cta_sync()
-
-                # store residual
-                Tx.add(resid_smem[:, 0, :], resid_smem[:, 0, :], x_smem[:, 0, :])
-                Tx.copy(out_resid[by, 0, slice(bx * NUM_WORKERS + curr_idx, (bx + 1) * NUM_WORKERS + curr_idx), :], resid_smem[:, 0, :])  # noqa: E501
-                # numerator
-                Tx.sum(mean[:, 0, 0], resid_smem[:, 0, :])
-                Tx.fdiv(mean[:, 0, 0], mean[:, 0, 0], const_func(ATTN_D))
-                Tx.sub(resid_smem[:, 0, :], resid_smem[:, 0, :], mean[:, 0, 0])
-                # denominator
-                Tx.mul(x_smem[:, 0, :], resid_smem[:, 0, :], resid_smem[:, 0, :])
-                Tx.sum(var[:, 0, 0], x_smem[:, 0, :])
-                Tx.fdiv(var[:, 0, 0], var[:, 0, 0], const_func(ATTN_D))
-                Tx.add(var[:, 0, 0], var[:, 0, 0], const_func(1e-5))
-                Tx.sqrt(var[:, 0, 0], var[:, 0, 0])
-                # layernorm
-                Tx.fdiv(resid_smem[:, 0, :], resid_smem[:, 0, :], var[:, 0, 0])
-                Tx.mul(resid_smem[:, 0, :], resid_smem[:, 0, :], norm_weight_smem[:])
-                Tx.add(resid_smem[:, 0, :], resid_smem[:, 0, :], norm_bias_smem[:])
-                # store result
-                Tx.copy(out[by, 0, slice(bx * NUM_WORKERS + curr_idx, (bx + 1) * NUM_WORKERS + curr_idx), :], resid_smem[:, 0, :])  # noqa: E501
+            # store residual
+            Tx.cta.add(resid_smem[:, 0, :], resid_smem[:, 0, :], x_smem[:, 0, :])
+            Tx.cta.copy(out_resid[by, 0, slice(bx * NUM_WORKERS + curr_idx, (bx + 1) * NUM_WORKERS + curr_idx), :], resid_smem[:, 0, :])  # noqa: E501
+            # numerator
+            Tx.cta.sum(mean[:, 0, 0], resid_smem[:, 0, :])
+            Tx.cta.fdiv(mean[:, 0, 0], mean[:, 0, 0], const_func(ATTN_D))
+            Tx.cta.sub(resid_smem[:, 0, :], resid_smem[:, 0, :], mean[:, 0, 0])
+            # denominator
+            Tx.cta.mul(x_smem[:, 0, :], resid_smem[:, 0, :], resid_smem[:, 0, :])
+            Tx.cta.sum(var[:, 0, 0], x_smem[:, 0, :])
+            Tx.cta.fdiv(var[:, 0, 0], var[:, 0, 0], const_func(ATTN_D))
+            Tx.cta.add(var[:, 0, 0], var[:, 0, 0], const_func(1e-5))
+            Tx.cta.sqrt(var[:, 0, 0], var[:, 0, 0])
+            # layernorm
+            Tx.cta.fdiv(resid_smem[:, 0, :], resid_smem[:, 0, :], var[:, 0, 0])
+            Tx.cta.mul(resid_smem[:, 0, :], resid_smem[:, 0, :], norm_weight_smem[:])
+            Tx.cta.add(resid_smem[:, 0, :], resid_smem[:, 0, :], norm_bias_smem[:])
+            # store result
+            Tx.cta.copy(out[by, 0, slice(bx * NUM_WORKERS + curr_idx, (bx + 1) * NUM_WORKERS + curr_idx), :], resid_smem[:, 0, :])  # noqa: E501
     # fmt: on
 
     import torch

@@ -27,8 +27,6 @@ target = tvm.target.Target("aws/trn1/trn1.2xlarge")
 
 def _strip_exec_scope_stmt(stmt):
     def _postorder(node):
-        if isinstance(node, tvm.tirx.ExecScopeStmt):
-            return node.body
         if isinstance(node, tvm.tirx.AttrStmt) and node.attr_key == "tirx.device_entry":
             return node.body
         return node
@@ -37,7 +35,7 @@ def _strip_exec_scope_stmt(stmt):
         stmt,
         preorder=lambda _node: None,
         postorder=_postorder,
-        only_enable=["tirx.ExecScopeStmt", "tirx.AttrStmt"],
+        only_enable=["tirx.AttrStmt"],
     )
 
 
@@ -66,16 +64,14 @@ def test_select():
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "select"})
-
-        with Tx.thread():
-            A_sbuf = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
-            for b_loop in Tx.serial(0, 1):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                    for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
-                        Tx.nki.affine_select(B_sbuf[p_loop, f_loop], p_loop < f_loop, A_sbuf[p_loop, f_loop], Tx.float32(0.0))  # noqa: E501
-                # fmt: on
+        A_sbuf = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
+        for b_loop in Tx.serial(0, 1):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
+                    Tx.nki.affine_select(B_sbuf[p_loop, f_loop], p_loop < f_loop, A_sbuf[p_loop, f_loop], Tx.float32(0.0))  # noqa: E501
+            # fmt: on
 
     with target:
         mod = tvm.IRModule({"main": select})
@@ -102,17 +98,15 @@ def test_select_in_loop():
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "select"})
+        A_sbuf = Tx.alloc_buffer((128, 16384), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
+        for i, b_loop in Tx.grid(2, 1):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
+                    Tx.nki.affine_select(B_sbuf[p_loop, f_loop], (i + 1) * p_loop < f_loop, A_sbuf[p_loop, i * 8192 + f_loop], Tx.float32(0.0))  # noqa: E501
 
-        with Tx.thread():
-            A_sbuf = Tx.alloc_buffer((128, 16384), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
-            for i, b_loop in Tx.grid(2, 1):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                    for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
-                        Tx.nki.affine_select(B_sbuf[p_loop, f_loop], (i + 1) * p_loop < f_loop, A_sbuf[p_loop, i * 8192 + f_loop], Tx.float32(0.0))  # noqa: E501
-
-                # fmt: on
+            # fmt: on
     with target:
         mod = tvm.IRModule({"main": select})
         mod = tvm.tirx.transform.LowerTIRx()(mod)
@@ -137,16 +131,14 @@ def test_select_expr_affine():
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "select"})
-
-        with Tx.thread():
-            A_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
-            for b_loop in Tx.serial(0, 4):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                    for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
-                        Tx.nki.affine_select(B_sbuf[p_loop, b_loop * 512 + f_loop], b_loop * 128 + p_loop < f_loop, A_sbuf[p_loop, b_loop * 512 + f_loop], Tx.float32(0.0))  # noqa: E501
-                # fmt: on
+        A_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
+        for b_loop in Tx.serial(0, 4):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
+                    Tx.nki.affine_select(B_sbuf[p_loop, b_loop * 512 + f_loop], b_loop * 128 + p_loop < f_loop, A_sbuf[p_loop, b_loop * 512 + f_loop], Tx.float32(0.0))  # noqa: E501
+            # fmt: on
     with target:
         mod = tvm.IRModule({"main": select})
         mod = tvm.tirx.transform.LowerTIRx()(mod)
@@ -173,17 +165,15 @@ def test_select_with_guard():
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "select"})
-
-        with Tx.thread():
-            A_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
-            for i, j, b_loop in Tx.grid(4, 4, 4):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                    for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
-                        if b_loop - i < 1 and f_loop < j * 128 + 128:
-                            Tx.nki.affine_select(B_sbuf[p_loop, b_loop * 512 + f_loop], b_loop * 128 + p_loop < f_loop, A_sbuf[p_loop, b_loop * 512 + f_loop], Tx.float32(0.0))  # noqa: E501
-                # fmt: on
+        A_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
+        for i, j, b_loop in Tx.grid(4, 4, 4):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
+                    if b_loop - i < 1 and f_loop < j * 128 + 128:
+                        Tx.nki.affine_select(B_sbuf[p_loop, b_loop * 512 + f_loop], b_loop * 128 + p_loop < f_loop, A_sbuf[p_loop, b_loop * 512 + f_loop], Tx.float32(0.0))  # noqa: E501
+            # fmt: on
     with target:
         mod = tvm.IRModule({"main": select})
         mod = tvm.tirx.transform.LowerTIRx()(mod)

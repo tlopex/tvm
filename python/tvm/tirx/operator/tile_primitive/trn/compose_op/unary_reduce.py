@@ -160,7 +160,7 @@ def unary_reduce_trn(op: TilePrimitiveCall, sctx: DispatchContext) -> PrimFunc |
         predicate(
             "exec_scope",
             lambda op, sctx: (
-                sctx.scope_kind == "kernel",
+                sctx.scope_kind == "thread",
                 f"unsupported exec_scope {sctx.scope_kind}",
             ),
         )

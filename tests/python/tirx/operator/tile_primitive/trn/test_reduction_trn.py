@@ -28,8 +28,6 @@ target = tvm.target.Target("aws/trn1/trn1.2xlarge")
 
 def _strip_exec_scope_stmt(stmt):
     def _postorder(node):
-        if isinstance(node, tvm.tirx.ExecScopeStmt):
-            return node.body
         if isinstance(node, tvm.tirx.AttrStmt) and node.attr_key == "tirx.device_entry":
             return node.body
         return node
@@ -38,7 +36,7 @@ def _strip_exec_scope_stmt(stmt):
         stmt,
         preorder=lambda _node: None,
         postorder=_postorder,
-        only_enable=["tirx.ExecScopeStmt", "tirx.AttrStmt"],
+        only_enable=["tirx.AttrStmt"],
     )
 
 
@@ -76,17 +74,15 @@ def test_simple_reduction(op_type):
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "reduction"})
+        A_sbuf = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 1), scope="trn.sbuf")
+        for b_loop in range(1):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
+                    Tx.nki.tensorreduce(B_sbuf[p_loop, 0], A_sbuf[p_loop, f_loop], opcode, False, -1)  # noqa: E501
 
-        with Tx.thread():
-            A_sbuf = Tx.alloc_buffer((128, 512), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 1), scope="trn.sbuf")
-            for b_loop in range(1):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                    for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
-                        Tx.nki.tensorreduce(B_sbuf[p_loop, 0], A_sbuf[p_loop, f_loop], opcode, False, -1)  # noqa: E501
-
-                # fmt: on
+            # fmt: on
     with target:
         mod = tvm.IRModule({"main": reduction})
         mod = tvm.tirx.transform.LowerTIRx()(mod)
@@ -110,17 +106,15 @@ def test_reduction_with_multiple_axes():
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "reduction"})
+        A_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 1), scope="trn.sbuf")
+        for b_loop in range(1):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 2048, annotations={"nki_dim":"F"}):
+                    Tx.nki.tensorreduce(B_sbuf[p_loop, 0], A_sbuf[p_loop, f_loop], "add", False, -1)
 
-        with Tx.thread():
-            A_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 1), scope="trn.sbuf")
-            for b_loop in range(1):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                    for f_loop in Tx.serial(0, 2048, annotations={"nki_dim":"F"}):
-                        Tx.nki.tensorreduce(B_sbuf[p_loop, 0], A_sbuf[p_loop, f_loop], "add", False, -1)  # noqa: E501
-
-                # fmt: on
+            # fmt: on
     with target:
         mod = tvm.IRModule({"main": reduction})
         mod = tvm.tirx.transform.LowerTIRx()(mod)
@@ -145,16 +139,14 @@ def test_reduction_in_loop():
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "reduction"})
-
-        with Tx.thread():
-            A_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 4), scope="trn.sbuf")
-            for i, b_loop in Tx.grid(4, 1):
-                Tx.attr(0, "tensorized_nki_instruction", 1)
-                for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                    for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
-                        Tx.nki.tensorreduce(B_sbuf[p_loop, i], A_sbuf[p_loop, f_loop * 4 + i], "add", False, -1)  # noqa: E501
-                # fmt: on
+        A_sbuf = Tx.alloc_buffer((128, 2048), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 4), scope="trn.sbuf")
+        for i, b_loop in Tx.grid(4, 1):
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 512, annotations={"nki_dim":"F"}):
+                    Tx.nki.tensorreduce(B_sbuf[p_loop, i], A_sbuf[p_loop, f_loop * 4 + i], "add", False, -1)  # noqa: E501
+            # fmt: on
     with target:
         mod = tvm.IRModule({"main": reduction})
         mod = tvm.tirx.transform.LowerTIRx()(mod)
@@ -178,23 +170,21 @@ def test_reduction_two_stage():
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "reduction"})
-
-        with Tx.thread():
-            intermediate_buffer = Tx.alloc_buffer((128, 32), scope="trn.sbuf")
-            A_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 4), scope="trn.sbuf")
-            for b_loop in range(4):
-                for reduction_b_loop in range(32):
-                    Tx.attr(0, "tensorized_nki_instruction", 1)
-                    for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                        for f_loop in Tx.serial(0, 32, annotations={"nki_dim":"F"}):
-                            Tx.nki.tensorreduce(intermediate_buffer[p_loop, reduction_b_loop], A_sbuf[p_loop, reduction_b_loop * 128 + b_loop * 32 + f_loop], "add", False, -1)  # noqa: E501
+        intermediate_buffer = Tx.alloc_buffer((128, 32), scope="trn.sbuf")
+        A_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 4), scope="trn.sbuf")
+        for b_loop in range(4):
+            for reduction_b_loop in range(32):
                 Tx.attr(0, "tensorized_nki_instruction", 1)
                 for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
                     for f_loop in Tx.serial(0, 32, annotations={"nki_dim":"F"}):
-                        Tx.nki.tensorreduce(B_sbuf[p_loop, b_loop], intermediate_buffer[p_loop, f_loop], "add", False, -1)  # noqa: E501
+                        Tx.nki.tensorreduce(intermediate_buffer[p_loop, reduction_b_loop], A_sbuf[p_loop, reduction_b_loop * 128 + b_loop * 32 + f_loop], "add", False, -1)  # noqa: E501
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 32, annotations={"nki_dim":"F"}):
+                    Tx.nki.tensorreduce(B_sbuf[p_loop, b_loop], intermediate_buffer[p_loop, f_loop], "add", False, -1)  # noqa: E501
 
-                # fmt: on
+            # fmt: on
     with target:
         mod = tvm.IRModule({"main": reduction})
         mod = tvm.tirx.transform.trn.TrnPrivateBufferAlloc()(mod)
@@ -221,28 +211,26 @@ def test_reduction_with_guard():
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "reduction"})
-
-        with Tx.thread():
-            intermediate_buffer = Tx.alloc_buffer((128, 2), scope="trn.sbuf")
-            A_sbuf = Tx.alloc_buffer((128, 8192), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 4), scope="trn.sbuf")
-            for i, j in Tx.grid(4, 4):
-                for b_loop in range(4):
-                    for reduction_b_loop in range(2):
-                        Tx.attr(0, "tensorized_nki_instruction", 1)
-                        for p_loop in Tx.serial(128, annotations={"nki_dim": "P"}):
-                            for f_loop in Tx.serial(512, annotations={"nki_dim": "F"}):
-                                if (
-                                    b_loop - i < 1
-                                    and reduction_b_loop * 512 + f_loop < j * 256 + 256
-                                ):
-                                    Tx.nki.tensorreduce(intermediate_buffer[p_loop, reduction_b_loop], A_sbuf[p_loop, b_loop * 2048 + reduction_b_loop * 512 + f_loop], "add", Tx.bool(False), -1)  # noqa: E501
+        intermediate_buffer = Tx.alloc_buffer((128, 2), scope="trn.sbuf")
+        A_sbuf = Tx.alloc_buffer((128, 8192), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 4), scope="trn.sbuf")
+        for i, j in Tx.grid(4, 4):
+            for b_loop in range(4):
+                for reduction_b_loop in range(2):
                     Tx.attr(0, "tensorized_nki_instruction", 1)
                     for p_loop in Tx.serial(128, annotations={"nki_dim": "P"}):
-                        for f_loop in Tx.serial(2, annotations={"nki_dim": "F"}):
-                            if b_loop - i < 1 and f_loop * 2 - j < 1:
-                                Tx.nki.tensorreduce(B_sbuf[p_loop, b_loop], intermediate_buffer[p_loop, f_loop], "add", Tx.bool(False), -1)  # noqa: E501
-                # fmt: on
+                        for f_loop in Tx.serial(512, annotations={"nki_dim": "F"}):
+                            if (
+                                b_loop - i < 1
+                                and reduction_b_loop * 512 + f_loop < j * 256 + 256
+                            ):
+                                Tx.nki.tensorreduce(intermediate_buffer[p_loop, reduction_b_loop], A_sbuf[p_loop, b_loop * 2048 + reduction_b_loop * 512 + f_loop], "add", Tx.bool(False), -1)  # noqa: E501
+                Tx.attr(0, "tensorized_nki_instruction", 1)
+                for p_loop in Tx.serial(128, annotations={"nki_dim": "P"}):
+                    for f_loop in Tx.serial(2, annotations={"nki_dim": "F"}):
+                        if b_loop - i < 1 and f_loop * 2 - j < 1:
+                            Tx.nki.tensorreduce(B_sbuf[p_loop, b_loop], intermediate_buffer[p_loop, f_loop], "add", Tx.bool(False), -1)  # noqa: E501
+            # fmt: on
     with target:
         mod = tvm.IRModule({"main": reduction})
         mod = tvm.tirx.transform.trn.TrnPrivateBufferAlloc()(mod)
@@ -269,23 +257,21 @@ def test_reduction_two_stage_workspace():
     @Tx.prim_func
     def expected():
         Tx.func_attr({"global_symbol": "reduction"})
-
-        with Tx.thread():
-            intermediate_buffer = Tx.alloc_buffer((128, 64), scope="trn.sbuf")
-            A_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
-            B_sbuf = Tx.alloc_buffer((128, 4), scope="trn.sbuf")
-            for b_loop in range(4):
-                for reduction_b_loop in range(32):
-                    Tx.attr(0, "tensorized_nki_instruction", 1)
-                    for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
-                        for f_loop in Tx.serial(0, 32, annotations={"nki_dim":"F"}):
-                            Tx.nki.tensorreduce(intermediate_buffer[p_loop, reduction_b_loop], A_sbuf[p_loop, reduction_b_loop * 128 + b_loop * 32 + f_loop], "add", False, -1)  # noqa: E501
+        intermediate_buffer = Tx.alloc_buffer((128, 64), scope="trn.sbuf")
+        A_sbuf = Tx.alloc_buffer((128, 4096), scope="trn.sbuf")
+        B_sbuf = Tx.alloc_buffer((128, 4), scope="trn.sbuf")
+        for b_loop in range(4):
+            for reduction_b_loop in range(32):
                 Tx.attr(0, "tensorized_nki_instruction", 1)
                 for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
                     for f_loop in Tx.serial(0, 32, annotations={"nki_dim":"F"}):
-                        Tx.nki.tensorreduce(B_sbuf[p_loop, b_loop], intermediate_buffer[p_loop, f_loop], "add", False, -1)  # noqa: E501
+                        Tx.nki.tensorreduce(intermediate_buffer[p_loop, reduction_b_loop], A_sbuf[p_loop, reduction_b_loop * 128 + b_loop * 32 + f_loop], "add", False, -1)  # noqa: E501
+            Tx.attr(0, "tensorized_nki_instruction", 1)
+            for p_loop in Tx.serial(0, 128, annotations={"nki_dim":"P"}):
+                for f_loop in Tx.serial(0, 32, annotations={"nki_dim":"F"}):
+                    Tx.nki.tensorreduce(B_sbuf[p_loop, b_loop], intermediate_buffer[p_loop, f_loop], "add", False, -1)  # noqa: E501
 
-                # fmt: on
+            # fmt: on
     with target:
         mod = tvm.IRModule({"main": reduction})
         mod = tvm.tirx.transform.LowerTIRx()(mod)

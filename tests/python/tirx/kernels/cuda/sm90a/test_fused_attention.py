@@ -140,10 +140,9 @@ def test_fp16_fused_attn():
         @Tx.inline
         def init(self, tid):
             if tid == 0:
-                with Tx.thread():
-                    for i in Tx.serial(KV_STAGES):
-                        Tx.ptx.mbarrier.init(self.full.ptr_to([i]), 1)
-                        Tx.ptx.mbarrier.init(self.empty.ptr_to([i]), 2 * WG_SIZE)  # 2 consumers
+                for i in Tx.serial(KV_STAGES):
+                    Tx.ptx.mbarrier.init(self.full.ptr_to([i]), 1)
+                    Tx.ptx.mbarrier.init(self.empty.ptr_to([i]), 2 * WG_SIZE)  # 2 consumers
             # fence the barrier init, the memory ordering is visible across the whole block
             Tx.ptx.fence.mbarrier_init()
 
@@ -217,31 +216,30 @@ def test_fp16_fused_attn():
     def mask(S_reg, consumer_id, warp_id_in_wg, lane_id, q_row_base, kv_col_base, QO_LEN, KV_LEN):
         quad_id = Tx.meta_var(lane_id // 4)
         quad_lane = Tx.meta_var(lane_id % 4)
-        with Tx.thread():
-            row: Tx.int32
-            col: Tx.int32
-            row = q_row_base + consumer_id * 64 + warp_id_in_wg * 16 + quad_id
-            col = kv_col_base + quad_lane * 2 - (KV_LEN - QO_LEN)
-            if not CAUSAL:
-                for i in Tx.serial(S_REG_COUNT // 4):
-                    if col >= KV_LEN:
-                        S_reg[i * 4] = -INF
-                        S_reg[i * 4 + 2] = -INF
-                    if col + 1 >= KV_LEN:
-                        S_reg[i * 4 + 1] = -INF
-                        S_reg[i * 4 + 3] = -INF
-                    col = col + 8
-            else:
-                for i in Tx.serial(S_REG_COUNT // 4):
-                    if (row < col):# or (col[0] - QO_LEN >= 0):
-                        S_reg[i * 4] = -INF
-                    if (row < col + 1):# or (col[0] + 1 - QO_LEN >= 0):
-                        S_reg[i * 4 + 1] = -INF
-                    if (row + 8 < col):# or (col[0] - QO_LEN >= 0):
-                        S_reg[i * 4 + 2] = -INF
-                    if (row + 8 < col + 1):# or (col[0] + 1 - QO_LEN >= 0):
-                        S_reg[i * 4 + 3] = -INF
-                    col = col + 8
+        row: Tx.int32
+        col: Tx.int32
+        row = q_row_base + consumer_id * 64 + warp_id_in_wg * 16 + quad_id
+        col = kv_col_base + quad_lane * 2 - (KV_LEN - QO_LEN)
+        if not CAUSAL:
+            for i in Tx.serial(S_REG_COUNT // 4):
+                if col >= KV_LEN:
+                    S_reg[i * 4] = -INF
+                    S_reg[i * 4 + 2] = -INF
+                if col + 1 >= KV_LEN:
+                    S_reg[i * 4 + 1] = -INF
+                    S_reg[i * 4 + 3] = -INF
+                col = col + 8
+        else:
+            for i in Tx.serial(S_REG_COUNT // 4):
+                if (row < col):# or (col[0] - QO_LEN >= 0):
+                    S_reg[i * 4] = -INF
+                if (row < col + 1):# or (col[0] + 1 - QO_LEN >= 0):
+                    S_reg[i * 4 + 1] = -INF
+                if (row + 8 < col):# or (col[0] - QO_LEN >= 0):
+                    S_reg[i * 4 + 2] = -INF
+                if (row + 8 < col + 1):# or (col[0] + 1 - QO_LEN >= 0):
+                    S_reg[i * 4 + 3] = -INF
+                col = col + 8
 
     @Tx.meta_class
     class Softmax:
@@ -333,28 +331,27 @@ def test_fp16_fused_attn():
         Tx.ptx.wgmma.fence()
 
         k_stage = Tx.meta_var(consumer_k.index)
-        with Tx.thread():
-            scaleD: Tx.int32
-            scaleD = 0
-            Tx.ptx.wgmma.encode_matrix_descriptor(Tx.address_of(desc_Q), smem_q.ptr_to([consumer_id * BLK_Q // 2 * TMA_TILE]), BLK_Q * 8, 64, SWIZZLE)  # noqa: E501
-            Tx.ptx.wgmma.encode_matrix_descriptor(Tx.address_of(desc_K), smem_k.ptr_to([k_stage, 0]), BLK_KV * 8, 64, SWIZZLE)  # noqa: E501
-            for tma_tile in Tx.serial(HEAD_DIM // TMA_TILE):
-                for wgmma_tile in Tx.serial(TMA_TILE // WGMMA_QK_K):
-                    Tx.ptx.wgmma.mma_async.ss(
-                        desc_Q, desc_K, *[S_reg[i] for i in range(S_REG_COUNT)],
-                        M=WGMMA_QK_M, N=WGMMA_QK_N, K=WGMMA_QK_K,
-                        in_dtype="float16", out_dtype="float32",
-                        transA=False, transB=False,
-                        scaleA=1.0, scaleB=1.0, scaleD=scaleD,
-                    )
-                    scaleD = 1
-                    desc_Q = desc_Q + (2 * (WGMMA_QK_K) >> 4)
-                    desc_K = desc_K + (2 * (WGMMA_QK_K) >> 4)
-                desc_Q = desc_Q + (2 * (-TMA_TILE + BLK_Q * TMA_TILE) >> 4)
-                desc_K = desc_K + (2 * (-TMA_TILE + BLK_KV * TMA_TILE) >> 4)
+        scaleD: Tx.int32
+        scaleD = 0
+        Tx.ptx.wgmma.encode_matrix_descriptor(Tx.address_of(desc_Q), smem_q.ptr_to([consumer_id * BLK_Q // 2 * TMA_TILE]), BLK_Q * 8, 64, SWIZZLE)  # noqa: E501
+        Tx.ptx.wgmma.encode_matrix_descriptor(Tx.address_of(desc_K), smem_k.ptr_to([k_stage, 0]), BLK_KV * 8, 64, SWIZZLE)  # noqa: E501
+        for tma_tile in Tx.serial(HEAD_DIM // TMA_TILE):
+            for wgmma_tile in Tx.serial(TMA_TILE // WGMMA_QK_K):
+                Tx.ptx.wgmma.mma_async.ss(
+                    desc_Q, desc_K, *[S_reg[i] for i in range(S_REG_COUNT)],
+                    M=WGMMA_QK_M, N=WGMMA_QK_N, K=WGMMA_QK_K,
+                    in_dtype="float16", out_dtype="float32",
+                    transA=False, transB=False,
+                    scaleA=1.0, scaleB=1.0, scaleD=scaleD,
+                )
+                scaleD = 1
+                desc_Q = desc_Q + (2 * (WGMMA_QK_K) >> 4)
+                desc_K = desc_K + (2 * (WGMMA_QK_K) >> 4)
+            desc_Q = desc_Q + (2 * (-TMA_TILE + BLK_Q * TMA_TILE) >> 4)
+            desc_K = desc_K + (2 * (-TMA_TILE + BLK_KV * TMA_TILE) >> 4)
 
-            Tx.ptx.wgmma.commit_group()
-            ptx_wgmma_noop_barrier(S_reg, S_REG_COUNT)
+        Tx.ptx.wgmma.commit_group()
+        ptx_wgmma_noop_barrier(S_reg, S_REG_COUNT)
 
     @Tx.inline
     def gemm_PV(O_reg, P_reg, smem_v, desc_V, consumer_v):
@@ -380,30 +377,28 @@ def test_fp16_fused_attn():
     @Tx.inline
     def r2S(warp_id, lane_id, smem_o, O_reg, n_tile):
         Tx.ptx.bar.sync(NameBarrier.EPILOGUE, MMA_THREADS)
-        with Tx.thread():
-            O_half = Tx.alloc_buffer([8], "float32", scope="local")
-            for st_tile in Tx.serial(4):
-                for i in Tx.serial(8):
-                    O_half[i] = O_reg[n_tile * 32 + st_tile * 8 + i]
-                col_noswizzle = Tx.meta_var(st_tile * 2 + lane_id // 16)
-                col = Tx.meta_var((lane_id % 8) ^ col_noswizzle)
-                row = Tx.meta_var(warp_id * 16 + lane_id % 16)
-                Tx.ptx.stmatrix(
-                    False, 4, ".b16",
-                    smem_o.ptr_to([n_tile % STAGES_EPI, row, col * 8]),
-                    O_half.ptr_to([0]), O_half.ptr_to([2]),
-                    O_half.ptr_to([4]), O_half.ptr_to([6]),
-                )
+        O_half = Tx.alloc_buffer([8], "float32", scope="local")
+        for st_tile in Tx.serial(4):
+            for i in Tx.serial(8):
+                O_half[i] = O_reg[n_tile * 32 + st_tile * 8 + i]
+            col_noswizzle = Tx.meta_var(st_tile * 2 + lane_id // 16)
+            col = Tx.meta_var((lane_id % 8) ^ col_noswizzle)
+            row = Tx.meta_var(warp_id * 16 + lane_id % 16)
+            Tx.ptx.stmatrix(
+                False, 4, ".b16",
+                smem_o.ptr_to([n_tile % STAGES_EPI, row, col * 8]),
+                O_half.ptr_to([0]), O_half.ptr_to([2]),
+                O_half.ptr_to([4]), O_half.ptr_to([6]),
+            )
 
     @Tx.inline
     def s2G(warp_id, lane_id, smem_o, O_map, q_idx, h_idx, b_idx, n_tile):
         Tx.ptx.fence.proxy_async("shared::cta")
         Tx.ptx.bar.sync(NameBarrier.EPILOGUE, MMA_THREADS)
         if warp_id == 0 and lane_id == 0:
-            with Tx.thread():
-                Tx.ptx.cp_async.bulk.tensor.s2g(4, smem_o.ptr_to([n_tile % STAGES_EPI, 0, 0]), Tx.address_of(O_map), n_tile * 64, h_idx, q_idx * BLK_Q, b_idx)  # noqa: E501
-                Tx.ptx.cp_async.bulk.commit_group()
-                Tx.ptx.cp_async.bulk.wait_group(1, read=True)
+            Tx.ptx.cp_async.bulk.tensor.s2g(4, smem_o.ptr_to([n_tile % STAGES_EPI, 0, 0]), Tx.address_of(O_map), n_tile * 64, h_idx, q_idx * BLK_Q, b_idx)  # noqa: E501
+            Tx.ptx.cp_async.bulk.commit_group()
+            Tx.ptx.cp_async.bulk.wait_group(1, read=True)
 
     @Tx.inline
     def write_epilogue(warp_id, lane_id, q_idx, h_idx, b_idx, smem_o, O_map, O_reg):
@@ -450,294 +445,278 @@ def test_fp16_fused_attn():
         Tx.call_packed("runtime.cuTensorMapEncodeTiled", K_map, "float16", 4, K.data, *GSHAPE_KV, *GSTRIDES_KV, *SSHAPE_KV, *COMMMON)  # noqa: E501
         Tx.call_packed("runtime.cuTensorMapEncodeTiled", V_map, "float16", 4, V.data, *GSHAPE_KV, *GSTRIDES_KV, *SSHAPE_KV, *COMMMON)  # noqa: E501
         Tx.call_packed("runtime.cuTensorMapEncodeTiled", O_map, "float16", 4, O.data, *GSHAPE_QO, *GSTRIDES_QO, *SSHAPE_QO, *COMMMON)  # noqa: E501
+        bx = Tx.cta_id([SM_COUNT])
+        warp_id = Tx.warp_id([NUM_WARPS])
+        tid = Tx.thread_id([NUM_WARPS * 32])
+        lane_id = Tx.lane_id([32])
+        wg_id = Tx.warpgroup_id([NUM_WARPS // 4])
+        warp_id_in_wg = Tx.warp_id_in_wg([4])
+        # dyn smem buffer
+        buf = Tx.alloc_buffer([SMEM_SIZE], "uint8", scope="shared.dyn")
+        # smem storage
+        bar_Q = Tx.decl_buffer([1], "uint64", buf.data, elem_offset=0)
+        bar_O = Tx.decl_buffer([1], "uint64", buf.data, elem_offset=1)
+        full_k = Tx.decl_buffer([KV_STAGES], "uint64", buf.data, elem_offset=2)
+        empty_k = Tx.decl_buffer([KV_STAGES], "uint64", buf.data, elem_offset=2 + KV_STAGES)
+        full_v = Tx.decl_buffer([KV_STAGES], "uint64", buf.data, elem_offset=2 + 2 * KV_STAGES)
+        empty_v = Tx.decl_buffer([KV_STAGES], "uint64", buf.data, elem_offset=2 + 3 * KV_STAGES)
+        smem_q = Tx.decl_buffer([BLK_Q * HEAD_DIM], "float16", buf.data, elem_offset=512) # 1024B  # noqa: E501
+        smem_k = Tx.decl_buffer([KV_STAGES, BLK_KV * HEAD_DIM], "float16", buf.data, elem_offset=512 + BLK_Q * HEAD_DIM)  # noqa: E501
+        # v and o share the same smem region for reuse
+        smem_v = Tx.decl_buffer([KV_STAGES, BLK_KV * HEAD_DIM], "float16", buf.data, elem_offset=512 + (BLK_Q + BLK_KV * KV_STAGES) * HEAD_DIM)  # noqa: E501
+        smem_o = Tx.decl_buffer([STAGES_EPI, BLK_Q, TMA_TILE], "float16", buf.data, elem_offset=512 + (BLK_Q + BLK_KV * KV_STAGES) * HEAD_DIM)  # noqa: E501
+        # tile scheduler
+        tile_scheduler = IndexedTripleTileScheduler("tile_scheduler", b_indices, h_indices, q_indices, tiles_indptr)  # noqa: E501
+        # pipeline
+        pipeline_k = Pipeline(full_k, empty_k, TMA_BYTES_K)
+        pipeline_v = Pipeline(full_v, empty_v, TMA_BYTES_V)
+        producer_k = PipelineState(1)
+        producer_v = PipelineState(1)
+        consumer_k = PipelineState(1)
+        consumer_v = PipelineState(1)
+        leader_cond = Tx.meta_var(tid % 128 == 0)
+        q_phase: Tx.int32
+        # producer WG regs
+        kv_tile_idx_load: Tx.int32
+        kv_tile_idx_read: Tx.int32
+        # smem desc_Q, desc_K, desc_V
+        desc_Q: Tx.uint64
+        desc_K: Tx.uint64
+        desc_V: Tx.uint64
+        # accums
+        S_reg = Tx.alloc_buffer([S_REG_COUNT], "float32", scope="local")
+        P_reg = Tx.alloc_buffer([S_REG_COUNT // 2], "uint32", scope="local")
+        O_reg = Tx.alloc_buffer([O_REG_COUNT], "float32", scope="local")
 
-        with Tx.thread():
-            bx = Tx.cta_id([SM_COUNT])
-            warp_id = Tx.warp_id([NUM_WARPS])
-            tid = Tx.thread_id([NUM_WARPS * 32])
-            lane_id = Tx.lane_id([32])
-            wg_id = Tx.warpgroup_id([NUM_WARPS // 4])
-            warp_id_in_wg = Tx.warp_id_in_wg([4])
+        # profiler
+        profiler = CudaProfiler(
+            profiler_buffer,
+            write_stride=PROFILER_WRITE_STRIDE,
+            num_groups=NUM_GROUPS,
+        )
+        profiler.init(wg_id)
 
-            with Tx.cta():
-                # dyn smem buffer
-                buf = Tx.alloc_buffer([SMEM_SIZE], "uint8", scope="shared.dyn")
-                # smem storage
-                bar_Q = Tx.decl_buffer([1], "uint64", buf.data, elem_offset=0)
-                bar_O = Tx.decl_buffer([1], "uint64", buf.data, elem_offset=1)
-                full_k = Tx.decl_buffer([KV_STAGES], "uint64", buf.data, elem_offset=2)
-                empty_k = Tx.decl_buffer([KV_STAGES], "uint64", buf.data, elem_offset=2 + KV_STAGES)
-                full_v = Tx.decl_buffer([KV_STAGES], "uint64", buf.data, elem_offset=2 + 2 * KV_STAGES)  # noqa: E501
-                empty_v = Tx.decl_buffer([KV_STAGES], "uint64", buf.data, elem_offset=2 + 3 * KV_STAGES)  # noqa: E501
-                smem_q = Tx.decl_buffer([BLK_Q * HEAD_DIM], "float16", buf.data, elem_offset=512) # 1024B  # noqa: E501
-                smem_k = Tx.decl_buffer([KV_STAGES, BLK_KV * HEAD_DIM], "float16", buf.data, elem_offset=512 + BLK_Q * HEAD_DIM)  # noqa: E501
-                # v and o share the same smem region for reuse
-                smem_v = Tx.decl_buffer([KV_STAGES, BLK_KV * HEAD_DIM], "float16", buf.data, elem_offset=512 + (BLK_Q + BLK_KV * KV_STAGES) * HEAD_DIM)  # noqa: E501
-                smem_o = Tx.decl_buffer([STAGES_EPI, BLK_Q, TMA_TILE], "float16", buf.data, elem_offset=512 + (BLK_Q + BLK_KV * KV_STAGES) * HEAD_DIM)  # noqa: E501
+        # softmax
+        softmax = Softmax("softmax")
+        ############################################################################## INITIALIZATION  # noqa: E501
+        # tile scheduler
+        tile_scheduler.init(bx)
+        # barriers
+        if tid == 0:
+            Tx.ptx.mbarrier.init(bar_Q.ptr_to([0]), 1)
+            Tx.ptx.mbarrier.init(bar_O.ptr_to([0]), 1)
+        Tx.ptx.fence.mbarrier_init()
+        # pipelines
+        pipeline_k.init(tid)
+        pipeline_v.init(tid)
+        # pipeline states
+        producer_k.init(0, 1)
+        producer_v.init(0, 1)
+        consumer_k.init(0, 0)
+        consumer_v.init(0, 0)
+        q_phase = 0
+        # sync to make sure everything is initialized and visible
+        Tx.cuda.cta_sync()
 
-                with Tx.thread():
-                    # tile scheduler
-                    tile_scheduler = IndexedTripleTileScheduler("tile_scheduler", b_indices, h_indices, q_indices, tiles_indptr)  # noqa: E501
-                    # pipeline
-                    pipeline_k = Pipeline(full_k, empty_k, TMA_BYTES_K)
-                    pipeline_v = Pipeline(full_v, empty_v, TMA_BYTES_V)
-                    producer_k = PipelineState(1)
-                    producer_v = PipelineState(1)
-                    consumer_k = PipelineState(1)
-                    consumer_v = PipelineState(1)
-                    leader_cond = Tx.meta_var(tid % 128 == 0)
-                    q_phase: Tx.int32
-                    # producer WG regs
-                    kv_tile_idx_load: Tx.int32
-                    kv_tile_idx_read: Tx.int32
-                    # smem desc_Q, desc_K, desc_V
-                    desc_Q: Tx.uint64
-                    desc_K: Tx.uint64
-                    desc_V: Tx.uint64
-                    # accums
-                    S_reg = Tx.alloc_buffer([S_REG_COUNT], "float32", scope="local")
-                    P_reg = Tx.alloc_buffer([S_REG_COUNT // 2], "uint32", scope="local")
-                    O_reg = Tx.alloc_buffer([O_REG_COUNT], "float32", scope="local")
+        bar_Q_ptr = Tx.meta_var(bar_Q.ptr_to([0]))
+        q_idx = Tx.meta_var(tile_scheduler.q_idx)
+        h_idx = Tx.meta_var(tile_scheduler.h_idx)
+        b_idx = Tx.meta_var(tile_scheduler.b_idx)
+        attend_kv_len = Tx.meta_var(KV_LEN - QO_LEN + (q_idx + 1) * BLK_Q if CAUSAL else KV_LEN) # the kvlen to attend of the current q tile  # noqa: E501
+        num_kv_tiles = Tx.meta_var(ceildiv(attend_kv_len, BLK_KV)) # number of kv tiles to attend  # noqa: E501
+        is_leader = Tx.meta_var(Tx.ptx.elect_sync())
 
-                    # profiler
-                    profiler = CudaProfiler(
-                        profiler_buffer,
-                        write_stride=PROFILER_WRITE_STRIDE,
-                        num_groups=NUM_GROUPS,
-                    )
-                    profiler.init(wg_id)
-
-                    # softmax
-                    softmax = Softmax("softmax")
-                    ############################################################################## INITIALIZATION  # noqa: E501
-                    # tile scheduler
-                    tile_scheduler.init(bx)
-                    # barriers
-                    if tid == 0:
-                        with Tx.thread():
-                            Tx.ptx.mbarrier.init(bar_Q.ptr_to([0]), 1)
-                            Tx.ptx.mbarrier.init(bar_O.ptr_to([0]), 1)
-                    Tx.ptx.fence.mbarrier_init()
-                    # pipelines
-                    pipeline_k.init(tid)
-                    pipeline_v.init(tid)
-                    # pipeline states
-                    producer_k.init(0, 1)
-                    producer_v.init(0, 1)
-                    consumer_k.init(0, 0)
-                    consumer_v.init(0, 0)
-                    q_phase = 0
-                    # sync to make sure everything is initialized and visible
-                    Tx.cuda.cta_sync()
-
-                    bar_Q_ptr = Tx.meta_var(bar_Q.ptr_to([0]))
-                    q_idx = Tx.meta_var(tile_scheduler.q_idx)
-                    h_idx = Tx.meta_var(tile_scheduler.h_idx)
-                    b_idx = Tx.meta_var(tile_scheduler.b_idx)
-                    attend_kv_len = Tx.meta_var(KV_LEN - QO_LEN + (q_idx + 1) * BLK_Q if CAUSAL else KV_LEN) # the kvlen to attend of the current q tile  # noqa: E501
-                    num_kv_tiles = Tx.meta_var(ceildiv(attend_kv_len, BLK_KV)) # number of kv tiles to attend  # noqa: E501
-                    is_leader = Tx.meta_var(Tx.ptx.elect_sync())
-
-                    P_reg_fp16 = Tx.decl_buffer([S_REG_COUNT], "float16", data=P_reg.data, elem_offset=0)  # noqa: E501
-                    with Tx.cta():
-                        if wg_id == 0:
-                            with Tx.warpgroup():
-                                ############################################################################## PRODUCER  # noqa: E501
-                                # deallocate registers
-                                Tx.ptx.setmaxnreg(False, 24)
-                                # only 1 warp is responsible for the producer
-                                if warp_id == 0:
-                                    with Tx.warp():
-                                        while (tile_scheduler.valid()):
-                                            if q_idx * BLK_Q >= QO_LEN:
-                                                break
-                                            kv_tile_idx_load = num_kv_tiles - 1
-                                            # copy a tile of K first
-                                            if is_leader:
-                                                with Tx.thread():
-                                                    pipeline_k.producer_acquire(producer_k, profiler, leader_cond)  # noqa: E501
-                                                    pipeline_k.copy(producer_k, smem_k, K_map, 0, h_idx, kv_tile_idx_load * BLK_KV, b_idx)  # noqa: E501
-                                                    profiler.end(ProfileEventType.IssueLoadKV, leader_cond)  # noqa: E501
-                                                    producer_k.advance()
-                                            # wait for consumers to finish the previous Q tile, then load the current Q tile  # noqa: E501
-                                            Tx.ptx.bar.sync(NameBarrier.Q_EMPTY, 32 + MMA_THREADS) # 32 threads in producer, 256 threads in consumer  # noqa: E501
-                                            profiler.start(ProfileEventType.IssueLoadQ, leader_cond)
-                                            if is_leader:
-                                                with Tx.thread():
-                                                    Tx.ptx.mbarrier.arrive.expect_tx(bar_Q_ptr, TMA_BYTES_Q)  # noqa: E501
-                                                    for tma_tile in Tx.serial(HEAD_DIM // TMA_TILE):
-                                                        Tx.ptx.cp_async.bulk.tensor.g2c(
-                                                            4, smem_q.ptr_to([tma_tile * TMA_TILE * BLK_Q]), bar_Q_ptr, Tx.address_of(Q_map),  # noqa: E501
-                                                            tma_tile * TMA_TILE, h_idx, q_idx * BLK_Q, b_idx  # noqa: E501
-                                                        )
-                                            profiler.end(ProfileEventType.IssueLoadQ, leader_cond)
-                                            # wait for the consumers to finish writing last O_tile to gmem to reuse for Vsmem  # noqa: E501
-                                            Tx.ptx.bar.sync(NameBarrier.V_LOAD_READY, 32 + MMA_THREADS)  # noqa: E501
-                                            if is_leader:
-                                                with Tx.thread():
-                                                    while kv_tile_idx_load > 0:
-                                                        # load k tiles
-                                                        pipeline_k.producer_acquire(producer_k, profiler, leader_cond)  # noqa: E501
-                                                        pipeline_k.copy(producer_k, smem_k, K_map, 0, h_idx, (kv_tile_idx_load - 1) * BLK_KV, b_idx)  # noqa: E501
-                                                        profiler.end(ProfileEventType.IssueLoadKV, leader_cond)  # noqa: E501
-                                                        producer_k.advance()
-                                                        # load v tiles
-                                                        pipeline_v.producer_acquire(producer_v, profiler, leader_cond)  # noqa: E501
-                                                        pipeline_v.copy(producer_v, smem_v, V_map, 0, h_idx, kv_tile_idx_load * BLK_KV, b_idx)  # noqa: E501
-                                                        profiler.end(ProfileEventType.IssueLoadKV, leader_cond)  # noqa: E501
-                                                        producer_v.advance()
-                                                        kv_tile_idx_load = kv_tile_idx_load - 1
-                                                    # load the last v tile
-                                                    pipeline_v.producer_acquire(producer_v, profiler, leader_cond)  # noqa: E501
-                                                    pipeline_v.copy(producer_v, smem_v, V_map, 0, h_idx, 0, b_idx)  # noqa: E501
-                                                    profiler.end(ProfileEventType.IssueLoadKV, leader_cond)  # noqa: E501
-                                                    producer_v.advance()
+        P_reg_fp16 = Tx.decl_buffer([S_REG_COUNT], "float16", data=P_reg.data, elem_offset=0)
+        if wg_id == 0:
+            ############################################################################## PRODUCER  # noqa: E501
+            # deallocate registers
+            Tx.ptx.setmaxnreg(False, 24)
+            # only 1 warp is responsible for the producer
+            if warp_id == 0:
+                while (tile_scheduler.valid()):
+                    if q_idx * BLK_Q >= QO_LEN:
+                        break
+                    kv_tile_idx_load = num_kv_tiles - 1
+                    # copy a tile of K first
+                    if is_leader:
+                        pipeline_k.producer_acquire(producer_k, profiler, leader_cond)
+                        pipeline_k.copy(producer_k, smem_k, K_map, 0, h_idx, kv_tile_idx_load * BLK_KV, b_idx)  # noqa: E501
+                        profiler.end(ProfileEventType.IssueLoadKV, leader_cond)
+                        producer_k.advance()
+                    # wait for consumers to finish the previous Q tile, then load the current Q tile  # noqa: E501
+                    Tx.ptx.bar.sync(NameBarrier.Q_EMPTY, 32 + MMA_THREADS) # 32 threads in producer, 256 threads in consumer  # noqa: E501
+                    profiler.start(ProfileEventType.IssueLoadQ, leader_cond)
+                    if is_leader:
+                        Tx.ptx.mbarrier.arrive.expect_tx(bar_Q_ptr, TMA_BYTES_Q)
+                        for tma_tile in Tx.serial(HEAD_DIM // TMA_TILE):
+                            Tx.ptx.cp_async.bulk.tensor.g2c(
+                                4, smem_q.ptr_to([tma_tile * TMA_TILE * BLK_Q]), bar_Q_ptr, Tx.address_of(Q_map),  # noqa: E501
+                                tma_tile * TMA_TILE, h_idx, q_idx * BLK_Q, b_idx
+                            )
+                    profiler.end(ProfileEventType.IssueLoadQ, leader_cond)
+                    # wait for the consumers to finish writing last O_tile to gmem to reuse for Vsmem  # noqa: E501
+                    Tx.ptx.bar.sync(NameBarrier.V_LOAD_READY, 32 + MMA_THREADS)
+                    if is_leader:
+                        while kv_tile_idx_load > 0:
+                            # load k tiles
+                            pipeline_k.producer_acquire(producer_k, profiler, leader_cond)
+                            pipeline_k.copy(producer_k, smem_k, K_map, 0, h_idx, (kv_tile_idx_load - 1) * BLK_KV, b_idx)  # noqa: E501
+                            profiler.end(ProfileEventType.IssueLoadKV, leader_cond)
+                            producer_k.advance()
+                            # load v tiles
+                            pipeline_v.producer_acquire(producer_v, profiler, leader_cond)
+                            pipeline_v.copy(producer_v, smem_v, V_map, 0, h_idx, kv_tile_idx_load * BLK_KV, b_idx)  # noqa: E501
+                            profiler.end(ProfileEventType.IssueLoadKV, leader_cond)
+                            producer_v.advance()
+                            kv_tile_idx_load = kv_tile_idx_load - 1
+                        # load the last v tile
+                        pipeline_v.producer_acquire(producer_v, profiler, leader_cond)
+                        pipeline_v.copy(producer_v, smem_v, V_map, 0, h_idx, 0, b_idx)
+                        profiler.end(ProfileEventType.IssueLoadKV, leader_cond)
+                        producer_v.advance()
                                         # move to the next tile
-                                            tile_scheduler.next_tile()
-                                        # wait until all the consumers finish
-                                        # in our case, I think it's fine to let producers exit early since there's no cluster coordination  # noqa: E501
-                                        if is_leader:
-                                            with Tx.thread():
-                                                pipeline_k.producer_tail(producer_k)
-                                                pipeline_v.producer_tail(producer_v)
-                        elif 1 <= wg_id and wg_id < 3:
-                            with Tx.warpgroup():
-                                ############################################################################## CONSUMER  # noqa: E501
-                                # allocate registers
-                                Tx.ptx.setmaxnreg(True, 240)
-                                # inform the producer to Q is ready to be loaded
-                                Tx.ptx.bar.arrive(NameBarrier.Q_EMPTY, 32 + MMA_THREADS)
-                                while (tile_scheduler.valid()):
-                                    if q_idx * BLK_Q >= QO_LEN:
-                                        break
-                                    kv_tile_idx_read =num_kv_tiles - 1
-                                    # wait Q to be loaded
-                                    Tx.ptx.mbarrier.try_wait(bar_Q_ptr, q_phase)
-                                    q_phase = q_phase ^ 1
-                                    # wait first K tile to be loaded
-                                    pipeline_k.consumer_wait(consumer_k)
-                                    # initialize the S and O reg
-                                    for i in Tx.serial(S_REG_COUNT):
-                                        S_reg[i] = Tx.float32(0)
-                                    for i in Tx.serial(O_REG_COUNT):
-                                        O_reg[i] = Tx.float16(0)
-                                    # initialize the softmax (m=-INF, l=0)
-                                    softmax.init()
-                                    profiler.start(ProfileEventType.GemmQK, leader_cond)
-                                    # calculate S_0 = Q^TK_0
-                                    gemm_QK(S_reg, smem_q, smem_k, desc_Q, desc_K, wg_id - 1, consumer_k)  # noqa: E501, F821
-                                    # wait for O of last tile to be written back to gmem, notifify the producer to load V  # noqa: E501
-                                    Tx.ptx.cp_async.bulk.wait_group(0)
-                                    Tx.ptx.bar.arrive(NameBarrier.V_LOAD_READY, 32 + MMA_THREADS)
-                                    # wait for the gemm result of S_0 = Q^TK_0
-                                    Tx.ptx.wgmma.wait_group(0)
-                                    profiler.end(ProfileEventType.GemmQK, leader_cond)
-                                    # release the first K tile
-                                    pipeline_k.consumer_release(consumer_k)
-                                    consumer_k.advance()
-                                    profiler.start(ProfileEventType.SoftmaxUpdate, leader_cond)
-                                    # mask S_0
-                                    mask(S_reg, wg_id - 1, warp_id_in_wg, lane_id, q_idx * BLK_Q, kv_tile_idx_read * BLK_KV, QO_LEN, KV_LEN)  # noqa: E501
-                                    # softmax, initialize m, P, l for the first tile
-                                    softmax.init_m_P_l(S_reg)
-                                    profiler.end(ProfileEventType.SoftmaxUpdate, leader_cond)
-                                    profiler.start(ProfileEventType.WritePReg, leader_cond)
-                                    # copy to P_0 and downcast to float16
-                                    for i in Tx.serial(S_REG_COUNT):
-                                        P_reg_fp16[i] = Tx.Cast("float16", S_reg[i])
-                                    profiler.end(ProfileEventType.WritePReg, leader_cond)
-                                    with Tx.thread():
-                                        masking_step: Tx.int32
-                                        n_masking_steps: Tx.int32
-                                        masking_step = 0
-                                        n_masking_steps = 0 if not CAUSAL else ceildiv(BLK_Q, BLK_KV)  # noqa: E501
-                                        kv_tile_idx_read =kv_tile_idx_read - 1
-                                        # split out tiles of K and V that require masking
+                    tile_scheduler.next_tile()
+                # wait until all the consumers finish
+                # in our case, I think it's fine to let producers exit early since there's no cluster coordination  # noqa: E501
+                if is_leader:
+                    pipeline_k.producer_tail(producer_k)
+                    pipeline_v.producer_tail(producer_v)
+        elif 1 <= wg_id and wg_id < 3:
+            ############################################################################## CONSUMER  # noqa: E501
+            # allocate registers
+            Tx.ptx.setmaxnreg(True, 240)
+            # inform the producer to Q is ready to be loaded
+            Tx.ptx.bar.arrive(NameBarrier.Q_EMPTY, 32 + MMA_THREADS)
+            while (tile_scheduler.valid()):
+                if q_idx * BLK_Q >= QO_LEN:
+                    break
+                kv_tile_idx_read =num_kv_tiles - 1
+                # wait Q to be loaded
+                Tx.ptx.mbarrier.try_wait(bar_Q_ptr, q_phase)
+                q_phase = q_phase ^ 1
+                # wait first K tile to be loaded
+                pipeline_k.consumer_wait(consumer_k)
+                # initialize the S and O reg
+                for i in Tx.serial(S_REG_COUNT):
+                    S_reg[i] = Tx.float32(0)
+                for i in Tx.serial(O_REG_COUNT):
+                    O_reg[i] = Tx.float16(0)
+                # initialize the softmax (m=-INF, l=0)
+                softmax.init()
+                profiler.start(ProfileEventType.GemmQK, leader_cond)
+                # calculate S_0 = Q^TK_0
+                gemm_QK(S_reg, smem_q, smem_k, desc_Q, desc_K, wg_id - 1, consumer_k)  # noqa: F821
+                # wait for O of last tile to be written back to gmem, notifify the producer to load V  # noqa: E501
+                Tx.ptx.cp_async.bulk.wait_group(0)
+                Tx.ptx.bar.arrive(NameBarrier.V_LOAD_READY, 32 + MMA_THREADS)
+                # wait for the gemm result of S_0 = Q^TK_0
+                Tx.ptx.wgmma.wait_group(0)
+                profiler.end(ProfileEventType.GemmQK, leader_cond)
+                # release the first K tile
+                pipeline_k.consumer_release(consumer_k)
+                consumer_k.advance()
+                profiler.start(ProfileEventType.SoftmaxUpdate, leader_cond)
+                # mask S_0
+                mask(S_reg, wg_id - 1, warp_id_in_wg, lane_id, q_idx * BLK_Q, kv_tile_idx_read * BLK_KV, QO_LEN, KV_LEN)  # noqa: E501
+                # softmax, initialize m, P, l for the first tile
+                softmax.init_m_P_l(S_reg)
+                profiler.end(ProfileEventType.SoftmaxUpdate, leader_cond)
+                profiler.start(ProfileEventType.WritePReg, leader_cond)
+                # copy to P_0 and downcast to float16
+                for i in Tx.serial(S_REG_COUNT):
+                    P_reg_fp16[i] = Tx.Cast("float16", S_reg[i])
+                profiler.end(ProfileEventType.WritePReg, leader_cond)
+                masking_step: Tx.int32
+                n_masking_steps: Tx.int32
+                masking_step = 0
+                n_masking_steps = 0 if not CAUSAL else ceildiv(BLK_Q, BLK_KV)
+                kv_tile_idx_read =kv_tile_idx_read - 1
+                # split out tiles of K and V that require masking
 
-                                        @Tx.inline
-                                        def consumer_body(do_masking):
-                                            pipeline_k.consumer_wait(consumer_k)
-                                            profiler.start(ProfileEventType.GemmQK, leader_cond)
-                                            # commit S_i = Q^TK_i but do not wait
-                                            gemm_QK(S_reg, smem_q, smem_k, desc_Q, desc_K, wg_id - 1, consumer_k)  # noqa: E501, F821
-                                            profiler.start(ProfileEventType.ScaleO, leader_cond)
-                                            # scale O_{i-1} with scale_{i-1}
-                                            softmax.scale_o(O_reg)
-                                            profiler.end(ProfileEventType.ScaleO, leader_cond)
-                                            # wait V_{i-1} to be loaded
-                                            pipeline_v.consumer_wait(consumer_v)
-                                            profiler.start(ProfileEventType.GemmPV, leader_cond)
-                                            # commit O_{i-1} += P_{i-1}V_{i-1} but do not wait
-                                            gemm_PV(O_reg, P_reg, smem_v, desc_V, consumer_v)  # noqa: F821
-                                            # wait for the gemm result of S_i = Q^TK_i
-                                            Tx.ptx.wgmma.wait_group(1)
-                                            profiler.end(ProfileEventType.GemmQK, leader_cond)
-                                            # release the current K tile
-                                            pipeline_k.consumer_release(consumer_k)
-                                            profiler.start(ProfileEventType.SoftmaxUpdate, leader_cond)  # noqa: E501
-                                            # mask S_i
-                                            if do_masking:
-                                                mask(S_reg, wg_id - 1, warp_id_in_wg, lane_id, q_idx * BLK_Q, kv_tile_idx_read * BLK_KV, QO_LEN, KV_LEN)  # noqa: E501
-                                            # update m, P, l for the current tile
-                                            softmax.update_m_P_l(S_reg)
-                                            profiler.end(ProfileEventType.SoftmaxUpdate, leader_cond)  # noqa: E501
-                                            # wait for P_{i-1}V_{i-1} to be computed
-                                            Tx.ptx.wgmma.wait_group(0)
-                                            profiler.end(ProfileEventType.GemmPV, leader_cond)
-                                            # release the previous V tile
-                                            pipeline_v.consumer_release(consumer_v)
-                                            consumer_k.advance()
-                                            consumer_v.advance()
-                                            profiler.start(ProfileEventType.WritePReg, leader_cond)
-                                            # copy to P_{i-1} and downcast to float16
-                                            for i in Tx.serial(S_REG_COUNT):
-                                                P_reg_fp16[i] = Tx.Cast("float16", S_reg[i])
-                                            profiler.end(ProfileEventType.WritePReg, leader_cond)
+                @Tx.inline
+                def consumer_body(do_masking):
+                    pipeline_k.consumer_wait(consumer_k)
+                    profiler.start(ProfileEventType.GemmQK, leader_cond)
+                    # commit S_i = Q^TK_i but do not wait
+                    gemm_QK(S_reg, smem_q, smem_k, desc_Q, desc_K, wg_id - 1, consumer_k)  # noqa: F821
+                    profiler.start(ProfileEventType.ScaleO, leader_cond)
+                    # scale O_{i-1} with scale_{i-1}
+                    softmax.scale_o(O_reg)
+                    profiler.end(ProfileEventType.ScaleO, leader_cond)
+                    # wait V_{i-1} to be loaded
+                    pipeline_v.consumer_wait(consumer_v)
+                    profiler.start(ProfileEventType.GemmPV, leader_cond)
+                    # commit O_{i-1} += P_{i-1}V_{i-1} but do not wait
+                    gemm_PV(O_reg, P_reg, smem_v, desc_V, consumer_v)  # noqa: F821
+                    # wait for the gemm result of S_i = Q^TK_i
+                    Tx.ptx.wgmma.wait_group(1)
+                    profiler.end(ProfileEventType.GemmQK, leader_cond)
+                    # release the current K tile
+                    pipeline_k.consumer_release(consumer_k)
+                    profiler.start(ProfileEventType.SoftmaxUpdate, leader_cond)
+                    # mask S_i
+                    if do_masking:
+                        mask(S_reg, wg_id - 1, warp_id_in_wg, lane_id, q_idx * BLK_Q, kv_tile_idx_read * BLK_KV, QO_LEN, KV_LEN)  # noqa: E501
+                    # update m, P, l for the current tile
+                    softmax.update_m_P_l(S_reg)
+                    profiler.end(ProfileEventType.SoftmaxUpdate, leader_cond)
+                    # wait for P_{i-1}V_{i-1} to be computed
+                    Tx.ptx.wgmma.wait_group(0)
+                    profiler.end(ProfileEventType.GemmPV, leader_cond)
+                    # release the previous V tile
+                    pipeline_v.consumer_release(consumer_v)
+                    consumer_k.advance()
+                    consumer_v.advance()
+                    profiler.start(ProfileEventType.WritePReg, leader_cond)
+                    # copy to P_{i-1} and downcast to float16
+                    for i in Tx.serial(S_REG_COUNT):
+                        P_reg_fp16[i] = Tx.Cast("float16", S_reg[i])
+                    profiler.end(ProfileEventType.WritePReg, leader_cond)
 
-                                        while (masking_step < n_masking_steps and kv_tile_idx_read >= 0):  # noqa: E501
-                                            consumer_body(True)
-                                            masking_step = masking_step + 1
-                                            kv_tile_idx_read =kv_tile_idx_read - 1
-                                        # no masking
-                                        while kv_tile_idx_read >= 0:
-                                            consumer_body(False)
-                                            kv_tile_idx_read =kv_tile_idx_read - 1
+                while (masking_step < n_masking_steps and kv_tile_idx_read >= 0):
+                    consumer_body(True)
+                    masking_step = masking_step + 1
+                    kv_tile_idx_read =kv_tile_idx_read - 1
+                # no masking
+                while kv_tile_idx_read >= 0:
+                    consumer_body(False)
+                    kv_tile_idx_read =kv_tile_idx_read - 1
 
-                                    # notify the producer to load the next Q tile
-                                    Tx.ptx.bar.arrive(NameBarrier.Q_EMPTY, 32 + MMA_THREADS)
-                                    profiler.start(ProfileEventType.ScaleO, leader_cond)
-                                    # scale O for the last tile
-                                    softmax.scale_o(O_reg)
-                                    profiler.end(ProfileEventType.ScaleO, leader_cond)
-                                    # wait for the last V tile to be loaded
-                                    pipeline_v.consumer_wait(consumer_v)
-                                    profiler.start(ProfileEventType.GemmPV, leader_cond)
-                                    # commit the last O += PV
-                                    gemm_PV(O_reg, P_reg, smem_v, desc_V, consumer_v)  # noqa: F821
-                                    profiler.start(ProfileEventType.SoftmaxUpdate, leader_cond)
-                                    # get final l, do quad reduce and l^(-1)
-                                    softmax.finalize()
-                                    profiler.end(ProfileEventType.SoftmaxUpdate, leader_cond)
-                                    # wait for the last O += PV to be computed
-                                    Tx.ptx.wgmma.wait_group(0)
-                                    profiler.end(ProfileEventType.GemmPV, leader_cond)
-                                    # release the last V tile
-                                    pipeline_v.consumer_release(consumer_v)
-                                    consumer_v.advance()
-                                    profiler.start(ProfileEventType.ScaleO, leader_cond)
-                                    # final scale o using diagonal l^(-1)
-                                    softmax.scale_o(O_reg)
-                                    profiler.end(ProfileEventType.ScaleO, leader_cond)
-                                    ####### Epilogue, write O back to gmem
-                                    # make sure all consumer threads finish V consumption, so Vsmem can be reused for Osmem  # noqa: E501
-                                    Tx.ptx.bar.sync(NameBarrier.O_LOAD_READY, MMA_THREADS)
-                                    profiler.start(ProfileEventType.WriteO, leader_cond)
-                                    # write O back to gmem
-                                    write_epilogue(warp_id - 4, lane_id, q_idx, h_idx, b_idx, smem_o, O_map, O_reg)  # noqa: E501
-                                    profiler.end(ProfileEventType.WriteO, leader_cond)
+                # notify the producer to load the next Q tile
+                Tx.ptx.bar.arrive(NameBarrier.Q_EMPTY, 32 + MMA_THREADS)
+                profiler.start(ProfileEventType.ScaleO, leader_cond)
+                # scale O for the last tile
+                softmax.scale_o(O_reg)
+                profiler.end(ProfileEventType.ScaleO, leader_cond)
+                # wait for the last V tile to be loaded
+                pipeline_v.consumer_wait(consumer_v)
+                profiler.start(ProfileEventType.GemmPV, leader_cond)
+                # commit the last O += PV
+                gemm_PV(O_reg, P_reg, smem_v, desc_V, consumer_v)  # noqa: F821
+                profiler.start(ProfileEventType.SoftmaxUpdate, leader_cond)
+                # get final l, do quad reduce and l^(-1)
+                softmax.finalize()
+                profiler.end(ProfileEventType.SoftmaxUpdate, leader_cond)
+                # wait for the last O += PV to be computed
+                Tx.ptx.wgmma.wait_group(0)
+                profiler.end(ProfileEventType.GemmPV, leader_cond)
+                # release the last V tile
+                pipeline_v.consumer_release(consumer_v)
+                consumer_v.advance()
+                profiler.start(ProfileEventType.ScaleO, leader_cond)
+                # final scale o using diagonal l^(-1)
+                softmax.scale_o(O_reg)
+                profiler.end(ProfileEventType.ScaleO, leader_cond)
+                ####### Epilogue, write O back to gmem
+                # make sure all consumer threads finish V consumption, so Vsmem can be reused for Osmem  # noqa: E501
+                Tx.ptx.bar.sync(NameBarrier.O_LOAD_READY, MMA_THREADS)
+                profiler.start(ProfileEventType.WriteO, leader_cond)
+                # write O back to gmem
+                write_epilogue(warp_id - 4, lane_id, q_idx, h_idx, b_idx, smem_o, O_map, O_reg)
+                profiler.end(ProfileEventType.WriteO, leader_cond)
 
-                                    # move to the next tile
-                                    tile_scheduler.next_tile()
+                # move to the next tile
+                tile_scheduler.next_tile()
     # fmt: on
 
     q = np.random.randn(*QO_SHAPE).astype(np.float16)

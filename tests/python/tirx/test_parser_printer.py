@@ -35,10 +35,7 @@ def _make_minimal_tirx_prim_func():
         "@Tx.prim_func()\n"
         "def f(a: Tx.handle):\n"
         '    A = Tx.match_buffer(a, (1,), "float32")\n'
-        "    with Tx.thread():\n"
-        "        with Tx.cta():\n"
-        "            with Tx.thread():\n"
-        "                A[0] = Tx.float32(1)"
+        "    A[0] = Tx.float32(1)"
     )
     return from_source(source)
 
@@ -57,12 +54,9 @@ def test_roundtrip_scopeid1():
         bx, by, bz = Tx.cta_id([1, 1, 1])
         warp_id = Tx.warp_id([1])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            with Tx.warp():
-                with Tx.thread():
-                    A_local = Tx.alloc_buffer([1], dtype="float16", scope="local")
-                    for i in Tx.serial(2):
-                        A_local[0] = A[lane_id * 2 + i]
+        A_local = Tx.alloc_buffer([1], dtype="float16", scope="local")
+        for i in Tx.serial(2):
+            A_local[0] = A[lane_id * 2 + i]
         # fmt: on
 
     code = test.script()
@@ -81,13 +75,10 @@ def test_roundtrip_scopeid2():
         cbx, cby, cbz = Tx.cta_id_in_cluster([2, 2, 1])
         cta_id_in_pair = Tx.cta_id_in_pair()
         clx, cly, clz = Tx.cluster_id([4, 5, 12])
-        with Tx.cta():
-            with Tx.warp():
-                with Tx.thread():
-                    Tx.evaluate(bx + by + bz)
-                    Tx.evaluate(cbx + cby + cbz)
-                    Tx.evaluate(cta_id_in_pair)
-                    Tx.evaluate(clx + cly + clz)
+        Tx.evaluate(bx + by + bz)
+        Tx.evaluate(cbx + cby + cbz)
+        Tx.evaluate(cta_id_in_pair)
+        Tx.evaluate(clx + cly + clz)
         # fmt: on
 
     code = test.script()
@@ -111,8 +102,7 @@ def test_roundtrip_scopeid_deferred():
         tx = Tx.thread_id()                    # deferred cta→thread
         Tx.warp_id([4])
         Tx.lane_id([32])
-        with Tx.thread():
-            Tx.evaluate(bx + cbx + clx + tx)
+        Tx.evaluate(bx + cbx + clx + tx)
         # fmt: on
 
     code = test.script()
@@ -122,7 +112,7 @@ def test_roundtrip_scopeid_deferred():
     assert_structural_equal(test, from_source(code))
 
 
-def test_exec_scope_filter_guard_roundtrip_with_scope_arg_sugar():
+def test_exec_scope_filter_guard_roundtrip():
     @Tx.prim_func(private=True)
     def test(A_ptr: Tx.handle) -> None:
         A = Tx.match_buffer(A_ptr, (1,), "float32", scope="global")
@@ -130,13 +120,10 @@ def test_exec_scope_filter_guard_roundtrip_with_scope_arg_sugar():
         Tx.device_entry()
         Tx.cta_id([1])
         tx = Tx.thread_id([128])
-        with Tx.cta():
-            with Tx.thread((0 <= tx) & (tx < 1)):
-                A[0] = Tx.float32(1)
+        if (0 <= tx) & (tx < 1):
+            A[0] = Tx.float32(1)
 
     code = test.script()
-    assert "with Tx.thread(Tx.bitwise_and(0 <= tx, tx < 1)):" in code
-    assert "if Tx.filter(tx, 0, 1):" not in code
     assert from_source(code).script() == code
     assert_structural_equal(test, from_source(code))
 
@@ -171,15 +158,11 @@ def test_roundtrip_layout():
         lane_id = Tx.lane_id([32])
         C = Tx.alloc_buffer([128, 128], dtype="float16", scope="shared", layout=get_layout3())
         D = Tx.alloc_buffer([128, 32], dtype="float16", scope="shared", layout=get_layout4())
+        A_warp = Tx.alloc_buffer([64, 64], dtype="float16", scope="shared", layout=get_layout1())
+        B_warp = Tx.alloc_buffer([64, 64], dtype="float16", scope="shared", layout=get_layout2())
 
-        with Tx.cta():
-            A_warp = Tx.alloc_buffer([64, 64], dtype="float16", scope="shared", layout=get_layout1())  # noqa: E501
-            B_warp = Tx.alloc_buffer([64, 64], dtype="float16", scope="shared", layout=get_layout2())  # noqa: E501
-
-            E = Tx.alloc_buffer([64, 256], dtype="float16", scope="shared", layout=get_layout5())
-
-            with Tx.thread():
-                Tx.evaluate(A_warp[0, 0] + B_warp[0, 0] + C[0, 0] + D[0, 0] + E[0, 0])
+        E = Tx.alloc_buffer([64, 256], dtype="float16", scope="shared", layout=get_layout5())
+        Tx.evaluate(A_warp[0, 0] + B_warp[0, 0] + C[0, 0] + D[0, 0] + E[0, 0])
         # fmt: on
 
     code = test.script()
@@ -211,14 +194,11 @@ def test_roundtrip_layout_replica_and_offset():
     @Tx.prim_func
     def test() -> None:
         Tx.device_entry()
-        with Tx.cta():
-            A = Tx.alloc_buffer([8], dtype="float16", scope="shared", layout=get_shard_replica())
-            B = Tx.alloc_buffer([8], dtype="float16", scope="shared", layout=get_shard_offset_single())  # noqa: E501
-            C = Tx.alloc_buffer([8], dtype="float16", scope="shared", layout=get_shard_offset_multi())  # noqa: E501
-            D = Tx.alloc_buffer([32], dtype="float16", scope="shared", layout=get_full())
-
-            with Tx.thread():
-                Tx.evaluate(A[0] + B[0] + C[0] + D[0])
+        A = Tx.alloc_buffer([8], dtype="float16", scope="shared", layout=get_shard_replica())
+        B = Tx.alloc_buffer([8], dtype="float16", scope="shared", layout=get_shard_offset_single())
+        C = Tx.alloc_buffer([8], dtype="float16", scope="shared", layout=get_shard_offset_multi())
+        D = Tx.alloc_buffer([32], dtype="float16", scope="shared", layout=get_full())
+        Tx.evaluate(A[0] + B[0] + C[0] + D[0])
         # fmt: on
 
     code = test.script()
@@ -256,7 +236,6 @@ def test_default_script_prefix_tirx_irmodule_non_main():
     assert "# from tvm.script import tir as T" not in code
     assert "@Tx.prim_func" in code
     assert "def foo(" in code
-    assert "with Tx.thread():" in code
     parsed = from_source(code)
     assert parsed.script() == code
     assert_structural_equal(mod, parsed)
@@ -270,15 +249,12 @@ def test_roundtrip_buffer_view_get1():
     @Tx.prim_func
     def test() -> None:
         Tx.device_entry()
-        with Tx.cta():
-            A = Tx.alloc_buffer([2], dtype="float16", scope="local")
-            A_layout = Tx.TileLayout(Tx.S[(1, 2) : (2, 1)])
-            A_warp_layout = A_layout.tile(L_LANE, (8, 4), (1, 2))
-            A_warp = A.view(8, 8, layout=A_warp_layout)
-
-            with Tx.thread():
-                A_local = A_warp.local(2)
-                A_local[0] = Tx.float16(0)
+        A = Tx.alloc_buffer([2], dtype="float16", scope="local")
+        A_layout = Tx.TileLayout(Tx.S[(1, 2) : (2, 1)])
+        A_warp_layout = A_layout.tile(L_LANE, (8, 4), (1, 2))
+        A_warp = A.view(8, 8, layout=A_warp_layout)
+        A_local = A_warp.local(2)
+        A_local[0] = Tx.float16(0)
 
         # fmt: on
     code = test.script()
@@ -297,15 +273,12 @@ def test_roundtrip_buffer_view_get2():
         tx, ty, tz = Tx.thread_id([16, 8, 1])
         warp_id = Tx.warp_id([4])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            A = Tx.alloc_buffer([2,], dtype="float16", scope="local")
-            A_layout = Tx.TileLayout(Tx.S[(1, 2) : (2, 1)])
-            B_layout = A_layout.tile(L_LANE, (8, 4), (1, 2))
-            B = A.view(8, 8, layout=B_layout)
-            D = B.local(2)
-
-            with Tx.thread():
-                out[0] = A[0] + B[0, 0] + D[0]
+        A = Tx.alloc_buffer([2,], dtype="float16", scope="local")
+        A_layout = Tx.TileLayout(Tx.S[(1, 2) : (2, 1)])
+        B_layout = A_layout.tile(L_LANE, (8, 4), (1, 2))
+        B = A.view(8, 8, layout=B_layout)
+        D = B.local(2)
+        out[0] = A[0] + B[0, 0] + D[0]
         # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -317,14 +290,11 @@ def test_roundtrip_buffer_view_get3():
     @Tx.prim_func
     def test() -> None:
         Tx.device_entry()
-        with Tx.cta():
-            A = Tx.alloc_buffer([8, 8], dtype="float32", scope="local")
-            A_f16 = A.view("float16")
-            A_f64 = A.view("float64")
-
-            with Tx.thread():
-                A_f16[0, 0] = Tx.float16(0)
-                A_f64[0, 0] = Tx.float64(0)
+        A = Tx.alloc_buffer([8, 8], dtype="float32", scope="local")
+        A_f16 = A.view("float16")
+        A_f64 = A.view("float64")
+        A_f16[0, 0] = Tx.float16(0)
+        A_f64[0, 0] = Tx.float64(0)
 
         # fmt: on
     code = test.script()
@@ -343,14 +313,13 @@ def test_roundtrip_op1():
         bx, by, bz = Tx.cta_id([1, 1, 1])
         warp_id = Tx.warp_id([1])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            A_smem = Tx.alloc_buffer([64], dtype="float32", scope="shared")
+        A_smem = Tx.alloc_buffer([64], dtype="float32", scope="shared")
 
-            Tx.copy(A_smem, A)
-            for i in range(10):
-                Tx.fill(A_smem, Tx.float32(0))
-                Tx.gemm(A_smem, A_smem, A_smem, A_smem)
-            Tx.copy(A, A_smem)
+        Tx.cta.copy(A_smem, A)
+        for i in range(10):
+            Tx.cta.fill(A_smem, Tx.float32(0))
+            Tx.cta.gemm(A_smem, A_smem, A_smem, A_smem)
+        Tx.cta.copy(A, A_smem)
         # fmt: on
 
     code = test.script()
@@ -370,16 +339,15 @@ def test_roundtrip_op2():
         bx, by, bz = Tx.cta_id([1, 1, 1])
         warp_id = Tx.warp_id([4])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            A_smem = Tx.alloc_buffer([128, 32], dtype="float16", scope="shared")
-            B_smem = Tx.alloc_buffer([32, 64], dtype="float16", scope="shared")
+        A_smem = Tx.alloc_buffer([128, 32], dtype="float16", scope="shared")
+        B_smem = Tx.alloc_buffer([32, 64], dtype="float16", scope="shared")
 
-            C_local = Tx.alloc_buffer([128, 64], dtype="float32", scope="local")
-            for k in range(4):
-                Tx.copy(A_smem, A[:, k * 32 : k * 32 + 32])
-                Tx.copy(B_smem, B[k * 32 : k * 32 + 32, 0:64])
-                Tx.gemm(C_local, A_smem, B_smem, C_local)
-            Tx.copy(C, C_local)
+        C_local = Tx.alloc_buffer([128, 64], dtype="float32", scope="local")
+        for k in range(4):
+            Tx.cta.copy(A_smem, A[:, k * 32 : k * 32 + 32])
+            Tx.cta.copy(B_smem, B[k * 32 : k * 32 + 32, 0:64])
+            Tx.cta.gemm(C_local, A_smem, B_smem, C_local)
+        Tx.cta.copy(C, C_local)
         # fmt: on
 
     code = test.script()
@@ -402,24 +370,23 @@ def test_roundtrip_op3():
         bx, by, bz = Tx.cta_id([1, 1, 1])
         warp_id = Tx.warp_id([4])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            A_smem = Tx.alloc_buffer([NUM_STAGES, 128, 32], dtype="float16", scope="shared")
-            B_smem = Tx.alloc_buffer([NUM_STAGES, 32, 64], dtype="float16", scope="shared")
+        A_smem = Tx.alloc_buffer([NUM_STAGES, 128, 32], dtype="float16", scope="shared")
+        B_smem = Tx.alloc_buffer([NUM_STAGES, 32, 64], dtype="float16", scope="shared")
 
-            C_local = Tx.alloc_buffer([128, 64], dtype="float32", scope="local")
-            for i in range(NUM_STAGES - 1):
-                Tx.copy(A_smem[i, :, :], A[:, i * 32 : i * 32 + 32])
-                Tx.copy(B_smem[i, :, :], B[i * 32 : i * 32 + 32, :])
+        C_local = Tx.alloc_buffer([128, 64], dtype="float32", scope="local")
+        for i in range(NUM_STAGES - 1):
+            Tx.cta.copy(A_smem[i, :, :], A[:, i * 32 : i * 32 + 32])
+            Tx.cta.copy(B_smem[i, :, :], B[i * 32 : i * 32 + 32, :])
 
-            for k in range(K // 32):
-                copy_k = Tx.meta_var(k + NUM_STAGES - 1)
-                gemm_stage = Tx.meta_var(k % NUM_STAGES)
-                copy_stage = Tx.meta_var(copy_k % NUM_STAGES)
-                Tx.copy(A_smem[copy_stage, :, :], A[:, copy_k * 32 : copy_k * 32 + 32])
-                Tx.copy(B_smem[copy_stage, :, :], B[copy_k * 32 : copy_k * 32 + 32, :])
-                Tx.gemm(C_local, A_smem[gemm_stage, :, :], B_smem[gemm_stage, :, :], C_local)
+        for k in range(K // 32):
+            copy_k = Tx.meta_var(k + NUM_STAGES - 1)
+            gemm_stage = Tx.meta_var(k % NUM_STAGES)
+            copy_stage = Tx.meta_var(copy_k % NUM_STAGES)
+            Tx.cta.copy(A_smem[copy_stage, :, :], A[:, copy_k * 32 : copy_k * 32 + 32])
+            Tx.cta.copy(B_smem[copy_stage, :, :], B[copy_k * 32 : copy_k * 32 + 32, :])
+            Tx.cta.gemm(C_local, A_smem[gemm_stage, :, :], B_smem[gemm_stage, :, :], C_local)
 
-            Tx.copy(C, C_local)
+        Tx.cta.copy(C, C_local)
         # fmt: on
 
     code = test.script()
@@ -462,11 +429,10 @@ def test_roundtrip_break_for():
         A = Tx.match_buffer(A_ptr, (10,), "int32")
 
         Tx.device_entry()
-        with Tx.cta():
-            for i in Tx.serial(10):
-                if i > 5:
-                    break
-                A[i] = i
+        for i in Tx.serial(10):
+            if i > 5:
+                break
+            A[i] = i
         # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -480,14 +446,13 @@ def test_roundtrip_break_while():
         A = Tx.match_buffer(A_ptr, (10,), "int32")
 
         Tx.device_entry()
-        with Tx.cta():
-            i = Tx.alloc_buffer((1,), "int32", scope="local")
-            i[0] = 0
-            while i[0] < 10:
-                A[i[0]] = i[0] * 2
-                if A[i[0]] > 10:
-                    break
-                i[0] = i[0] + 1
+        i = Tx.alloc_buffer((1,), "int32", scope="local")
+        i[0] = 0
+        while i[0] < 10:
+            A[i[0]] = i[0] * 2
+            if A[i[0]] > 10:
+                break
+            i[0] = i[0] + 1
         # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -501,15 +466,14 @@ def test_roundtrip_break_nested():
         A = Tx.match_buffer(A_ptr, (9,), "int32")
 
         Tx.device_entry()
-        with Tx.cta():
-            idx = Tx.alloc_buffer((1,), "int32", scope="local")
-            idx[0] = 0
-            for i in Tx.serial(3):
-                for j in Tx.serial(3):
-                    A[idx[0]] = i * 10 + j
-                    idx[0] += 1
-                    if j == 1:
-                        break
+        idx = Tx.alloc_buffer((1,), "int32", scope="local")
+        idx[0] = 0
+        for i in Tx.serial(3):
+            for j in Tx.serial(3):
+                A[idx[0]] = i * 10 + j
+                idx[0] += 1
+                if j == 1:
+                    break
         # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -523,11 +487,10 @@ def test_roundtrip_continue_for():
         A = Tx.match_buffer(A_ptr, (10,), "int32")
 
         Tx.device_entry()
-        with Tx.cta():
-            for i in Tx.serial(10):
-                if (i % 2) == 0:
-                    continue
-                A[i] = i
+        for i in Tx.serial(10):
+            if (i % 2) == 0:
+                continue
+            A[i] = i
         # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -541,15 +504,14 @@ def test_roundtrip_continue_while():
         A = Tx.match_buffer(A_ptr, (10,), "int32")
 
         Tx.device_entry()
-        with Tx.cta():
-            i = Tx.alloc_buffer((1,), "int32", scope="local")
-            i[0] = 0
-            while i[0] < 10:
-                if (i[0] % 2) == 1:
-                    i[0] += 1
-                    continue
-                A[i[0]] = i[0]
+        i = Tx.alloc_buffer((1,), "int32", scope="local")
+        i[0] = 0
+        while i[0] < 10:
+            if (i[0] % 2) == 1:
                 i[0] += 1
+                continue
+            A[i[0]] = i[0]
+            i[0] += 1
         # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -563,15 +525,14 @@ def test_roundtrip_continue_nested():
         A = Tx.match_buffer(A_ptr, (9,), "int32")
 
         Tx.device_entry()
-        with Tx.cta():
-            idx = Tx.alloc_buffer((1,), dtype="int32", scope="local")
-            idx[0] = 0
-            for i in Tx.serial(3):
-                for j in Tx.serial(3):
-                    if j == 1:
-                        continue
-                    A[idx[0]] = i * 10 + j
-                    idx[0] += 1
+        idx = Tx.alloc_buffer((1,), dtype="int32", scope="local")
+        idx[0] = 0
+        for i in Tx.serial(3):
+            for j in Tx.serial(3):
+                if j == 1:
+                    continue
+                A[idx[0]] = i * 10 + j
+                idx[0] += 1
         # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -585,13 +546,12 @@ def test_roundtrip_break_and_continue():
         A = Tx.match_buffer(A_ptr, (10,), "int32")
 
         Tx.device_entry()
-        with Tx.cta():
-            for i in Tx.serial(10):
-                if i == 2:
-                    continue
-                if i == 7:
-                    break
-                A[i] = i
+        for i in Tx.serial(10):
+            if i == 2:
+                continue
+            if i == 7:
+                break
+            A[i] = i
         # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -605,12 +565,11 @@ def test_roundtrip_unreachable_after_break():
         A = Tx.match_buffer(A_ptr, (5,), "int32")
 
         Tx.device_entry()
-        with Tx.cta():
-            for i in Tx.serial(5):
-                A[i] = i
-                break
-                        # This line is never reached
-                A[i] = -1
+        for i in Tx.serial(5):
+            A[i] = i
+            break
+                    # This line is never reached
+            A[i] = -1
         # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -763,9 +722,8 @@ def test_grid():
     @Tx.prim_func
     def test():
         Tx.device_entry()
-        with Tx.thread():
-            for lvs in Tx.grid(10, (2, 12)):
-                Tx.evaluate(lvs[0] + lvs[1])
+        for lvs in Tx.grid(10, (2, 12)):
+            Tx.evaluate(lvs[0] + lvs[1])
         # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -810,29 +768,28 @@ def test_alloc_apis():
         E = Tx.decl_scalar("float16", pool.data, "shared.dyn", 0)
                 # normal 1-dim buffer with shape (1,)
         F = Tx.alloc_local((1,), "float16")
-        with Tx.thread():
-            Ta: Tx.float16
-            inner_pool = Tx.decl_buffer(shape=[10], data=pool.data, dtype="uint8", scope="shared.dyn")  # noqa: E501
-            test = Test(Ta, inner_pool)  # noqa: F821
-            test.init()
-            A[0] = C
-            A[0] = C + D  # noqa: F821
-            A[1] = B[0] * C
-            D.buffer[0] = D + Tx.float16(1)  # noqa: F821
-            D = D + Tx.float16(1)  # noqa: F821
-            C = D
-            Tx.evaluate(E)
-            E = E + Tx.float16(1)
-                    # normal 1-dim buffer with shape (1,) can be assigned directly,
-                    # but not loaded directly
-            F = F[0] + Tx.float16(1)
-            C += D
-            D += E + C + D
-            Tx.evaluate(Tx.address_of(C))
-            Tx.evaluate(C.buffer.access_ptr("rw", offset=0))
-            Tx.evaluate(C.buffer.data)
-            Tx.evaluate(D)
-            Tx.evaluate(Tx.address_of(D))
+        Ta: Tx.float16
+        inner_pool = Tx.decl_buffer(shape=[10], data=pool.data, dtype="uint8", scope="shared.dyn")
+        test = Test(Ta, inner_pool)  # noqa: F821
+        test.init()
+        A[0] = C
+        A[0] = C + D  # noqa: F821
+        A[1] = B[0] * C
+        D.buffer[0] = D + Tx.float16(1)  # noqa: F821
+        D = D + Tx.float16(1)  # noqa: F821
+        C = D
+        Tx.evaluate(E)
+        E = E + Tx.float16(1)
+                # normal 1-dim buffer with shape (1,) can be assigned directly,
+                # but not loaded directly
+        F = F[0] + Tx.float16(1)
+        C += D
+        D += E + C + D
+        Tx.evaluate(Tx.address_of(C))
+        Tx.evaluate(C.buffer.access_ptr("rw", offset=0))
+        Tx.evaluate(C.buffer.data)
+        Tx.evaluate(D)
+        Tx.evaluate(Tx.address_of(D))
         # fmt: on
 
     code = test.script()
@@ -873,18 +830,17 @@ def test_meta_class_multiple_instances_auto_name_owned_resources():
     @Tx.prim_func
     def test():
         Tx.device_entry()
-        with Tx.thread():
-            external = Tx.alloc_buffer((2,), "int32", scope="local")
-            first = Holder(external)
-            second = Holder(external)
-            Tx.evaluate(
-                first.buf[0]
-                + second.buf[1]
-                + first.scalar
-                + second.scalar
-                + first.external[0]
-                + second.external[1]
-            )
+        external = Tx.alloc_buffer((2,), "int32", scope="local")
+        first = Holder(external)
+        second = Holder(external)
+        Tx.evaluate(
+            first.buf[0]
+            + second.buf[1]
+            + first.scalar
+            + second.scalar
+            + first.external[0]
+            + second.external[1]
+        )
 
     code = test.script()
     bufs = _collect_buffers(test)
@@ -979,13 +935,12 @@ def test_list_comprehension():
     @Tx.prim_func(private=True)
     def test():
         Tx.device_entry()
-        with Tx.thread():
-            acc = Tx.alloc_local([10], "bool")
-            regs = Tx.meta_var([acc[_] for _ in range(10)])
-            Tx.evaluate(regs[0])
-            Tx.evaluate(tvm.tirx.all(*regs))
-            Tx.evaluate(tvm.tirx.all(*[acc[_] for _ in range(10)]))
-            Tx.evaluate(tvm.tirx.all(*([acc[_] for _ in range(2, 4)] + [acc[_] for _ in range(6, 8)])))  # noqa: E501
+        acc = Tx.alloc_local([10], "bool")
+        regs = Tx.meta_var([acc[_] for _ in range(10)])
+        Tx.evaluate(regs[0])
+        Tx.evaluate(tvm.tirx.all(*regs))
+        Tx.evaluate(tvm.tirx.all(*[acc[_] for _ in range(10)]))
+        Tx.evaluate(tvm.tirx.all(*([acc[_] for _ in range(2, 4)] + [acc[_] for _ in range(6, 8)])))
         # fmt: on
     code = test.script()
     print(code)
@@ -1034,14 +989,12 @@ def test_buffer():
         _B0 = Tx.decl_buffer((10, 11), "float32", data=B.data, scope="global")
         _C0 = Tx.decl_buffer((10, 11), "float32", data=C.data, layout="default")
         _D0 = Tx.decl_buffer((10, 11), "float32", data=D.data, layout=Tx.TileLayout(Tx.S[(10, 11) : (1, 10)]))  # noqa: E501
+        _A1 = Tx.alloc_buffer((10, 11), "float32", layout=None)
+        _B1 = Tx.alloc_buffer((10, 11), "float32", scope="global")
+        _C1 = Tx.alloc_buffer((10, 11), "float32", layout="default")
+        _D1 = Tx.alloc_buffer((10, 11), "float32", layout=Tx.TileLayout(Tx.S[(10, 11) : (1, 10)]))
 
-        with Tx.thread():
-            _A1 = Tx.alloc_buffer((10, 11), "float32", layout=None)
-            _B1 = Tx.alloc_buffer((10, 11), "float32", scope="global")
-            _C1 = Tx.alloc_buffer((10, 11), "float32", layout="default")
-            _D1 = Tx.alloc_buffer((10, 11), "float32", layout=Tx.TileLayout(Tx.S[(10, 11) : (1, 10)]))  # noqa: E501
-
-            pass
+        pass
     # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -1123,11 +1076,10 @@ def test_scalar_assign_in_macro():
     @Tx.prim_func
     def test():
         Tx.device_entry()
-        with Tx.thread():
-            counter: Tx.int32
-            state = Tx.meta_var(State(counter))  # noqa: F821
-            state.add_one()
-            Tx.evaluate(state.counter)
+        counter: Tx.int32
+        state = Tx.meta_var(State(counter))  # noqa: F821
+        state.add_one()
+        Tx.evaluate(state.counter)
         # fmt: on
 
     code = test.script()
@@ -1158,9 +1110,8 @@ def test_scalar_assign_error_not_swallowed():
 @Tx.prim_func
 def func():
     Tx.device_entry()
-    with Tx.thread():
-        v: Tx.int32
-        v = v + Tx.int32(1)
+    v: Tx.int32
+    v = v + Tx.int32(1)
 """
     # The ValueError propagates through the parser framework which wraps it
     # into a DiagnosticError.  Before the fix the broad ``except Exception``
@@ -1177,18 +1128,17 @@ def test_scalar_annotation_syntax():
     @Tx.prim_func
     def test():
         Tx.device_entry()
-        with Tx.thread():
-                    # Scalar with init value
-            x: Tx.int32 = 0
-            y: Tx.float16 = Tx.float16(1.0)
-                    # Scalar without init
-            z: Tx.int32
-                    # Use scalars
-            x = x + Tx.int32(1)
-            z = x + Tx.int32(2)
-            y = y + Tx.float16(3.0)
-            Tx.evaluate(x + z)
-            Tx.evaluate(y)
+                # Scalar with init value
+        x: Tx.int32 = 0
+        y: Tx.float16 = Tx.float16(1.0)
+                # Scalar without init
+        z: Tx.int32
+                # Use scalars
+        x = x + Tx.int32(1)
+        z = x + Tx.int32(2)
+        y = y + Tx.float16(3.0)
+        Tx.evaluate(x + z)
+        Tx.evaluate(y)
         # fmt: on
 
     code = test.script()
@@ -1202,11 +1152,10 @@ def test_scalar_allocbuffer_annotation_and_init_merge():
     @Tx.prim_func
     def test():
         Tx.device_entry()
-        with Tx.thread():
-            phase_mma = Tx.alloc_local((1,), "int32")
-            phase_mma[0] = Tx.int32(0)
-            phase_aux = Tx.alloc_local((1,), "int32")
-            Tx.evaluate(phase_mma[0] + phase_aux[0])
+        phase_mma = Tx.alloc_local((1,), "int32")
+        phase_mma[0] = Tx.int32(0)
+        phase_aux = Tx.alloc_local((1,), "int32")
+        Tx.evaluate(phase_mma[0] + phase_aux[0])
         # fmt: on
 
     code = test.script()
@@ -1223,10 +1172,9 @@ def test_scalar_allocbuffer_layout_none_keeps_alloc_local():
     @Tx.prim_func
     def test():
         Tx.device_entry()
-        with Tx.thread():
-            phase_mma = Tx.alloc_local((1,), "int32", layout=None)
-            phase_mma[0] = Tx.int32(0)
-            Tx.evaluate(phase_mma[0])
+        phase_mma = Tx.alloc_local((1,), "int32", layout=None)
+        phase_mma[0] = Tx.int32(0)
+        Tx.evaluate(phase_mma[0])
         # fmt: on
 
     code = test.script()
@@ -1266,8 +1214,7 @@ def test_let_annotation_syntax():
         # Explicit LetStmt with auto-type
         combined: Tx.let = bx + tx
         Tx.device_entry()
-        with Tx.thread():
-            Tx.evaluate(bx + tx + combined)
+        Tx.evaluate(bx + tx + combined)
         # fmt: on
 
     code = test.script()
@@ -1285,11 +1232,10 @@ def test_annotation_syntax_comprehensive():
     def test_let_var():
         Tx.device_entry()
         smem = Tx.alloc_shared([128], "float16")
-        with Tx.thread():
-            ptr: Tx.let[Tx.Var(name="ptr", dtype=PointerType(PrimType("uint64")))] = Tx.reinterpret(
-                "handle", smem.access_ptr("rw")
-            )
-            Tx.evaluate(ptr)
+        ptr: Tx.let[Tx.Var(name="ptr", dtype=PointerType(PrimType("uint64")))] = Tx.reinterpret(
+            "handle", smem.access_ptr("rw")
+        )
+        Tx.evaluate(ptr)
         # fmt: on
     code = test_let_var.script()
     assert from_source(code).script() == code
@@ -1320,11 +1266,10 @@ def func():
     @Tx.prim_func
     def test_bare_assign():
         Tx.device_entry()
-        with Tx.thread():
-            tid = Tx.launch_thread("threadIdx.x", 128)
-            x = tid + Tx.int32(1)
-            x = x + Tx.int32(2)
-            Tx.evaluate(x)
+        tid = Tx.launch_thread("threadIdx.x", 128)
+        x = tid + Tx.int32(1)
+        x = x + Tx.int32(2)
+        Tx.evaluate(x)
         # fmt: on
     code = test_bare_assign.script()
     assert from_source(code).script() == code
@@ -1335,13 +1280,10 @@ def test_roundtrip_buffer_permute():
     @Tx.prim_func
     def test() -> None:
         Tx.device_entry()
-        with Tx.cta():
-            A = Tx.alloc_buffer([8, 4], dtype="float16", scope="local",
-                                layout=Tx.TileLayout(Tx.S[(8, 4) : (4, 1)]))
-            B = A.permute(1, 0)
-
-            with Tx.thread():
-                B[0, 0] = Tx.float16(0)
+        A = Tx.alloc_buffer([8, 4], dtype="float16", scope="local",
+                            layout=Tx.TileLayout(Tx.S[(8, 4) : (4, 1)]))
+        B = A.permute(1, 0)
+        B[0, 0] = Tx.float16(0)
         # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -1353,14 +1295,11 @@ def test_roundtrip_buffer_local_auto():
     @Tx.prim_func
     def test() -> None:
         Tx.device_entry()
-        with Tx.cta():
-            A = Tx.alloc_buffer([2], dtype="float16", scope="local")
-            A_layout = Tx.TileLayout(Tx.S[(1, 2) : (2, 1)])
-            B = A.view(8, 8, layout=A_layout.tile(L_LANE, (8, 4), (1, 2)))
-
-            with Tx.thread():
-                B_local = B.local()
-                B_local[0] = Tx.float16(0)
+        A = Tx.alloc_buffer([2], dtype="float16", scope="local")
+        A_layout = Tx.TileLayout(Tx.S[(1, 2) : (2, 1)])
+        B = A.view(8, 8, layout=A_layout.tile(L_LANE, (8, 4), (1, 2)))
+        B_local = B.local()
+        B_local[0] = Tx.float16(0)
         # fmt: on
     code = test.script()
     assert from_source(code).script() == code
@@ -1391,14 +1330,11 @@ def test_buffer_local_ir():
     @Tx.prim_func
     def func() -> None:
         Tx.device_entry()
-        with Tx.cta():
-            A = Tx.alloc_buffer([2], dtype="float16", scope="local")
-            A_layout = Tx.TileLayout(Tx.S[(1, 2) : (2, 1)])
-            B = A.view(8, 8, layout=A_layout.tile(L_LANE, (8, 4), (1, 2)))
-
-            with Tx.thread():
-                B_local = B.local()
-                B_local[0] = Tx.float16(0)
+        A = Tx.alloc_buffer([2], dtype="float16", scope="local")
+        A_layout = Tx.TileLayout(Tx.S[(1, 2) : (2, 1)])
+        B = A.view(8, 8, layout=A_layout.tile(L_LANE, (8, 4), (1, 2)))
+        B_local = B.local()
+        B_local[0] = Tx.float16(0)
         # fmt: on
 
     bufs = _collect_buffers(func)
@@ -1429,12 +1365,10 @@ def test_buffer_permute_ir():
     @Tx.prim_func
     def func() -> None:
         Tx.device_entry()
-        with Tx.cta():
-            A = Tx.alloc_buffer([8, 4], dtype="float16", scope="local",
-                                layout=Tx.TileLayout(Tx.S[(8, 4) : (4, 1)]))
-            B = A.permute(1, 0)
-            with Tx.thread():
-                B[0, 0] = Tx.float16(0)
+        A = Tx.alloc_buffer([8, 4], dtype="float16", scope="local",
+                            layout=Tx.TileLayout(Tx.S[(8, 4) : (4, 1)]))
+        B = A.permute(1, 0)
+        B[0, 0] = Tx.float16(0)
         # fmt: on
 
     bufs = _collect_buffers(func)
@@ -1460,11 +1394,9 @@ def test_buffer_view_dtype_ir():
     @Tx.prim_func
     def func() -> None:
         Tx.device_entry()
-        with Tx.cta():
-            A = Tx.alloc_buffer([8, 8], dtype="float16", scope="local")
-            B = A.view("float32")
-            with Tx.thread():
-                B[0, 0] = Tx.float32(0)
+        A = Tx.alloc_buffer([8, 8], dtype="float16", scope="local")
+        B = A.view("float32")
+        B[0, 0] = Tx.float32(0)
         # fmt: on
 
     bufs = _collect_buffers(func)
@@ -1525,9 +1457,8 @@ def test_roundtrip_serial_unroll_false():
         cta_id = Tx.cta_id([1])
         warp_id = Tx.warp_id([1])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            for _ in Tx.serial(10, unroll=False):
-                Tx.fill(A[0:32], Tx.float32(0))
+        for _ in Tx.serial(10, unroll=False):
+            Tx.cta.fill(A[0:32], Tx.float32(0))
         # fmt: on
 
     code = test.script()
@@ -1548,9 +1479,8 @@ def test_roundtrip_serial_unroll_true():
         cta_id = Tx.cta_id([1])
         warp_id = Tx.warp_id([1])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            for _ in Tx.serial(10, unroll=True):
-                Tx.fill(A[0:32], Tx.float32(0))
+        for _ in Tx.serial(10, unroll=True):
+            Tx.cta.fill(A[0:32], Tx.float32(0))
         # fmt: on
 
     code = test.script()
@@ -1571,9 +1501,8 @@ def test_roundtrip_serial_unroll_false_with_other_annotations():
         cta_id = Tx.cta_id([1])
         warp_id = Tx.warp_id([1])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            for _ in Tx.serial(10, annotations={"disable_unroll": True, "custom": 42}):
-                Tx.fill(A[0:32], Tx.float32(0))
+        for _ in Tx.serial(10, annotations={"disable_unroll": True, "custom": 42}):
+            Tx.cta.fill(A[0:32], Tx.float32(0))
         # fmt: on
 
     code = test.script()
@@ -1593,18 +1522,18 @@ def test_roundtrip_unary_inplace():
         cta_id = Tx.cta_id([1])
         warp_id = Tx.warp_id([1])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            with Tx.warp():
-                Tx.exp2(A[0:32])
-                Tx.sqrt(A[32:64])
-                Tx.reciprocal(A[64:96])
+        Tx.warp.exp2(A[0:32])
+        Tx.warp.sqrt(A[32:64])
+        Tx.warp.reciprocal(A[64:96])
         # fmt: on
 
     code = test.script()
     # Each op should appear with a single arg (no duplicate src, no trailing Nones)
-    assert "Tx.exp2(A[0:32])" in code, f"expected single-arg exp2, got:\n{code}"
-    assert "Tx.sqrt(A[32:64])" in code, f"expected single-arg sqrt, got:\n{code}"
-    assert "Tx.reciprocal(A[64:96])" in code, f"expected single-arg reciprocal, got:\n{code}"
+    assert 'Tx.warp.exp2(A[0:32])' in code, f"expected single-arg exp2, got:\n{code}"
+    assert 'Tx.warp.sqrt(A[32:64])' in code, f"expected single-arg sqrt, got:\n{code}"
+    assert 'Tx.warp.reciprocal(A[64:96])' in code, (
+        f"expected single-arg reciprocal, got:\n{code}"
+    )
     assert "None" not in code, f"trailing None args should be trimmed:\n{code}"
     assert from_source(code).script() == code
     assert_structural_equal(test, from_source(code))
@@ -1622,13 +1551,13 @@ def test_roundtrip_unary_different_dst_src():
         cta_id = Tx.cta_id([1])
         warp_id = Tx.warp_id([1])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            with Tx.warp():
-                Tx.exp2(A[0:32], B[0:32])
+        Tx.warp.exp2(A[0:32], B[0:32])
         # fmt: on
 
     code = test.script()
-    assert "Tx.exp2(A[0:32], B[0:32])" in code, f"different dst/src should keep both:\n{code}"
+    assert 'Tx.warp.exp2(A[0:32], B[0:32])' in code, (
+        f"different dst/src should keep both:\n{code}"
+    )
     assert from_source(code).script() == code
     assert_structural_equal(test, from_source(code))
 
@@ -1644,8 +1573,7 @@ def test_roundtrip_persistent_decorator():
         cta_id = Tx.cta_id([1])
         warp_id = Tx.warp_id([1])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            Tx.fill(A[0:32], Tx.float32(0))
+        Tx.cta.fill(A[0:32], Tx.float32(0))
         # fmt: on
 
     code = test.script()
@@ -1666,8 +1594,7 @@ def test_roundtrip_persistent_not_present():
         cta_id = Tx.cta_id([1])
         warp_id = Tx.warp_id([1])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            Tx.fill(A[0:32], Tx.float32(0))
+        Tx.cta.fill(A[0:32], Tx.float32(0))
         # fmt: on
 
     code = test.script()
@@ -1687,19 +1614,18 @@ def test_warp_role():
         wg_id = Tx.warpgroup_id([4])
         warp_id = Tx.warp_id_in_wg([4])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            with WarpRole(warp_id, 1, regs=48):
-                Tx.fill(A[0:32], Tx.float32(0))
-            with WarpRole(warp_id, 0, regs=232, increase=True):
-                Tx.fill(A[32:64], Tx.float32(1))
+        with WarpRole(warp_id, 1, regs=48):
+            Tx.cta.fill(A[0:32], Tx.float32(0))
+        with WarpRole(warp_id, 0, regs=232, increase=True):
+            Tx.cta.fill(A[32:64], Tx.float32(1))
         # fmt: on
 
     code = test.script()
     assert "warp_id == 1" in code, f"should have warp_id==1 guard:\n{code}"
     assert "warp_id == 0" in code, f"should have warp_id==0 guard:\n{code}"
     assert "setmaxnreg" in code, f"should have setmaxnreg:\n{code}"
-    assert "with Tx.warp(warp_id == 1):" in code, f"should have guarded Tx.warp scope:\n{code}"
-    assert "with Tx.warp(warp_id == 0):" in code, f"should have guarded Tx.warp scope:\n{code}"
+    assert "if warp_id == 1:" in code, f"should have warp_id==1 if-guard:\n{code}"
+    assert "if warp_id == 0:" in code, f"should have warp_id==0 if-guard:\n{code}"
     # The printed code is valid TIR — it should parse back
     assert from_source(code).script() == code
     assert_structural_equal(test, from_source(code))
@@ -1718,9 +1644,8 @@ def test_warpgroup_role():
         wg_id = Tx.warpgroup_id([4])
         warp_id_in_wg = Tx.warp_id_in_wg([4])
         lane_id = Tx.lane_id([32])
-        with Tx.cta():
-            with WarpgroupRole(wg_id, 2, regs=200, increase=True):
-                Tx.fill(A[0:32], Tx.float32(0))
+        with WarpgroupRole(wg_id, 2, regs=200, increase=True):
+            Tx.cta.fill(A[0:32], Tx.float32(0))
         # fmt: on
 
     code = test.script()
@@ -1737,16 +1662,14 @@ def test_vector_annotation_syntax_1d():
     @Tx.prim_func
     def func():
         Tx.device_entry()
-        with Tx.thread():
-            v: Tx.float32[8]
-            Tx.evaluate(v[0])  # noqa: F821
+        v: Tx.float32[8]
+        Tx.evaluate(v[0])  # noqa: F821
 
     @Tx.prim_func
     def func():  # noqa: F811
         Tx.device_entry()
-        with Tx.thread():
-            v = Tx.alloc_local([8], "float32")
-            Tx.evaluate(v[0])
+        v = Tx.alloc_local([8], "float32")
+        Tx.evaluate(v[0])
         # fmt: on
 
         # func was redefined; compare first (annotation) with second (alloc_local).
@@ -1756,9 +1679,8 @@ def test_vector_annotation_syntax_1d():
     @Tx.prim_func
     def annotation_func():
         Tx.device_entry()
-        with Tx.thread():
-            v: Tx.float32[8]
-            Tx.evaluate(v[0])  # noqa: F821
+        v: Tx.float32[8]
+        Tx.evaluate(v[0])  # noqa: F821
         # fmt: on
 
         # Verify both produce valid IR that round-trips through printer/parser
@@ -1777,9 +1699,8 @@ def test_vector_annotation_syntax_multidim():
     @Tx.prim_func
     def func():
         Tx.device_entry()
-        with Tx.thread():
-            m: Tx.float32[4, 8]
-            Tx.evaluate(m[0, 0])  # noqa: F821
+        m: Tx.float32[4, 8]
+        Tx.evaluate(m[0, 0])  # noqa: F821
         # fmt: on
 
     code = func.script()
@@ -1795,11 +1716,10 @@ def test_vector_annotation_shorthand_aliases():
     @Tx.prim_func
     def func():
         Tx.device_entry()
-        with Tx.thread():
-            a: Tx.f32[4]
-            b: Tx.i32[2]
-            c: Tx.f16[8]
-            Tx.evaluate(a[0] + Tx.float32(b[0]) + Tx.float32(c[0]))  # noqa: F821
+        a: Tx.f32[4]
+        b: Tx.i32[2]
+        c: Tx.f16[8]
+        Tx.evaluate(a[0] + Tx.float32(b[0]) + Tx.float32(c[0]))  # noqa: F821
         # fmt: on
 
     code = func.script()
@@ -1814,12 +1734,11 @@ def test_scalar_annotation_shorthand():
     @Tx.prim_func
     def func():
         Tx.device_entry()
-        with Tx.thread():
-            x: Tx.f32 = 0
-            y: Tx.i32
-            x = x + Tx.float32(1.0)
-            y = Tx.int32(2)
-            Tx.evaluate(x + Tx.float32(y))
+        x: Tx.f32 = 0
+        y: Tx.i32
+        x = x + Tx.float32(1.0)
+        y = Tx.int32(2)
+        Tx.evaluate(x + Tx.float32(y))
         # fmt: on
 
     code = func.script()
@@ -1835,9 +1754,8 @@ def test_vector_annotation_with_python_variable_size():
     @Tx.prim_func
     def func():
         Tx.device_entry()
-        with Tx.thread():
-            v: Tx.f16[vec_size]
-            Tx.evaluate(Tx.float32(v[0]))  # noqa: F821
+        v: Tx.f16[vec_size]
+        Tx.evaluate(Tx.float32(v[0]))  # noqa: F821
         # fmt: on
 
     code = func.script()
@@ -1873,9 +1791,8 @@ def test_roundtrip_cuda_func_call_source_code():
     @Tx.prim_func
     def func():
         Tx.device_entry()
-        with Tx.cta():
-            desc = Tx.alloc_local((1,), "uint64")
-            Tx.cuda.func_call("my_func", Tx.address_of(desc[0]), source_code="\n__device__ void my_func(uint64_t* p) {\n    *p = 42;\n}\n")  # noqa: E501
+        desc = Tx.alloc_local((1,), "uint64")
+        Tx.cuda.func_call("my_func", Tx.address_of(desc[0]), source_code="\n__device__ void my_func(uint64_t* p) {\n    *p = 42;\n}\n")  # noqa: E501
         # fmt: on
 
     code = func.script()

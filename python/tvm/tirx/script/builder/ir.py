@@ -568,43 +568,6 @@ def sblock(name: str = "", no_realize: bool = False, exec_scope: str = "") -> fr
     return _ffi_api.Block(name, no_realize, exec_scope)  # type: ignore[attr-defined] # pylint: disable=no-member
 
 
-def _scope_guards(args: tuple[Any, ...]) -> list[PrimExpr]:
-    if not args:
-        return []
-    if len(args) == 1:
-        return [args[0]]
-    raise ValueError(
-        "Exec scope guards expect no args or one predicate expression. "
-        "Use `with Tx.scope((0 <= var) & (var < hi))` for structural predicates, "
-        "or `with Tx.scope(Tx.filter(var, opaque_selector))` when a selector annotation is needed."
-    )
-
-
-def cluster(*guards: Any) -> frame.ExecScopeFrame:
-    """Open a ``cluster``-level execution scope."""
-    return _ffi_api.Cluster(_scope_guards(guards))  # type: ignore[attr-defined] # pylint: disable=no-member
-
-
-def cta(*guards: Any) -> frame.ExecScopeFrame:
-    """Open a ``cta``-level execution scope."""
-    return _ffi_api.CTA(_scope_guards(guards))  # type: ignore[attr-defined] # pylint: disable=no-member
-
-
-def warpgroup(*guards: Any) -> frame.ExecScopeFrame:
-    """Open a ``warpgroup``-level execution scope."""
-    return _ffi_api.WarpGroup(_scope_guards(guards))  # type: ignore[attr-defined] # pylint: disable=no-member
-
-
-def warp(*guards: Any) -> frame.ExecScopeFrame:
-    """Open a ``warp``-level execution scope."""
-    return _ffi_api.Warp(_scope_guards(guards))  # type: ignore[attr-defined] # pylint: disable=no-member
-
-
-def thread(*guards: Any) -> frame.ExecScopeFrame:
-    """Open a ``thread``-level execution scope."""
-    return _ffi_api.Thread(_scope_guards(guards))  # type: ignore[attr-defined] # pylint: disable=no-member
-
-
 def device_entry() -> None:
     """Mark the device-region entry within the enclosing PrimFunc body.
 
@@ -636,12 +599,11 @@ def elected():
     Write the explicit form instead::
 
         if Tx.ptx.elect_sync():
-            with Tx.thread():
-                ...
+            ...                         # thread is the default scope
     """
     raise RuntimeError(
         "Tx.elected() is no longer available. Write explicitly: "
-        "`if Tx.ptx.elect_sync(): with Tx.thread():`"
+        "`if Tx.ptx.elect_sync(): ...` (thread is the default scope)"
     )
 
 
@@ -4106,9 +4068,7 @@ __all__ += [
     "alloc_scalar",
     "alloc_shared",
     "alloc_tcgen05_ldst_frag",
-    "cluster",
     "cluster_id",
-    "cta",
     "cta_id",
     "cta_id_in_cluster",
     "cta_id_in_pair",
@@ -4125,14 +4085,11 @@ __all__ += [
     "shared_scalar",
     "smem",
     "static_assert",
-    "thread",
     "thread_id",
     "thread_id_in_wg",
     "tmem",
-    "warp",
     "warp_id",
     "warp_id_in_wg",
-    "warpgroup",
     "warpgroup_id",
 ]
 

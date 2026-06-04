@@ -82,21 +82,18 @@ def test_dispatch_combine(world_size=8):
 
             @Tx.inline
             def wait(self):
-                with Tx.thread():
-                    while 1:
-                        Tx.ptx.ld_global_acquire(self.state[0], self.sem.access_ptr("r", offset=0))
-                        if Tx.cuda.syncthreads_and(self.state[0] == self.cnt):
-                            break
-                        Tx.cuda.nano_sleep(40)
+                while 1:
+                    Tx.ptx.ld_global_acquire(self.state[0], self.sem.access_ptr("r", offset=0))
+                    if Tx.cuda.syncthreads_and(self.state[0] == self.cnt):
+                        break
+                    Tx.cuda.nano_sleep(40)
 
             @Tx.inline
             def signal(self):
-                with Tx.thread():
-                    Tx.cuda.cta_sync()
-                    if tid == 0:  # noqa: F821
-                        with Tx.thread():
-                            Tx.cuda.atomic_add(self.sem.access_ptr("rw", offset=0), 1)
-                    Tx.cuda.thread_fence()
+                Tx.cuda.cta_sync()
+                if tid == 0:  # noqa: F821
+                    Tx.cuda.atomic_add(self.sem.access_ptr("rw", offset=0), 1)
+                Tx.cuda.thread_fence()
 
             @Tx.inline
             def sync(self):
@@ -437,37 +434,33 @@ def test_dispatch_combine(world_size=8):
             grid_bar = Tx.meta_var(GridBarrier(N_BLOCKS_DISPATCH, sem_bar))
             group_rank = Tx.meta_var(Tx.int32(rank % GROUP_SIZE))
             group_idx = Tx.meta_var(Tx.int32(rank // GROUP_SIZE))
+            smem_buf = Tx.alloc_buffer([N_EXPERTS], "uint32", scope="shared", align=128) # for send token index m calculation  # noqa: E501
+            smem_expert_st = Tx.alloc_buffer([N_RECV_GROUPS_PER_CTA,], "uint32", scope="shared", align=4) # start index of expert for each CTA  # noqa: E501
+            smem_token_st = Tx.alloc_buffer([N_RECV_GROUPS_PER_CTA,], "uint32", scope="shared", align=4) # start index of token for each CTA  # noqa: E501
 
-            with Tx.cta():
-                smem_buf = Tx.alloc_buffer([N_EXPERTS], "uint32", scope="shared", align=128) # for send token index m calculation  # noqa: E501
-                smem_expert_st = Tx.alloc_buffer([N_RECV_GROUPS_PER_CTA,], "uint32", scope="shared", align=4) # start index of expert for each CTA  # noqa: E501
-                smem_token_st = Tx.alloc_buffer([N_RECV_GROUPS_PER_CTA,], "uint32", scope="shared", align=4) # start index of token for each CTA  # noqa: E501
-
-                if DISPATCH_SEND:
-                    zero_smem(tid, smem_buf)
-                    if N_WARPS_DISPATCH - 1 <= warp_id and warp_id < N_WARPS_DISPATCH:
-                        with Tx.warp():
-                            for k in Tx.serial(Tx.ceildiv(N_EXPERTS, N_BLOCKS_DISPATCH * GROUP_SIZE)):  # noqa: E501
-                                dst_expert = Tx.meta_var(Tx.uint32(k * N_BLOCKS_DISPATCH * GROUP_SIZE + bx * GROUP_SIZE + group_rank))  # noqa: E501
-                                if dst_expert < N_EXPERTS:
-                                    count = int_var()
-                                    warp_count(lane_id, dst_expert, count, send_experts)
-                                    thread_signal(group_idx, lane_id, dst_expert, count, buf_target_wait)  # noqa: E501
-                    elif 0 <= warp_id and warp_id < N_WARPS_DISPATCH - 1:
-                        with Tx.warp():
-                            for m in range(M):
-                                thread_accum(tid, m, send_experts, smem_buf)
-                                if m % (N_BLOCKS_DISPATCH * GROUP_SIZE) == Tx.int32(bx * GROUP_SIZE + group_rank):  # noqa: E501
-                                    n_threads = Tx.meta_var(Tx.int32(N_WARPS_DISPATCH - 1) * 32)
-                                    thread_prepare_buf(n_threads, tid, m, send_tokens, buf_send)
-                                    Tx.ptx.bar.sync(1, n_threads)
-                                    warp_dispatch_exp(group_idx, warp_id, m, smem_buf, send_experts, buf_send, buf_recv, buf_actual_wait)  # noqa: E501
-                if DISPATCH_RECV:
-                    cta_wait(bx, tid, buf_target_wait, buf_actual_wait, recv_num_total, recv_num_per_expert, smem_expert_st, smem_token_st)  # noqa: E501
-                    thread_compute_meta(bx, tid, buf_meta_index, buf_meta_expert, buf_meta_offset, buf_meta_group, buf_meta_token,  # noqa: E501
-                                        buf_recv, buf_target_wait, smem_expert_st, smem_token_st)
-                    grid_bar.sync() # FIXME(@kathy): use fine-grained sync
-                    thread_store_tokens(bx, tid, recv_tokens, buf_recv, recv_num_total, buf_meta_expert, buf_meta_offset, buf_meta_group, buf_meta_token)  # noqa: E501
+            if DISPATCH_SEND:
+                zero_smem(tid, smem_buf)
+                if N_WARPS_DISPATCH - 1 <= warp_id and warp_id < N_WARPS_DISPATCH:
+                    for k in Tx.serial(Tx.ceildiv(N_EXPERTS, N_BLOCKS_DISPATCH * GROUP_SIZE)):
+                        dst_expert = Tx.meta_var(Tx.uint32(k * N_BLOCKS_DISPATCH * GROUP_SIZE + bx * GROUP_SIZE + group_rank))  # noqa: E501
+                        if dst_expert < N_EXPERTS:
+                            count = int_var()
+                            warp_count(lane_id, dst_expert, count, send_experts)
+                            thread_signal(group_idx, lane_id, dst_expert, count, buf_target_wait)
+                elif 0 <= warp_id and warp_id < N_WARPS_DISPATCH - 1:
+                    for m in range(M):
+                        thread_accum(tid, m, send_experts, smem_buf)
+                        if m % (N_BLOCKS_DISPATCH * GROUP_SIZE) == Tx.int32(bx * GROUP_SIZE + group_rank):  # noqa: E501
+                            n_threads = Tx.meta_var(Tx.int32(N_WARPS_DISPATCH - 1) * 32)
+                            thread_prepare_buf(n_threads, tid, m, send_tokens, buf_send)
+                            Tx.ptx.bar.sync(1, n_threads)
+                            warp_dispatch_exp(group_idx, warp_id, m, smem_buf, send_experts, buf_send, buf_recv, buf_actual_wait)  # noqa: E501
+            if DISPATCH_RECV:
+                cta_wait(bx, tid, buf_target_wait, buf_actual_wait, recv_num_total, recv_num_per_expert, smem_expert_st, smem_token_st)  # noqa: E501
+                thread_compute_meta(bx, tid, buf_meta_index, buf_meta_expert, buf_meta_offset, buf_meta_group, buf_meta_token,  # noqa: E501
+                                    buf_recv, buf_target_wait, smem_expert_st, smem_token_st)
+                grid_bar.sync() # FIXME(@kathy): use fine-grained sync
+                thread_store_tokens(bx, tid, recv_tokens, buf_recv, recv_num_total, buf_meta_expert, buf_meta_offset, buf_meta_group, buf_meta_token)  # noqa: E501
         # fmt: on
 
         # fmt: off
@@ -492,13 +485,11 @@ def test_dispatch_combine(world_size=8):
             tid = Tx.thread_id([N_WARPS_COMBINE * 32])
             rank = Tx.nvshmem.my_pe()
             n_threads = Tx.meta_var(N_WARPS_COMBINE * 32)
-
-            with Tx.cta():
-                if COMBINE_SEND:
-                    thread_prepare_buf_back(bx, tid, n_threads, send_num_total, send_tokens, buf_send_new, buf_meta_expert, buf_meta_offset)  # noqa: E501
-                    warp_dispatch_dp(rank, bx, warp_id, send_num_total, buf_send_new, buf_recv_new, buf_actual_wait_new, buf_meta_expert, buf_meta_index, buf_meta_group)  # noqa: E501
-                if COMBINE_RECV:
-                    thread_combine(bx, tid, n_threads, recv_tokens_new, buf_recv_new, buf_actual_wait_new, send_experts, send_weights)  # noqa: E501
+            if COMBINE_SEND:
+                thread_prepare_buf_back(bx, tid, n_threads, send_num_total, send_tokens, buf_send_new, buf_meta_expert, buf_meta_offset)  # noqa: E501
+                warp_dispatch_dp(rank, bx, warp_id, send_num_total, buf_send_new, buf_recv_new, buf_actual_wait_new, buf_meta_expert, buf_meta_index, buf_meta_group)  # noqa: E501
+            if COMBINE_RECV:
+                thread_combine(bx, tid, n_threads, recv_tokens_new, buf_recv_new, buf_actual_wait_new, send_experts, send_weights)  # noqa: E501
         # fmt: on
 
         # launch disco runtime

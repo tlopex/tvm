@@ -59,7 +59,7 @@ def test_dispatch_prints_predicate_reasons():
             self.op = op
             self.args = []  # not used by the tested predicates
 
-    # Use TRN copy; predicate requires exec_scope == "kernel".
+    # Use TRN copy; predicate requires exec_scope == "thread".
     op_call = _OpCall(Op.get("tirx.copy"))
     sctx = _DummySctx(target_kind="trn", exec_scope="warp")  # intentionally wrong
 
@@ -89,7 +89,7 @@ def test_dispatch_forced_variant_missing_table_and_message():
             self.args = []
 
     op_call = _OpCall(Op.get("tirx.copy"))
-    sctx = _DummySctx(target_kind="trn", exec_scope="kernel")
+    sctx = _DummySctx(target_kind="trn", exec_scope="thread")
 
     with pytest.raises(RuntimeError) as e:
         run_dispatch(op_call, sctx)
@@ -113,7 +113,7 @@ def test_dispatch_raises_with_aggregated_reasons():
 
     # Use TRN compose_op; variant implementation raises NotImplementedError
     op_call = _OpCall(Op.get("tirx.compose_op"))
-    sctx = _DummySctx(target_kind="trn", exec_scope="kernel")
+    sctx = _DummySctx(target_kind="trn", exec_scope="thread")
 
     with pytest.raises(RuntimeError) as e:
         run_dispatch(op_call, sctx)

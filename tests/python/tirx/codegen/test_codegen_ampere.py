@@ -91,49 +91,48 @@ def test_ptx_mma_m16n8k16(a_type, no_c_ptr):
         Tx.device_entry()
         cta_id = Tx.cta_id([1])
         tx = Tx.thread_id([32])
-        with Tx.thread():
-            D_local = Tx.alloc_local([4], "float32")
-            A_local = Tx.alloc_local([8], a_type)
-            B_local = Tx.alloc_local([4], b_type)
-            C_local = Tx.alloc_local([4], "float32")
+        D_local = Tx.alloc_local([4], "float32")
+        A_local = Tx.alloc_local([8], a_type)
+        B_local = Tx.alloc_local([4], b_type)
+        C_local = Tx.alloc_local([4], "float32")
 
-            @Tx.inline
-            def G2L(buf_local, buf_global, block_8x8, mode="row"):
-                if mode == "row":
-                    for i in range(block_8x8):
-                        row = Tx.meta_var(i % 2 * 8 + tx // 4)
-                        col = Tx.meta_var(i // 2 * 8 + (tx % 4) * 2)
-                        for j in range(2):
-                            buf_local[i * 2 + j] = buf_global[row, col + j]
-                elif mode == "col":
-                    for i in range(block_8x8):
-                        row = Tx.meta_var(i % 2 * 8 + (tx % 4) * 2)
-                        col = Tx.meta_var(i // 2 * 8 + tx // 4)
-                        for j in range(2):
-                            buf_local[i * 2 + j] = buf_global[row + j, col]
+        @Tx.inline
+        def G2L(buf_local, buf_global, block_8x8, mode="row"):
+            if mode == "row":
+                for i in range(block_8x8):
+                    row = Tx.meta_var(i % 2 * 8 + tx // 4)
+                    col = Tx.meta_var(i // 2 * 8 + (tx % 4) * 2)
+                    for j in range(2):
+                        buf_local[i * 2 + j] = buf_global[row, col + j]
+            elif mode == "col":
+                for i in range(block_8x8):
+                    row = Tx.meta_var(i % 2 * 8 + (tx % 4) * 2)
+                    col = Tx.meta_var(i // 2 * 8 + tx // 4)
+                    for j in range(2):
+                        buf_local[i * 2 + j] = buf_global[row + j, col]
 
-            G2L(D_local, D, 2)
-            G2L(A_local, A, 4)
-            G2L(B_local, B, 2, "col")
-            G2L(C_local, C, 2)
+        G2L(D_local, D, 2)
+        G2L(A_local, A, 4)
+        G2L(B_local, B, 2, "col")
+        G2L(C_local, C, 2)
 
-            # One pointer per b32 register, in PTX order: A=4, B=2, D/C=4.
-            d_ptrs = [D_local.ptr_to([i]) for i in range(4)]
-            a_ptrs = [A_local.ptr_to([2 * i]) for i in range(4)]
-            b_ptrs = [B_local.ptr_to([2 * i]) for i in range(2)]
-            if no_c_ptr:
-                Tx.ptx.mma("m16n8k16", "row", "col", "float32", a_type, b_type, "float32",
-                           d_ptrs, a_ptrs, b_ptrs)
-            else:
-                c_ptrs = [C_local.ptr_to([i]) for i in range(4)]
-                Tx.ptx.mma("m16n8k16", "row", "col", "float32", a_type, b_type, "float32",
-                           d_ptrs, a_ptrs, b_ptrs, c_ptrs)
+        # One pointer per b32 register, in PTX order: A=4, B=2, D/C=4.
+        d_ptrs = [D_local.ptr_to([i]) for i in range(4)]
+        a_ptrs = [A_local.ptr_to([2 * i]) for i in range(4)]
+        b_ptrs = [B_local.ptr_to([2 * i]) for i in range(2)]
+        if no_c_ptr:
+            Tx.ptx.mma("m16n8k16", "row", "col", "float32", a_type, b_type, "float32",
+                       d_ptrs, a_ptrs, b_ptrs)
+        else:
+            c_ptrs = [C_local.ptr_to([i]) for i in range(4)]
+            Tx.ptx.mma("m16n8k16", "row", "col", "float32", a_type, b_type, "float32",
+                       d_ptrs, a_ptrs, b_ptrs, c_ptrs)
 
-            for i in range(2):
-                row = Tx.meta_var(i % 2 * 8 + tx // 4)
-                col = Tx.meta_var(i // 2 * 8 + (tx % 4) * 2)
-                for j in range(2):
-                    D[row, col + j] = D_local[i * 2 + j]
+        for i in range(2):
+            row = Tx.meta_var(i % 2 * 8 + tx // 4)
+            col = Tx.meta_var(i // 2 * 8 + (tx % 4) * 2)
+            for j in range(2):
+                D[row, col + j] = D_local[i * 2 + j]
     # fmt: on
 
     src, mod = _get_source(main)
@@ -162,49 +161,48 @@ def test_ptx_mma_m16n8k8(a_type, no_c_ptr):
         Tx.device_entry()
         cta_id = Tx.cta_id([1])
         tx = Tx.thread_id([32])
-        with Tx.thread():
-            D_local = Tx.alloc_local([4], "float32")
-            A_local = Tx.alloc_local([4], a_type)
-            B_local = Tx.alloc_local([2], b_type)
-            C_local = Tx.alloc_local([4], "float32")
+        D_local = Tx.alloc_local([4], "float32")
+        A_local = Tx.alloc_local([4], a_type)
+        B_local = Tx.alloc_local([2], b_type)
+        C_local = Tx.alloc_local([4], "float32")
 
-            @Tx.inline
-            def G2L(buf_local, buf_global, block_8x8, mode="row"):
-                if mode == "row":
-                    for i in range(block_8x8):
-                        row = Tx.meta_var(i % 2 * 8 + tx // 4)
-                        col = Tx.meta_var(i // 2 * 8 + (tx % 4) * 2)
-                        for j in range(2):
-                            buf_local[i * 2 + j] = buf_global[row, col + j]
-                elif mode == "col":
-                    for i in range(block_8x8):
-                        row = Tx.meta_var(i % 2 * 8 + (tx % 4) * 2)
-                        col = Tx.meta_var(i // 2 * 8 + tx // 4)
-                        for j in range(2):
-                            buf_local[i * 2 + j] = buf_global[row + j, col]
+        @Tx.inline
+        def G2L(buf_local, buf_global, block_8x8, mode="row"):
+            if mode == "row":
+                for i in range(block_8x8):
+                    row = Tx.meta_var(i % 2 * 8 + tx // 4)
+                    col = Tx.meta_var(i // 2 * 8 + (tx % 4) * 2)
+                    for j in range(2):
+                        buf_local[i * 2 + j] = buf_global[row, col + j]
+            elif mode == "col":
+                for i in range(block_8x8):
+                    row = Tx.meta_var(i % 2 * 8 + (tx % 4) * 2)
+                    col = Tx.meta_var(i // 2 * 8 + tx // 4)
+                    for j in range(2):
+                        buf_local[i * 2 + j] = buf_global[row + j, col]
 
-            G2L(D_local, D, 2)
-            G2L(A_local, A, 2)
-            G2L(B_local, B, 1, "col")
-            G2L(C_local, C, 2)
+        G2L(D_local, D, 2)
+        G2L(A_local, A, 2)
+        G2L(B_local, B, 1, "col")
+        G2L(C_local, C, 2)
 
-            # One pointer per b32 register, in PTX order: A=2, B=1, D/C=4.
-            d_ptrs = [D_local.ptr_to([i]) for i in range(4)]
-            a_ptrs = [A_local.ptr_to([2 * i]) for i in range(2)]
-            b_ptrs = [B_local.ptr_to([0])]
-            if no_c_ptr:
-                Tx.ptx.mma("m16n8k8", "row", "col", "float32", a_type, b_type, "float32",
-                           d_ptrs, a_ptrs, b_ptrs)
-            else:
-                c_ptrs = [C_local.ptr_to([i]) for i in range(4)]
-                Tx.ptx.mma("m16n8k8", "row", "col", "float32", a_type, b_type, "float32",
-                           d_ptrs, a_ptrs, b_ptrs, c_ptrs)
+        # One pointer per b32 register, in PTX order: A=2, B=1, D/C=4.
+        d_ptrs = [D_local.ptr_to([i]) for i in range(4)]
+        a_ptrs = [A_local.ptr_to([2 * i]) for i in range(2)]
+        b_ptrs = [B_local.ptr_to([0])]
+        if no_c_ptr:
+            Tx.ptx.mma("m16n8k8", "row", "col", "float32", a_type, b_type, "float32",
+                       d_ptrs, a_ptrs, b_ptrs)
+        else:
+            c_ptrs = [C_local.ptr_to([i]) for i in range(4)]
+            Tx.ptx.mma("m16n8k8", "row", "col", "float32", a_type, b_type, "float32",
+                       d_ptrs, a_ptrs, b_ptrs, c_ptrs)
 
-            for i in range(2):
-                row = Tx.meta_var(i % 2 * 8 + tx // 4)
-                col = Tx.meta_var(i // 2 * 8 + (tx % 4) * 2)
-                for j in range(2):
-                    D[row, col + j] = D_local[i * 2 + j]
+        for i in range(2):
+            row = Tx.meta_var(i % 2 * 8 + tx // 4)
+            col = Tx.meta_var(i // 2 * 8 + (tx % 4) * 2)
+            for j in range(2):
+                D[row, col + j] = D_local[i * 2 + j]
     # fmt: on
 
     src, mod = _get_source(main)

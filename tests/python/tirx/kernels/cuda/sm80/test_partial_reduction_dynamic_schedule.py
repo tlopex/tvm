@@ -97,8 +97,7 @@ def test_partial_reduction():
         @Tx.inline
         def _fetch_from_queue(self):
           if self.tid == 0:
-              with Tx.thread():
-                self.queue.dequeue(self.fetched_task_type, self.fetched_task_idx)
+              self.queue.dequeue(self.fetched_task_type, self.fetched_task_idx)
           Tx.cuda.cta_sync()
 
         @Tx.inline
@@ -122,15 +121,13 @@ def test_partial_reduction():
             self.tid = tid
         @Tx.inline
         def semaphore_notify(self, *coord):
-            with Tx.thread():
-                Tx.cuda.cta_sync()
-                if self.tid == 0:
-                    with Tx.thread():
-                            # add 1 because atomic_add returns the old value
-                        self.state[0] = Tx.cuda.atomic_add(self.sem.access_ptr("rw", offset=self.sem.elem_offset_of(coord)), 1) + 1  # noqa: E501
-                        if self.state[0] == self.cnt:
-                            self.queue.enqueue(TaskType.REDUCE.value, coord[0], 0)
-                Tx.cuda.thread_fence()
+            Tx.cuda.cta_sync()
+            if self.tid == 0:
+                    # add 1 because atomic_add returns the old value
+                self.state[0] = Tx.cuda.atomic_add(self.sem.access_ptr("rw", offset=self.sem.elem_offset_of(coord)), 1) + 1  # noqa: E501
+                if self.state[0] == self.cnt:
+                    self.queue.enqueue(TaskType.REDUCE.value, coord[0], 0)
+            Tx.cuda.thread_fence()
 
 
         # reduction on N
@@ -142,15 +139,13 @@ def test_partial_reduction():
         Tx.device_entry()
         bx, by = Tx.cta_id([NUM_BLOCK_M, NUM_BLOCK_N])
         tid = Tx.thread_id([1024])
-
-        with Tx.cta():
-            A_smem = Tx.alloc_buffer([BLOCK_M, BLOCK_N], "float32", scope="shared")
-            B_smem = Tx.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
-            Tx.copy(A_smem, A_ptr[bx * BLOCK_M: (bx + 1) * BLOCK_M, by * BLOCK_N: (by + 1) * BLOCK_N])  # noqa: E501
-            Tx.cuda.cta_sync()
-            Tx.sum(B_smem, A_smem)
-            Tx.cuda.cta_sync()
-            Tx.copy(B_ptr[bx * BLOCK_M: (bx + 1) * BLOCK_M, by], B_smem)
+        A_smem = Tx.alloc_buffer([BLOCK_M, BLOCK_N], "float32", scope="shared")
+        B_smem = Tx.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
+        Tx.cta.copy(A_smem, A_ptr[bx * BLOCK_M: (bx + 1) * BLOCK_M, by * BLOCK_N: (by + 1) * BLOCK_N])  # noqa: E501
+        Tx.cuda.cta_sync()
+        Tx.cta.sum(B_smem, A_smem)
+        Tx.cuda.cta_sync()
+        Tx.cta.copy(B_ptr[bx * BLOCK_M: (bx + 1) * BLOCK_M, by], B_smem)
 
 
     @Tx.prim_func
@@ -161,14 +156,13 @@ def test_partial_reduction():
         Tx.device_entry()
         bx = Tx.cta_id([NUM_BLOCK_M])
         tid = Tx.thread_id([1024])
-        with Tx.cta():
-            B_smem = Tx.alloc_buffer([BLOCK_M, NUM_BLOCK_N], "float32", scope="shared")
-            C_smem = Tx.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
-            Tx.copy(B_smem, B_ptr[bx * BLOCK_M: (bx + 1) * BLOCK_M, :])
-            Tx.cuda.cta_sync()
-            Tx.sum(C_smem, B_smem)
-            Tx.cuda.cta_sync()
-            Tx.copy(C_ptr[bx * BLOCK_M: (bx + 1) * BLOCK_M, 0], C_smem)
+        B_smem = Tx.alloc_buffer([BLOCK_M, NUM_BLOCK_N], "float32", scope="shared")
+        C_smem = Tx.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
+        Tx.cta.copy(B_smem, B_ptr[bx * BLOCK_M: (bx + 1) * BLOCK_M, :])
+        Tx.cuda.cta_sync()
+        Tx.cta.sum(C_smem, B_smem)
+        Tx.cuda.cta_sync()
+        Tx.cta.copy(C_ptr[bx * BLOCK_M: (bx + 1) * BLOCK_M, 0], C_smem)
 
     TOTAL_SM_CNT = 132
     CAPACITY = 1024
@@ -189,31 +183,30 @@ def test_partial_reduction():
         tid = Tx.thread_id([1024])
         queue = MPMCQueue(CAPACITY, task_types_ptr, task_idxs_ptr, head_ptr, tail_ptr, NUM_BLOCK_M * NUM_BLOCK_N + NUM_BLOCK_M)  # noqa: E501
         sem = Semaphore(NUM_BLOCK_N, sem_ptr, queue, tid)
-        with Tx.cta():
-            A_smem = Tx.alloc_buffer([BLOCK_M, BLOCK_N], "float32", scope="shared")
-            B_smem_1 = Tx.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
-            B_smem_2 = Tx.alloc_buffer([BLOCK_M, NUM_BLOCK_N], "float32", scope="shared")
-            C_smem = Tx.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
-            tile_scheduler = DynamicTileScheduler(queue, tid)
-            tile_scheduler.init(bx)
-            while tile_scheduler.valid():
-                if tile_scheduler.fetched_task_type[0] == TaskType.PARTIAL.value:
-                    m_idx = Tx.meta_var(tile_scheduler.fetched_task_idx[0])
-                    n_idx = Tx.meta_var(tile_scheduler.fetched_task_idx[1])
-                    Tx.copy(A_smem, A_ptr[m_idx * BLOCK_M: (m_idx + 1) * BLOCK_M, n_idx * BLOCK_N: (n_idx + 1) * BLOCK_N])  # noqa: E501
-                    Tx.cuda.cta_sync()
-                    Tx.sum(B_smem_1, A_smem)
-                    Tx.cuda.cta_sync()
-                    Tx.copy(B_ptr[m_idx * BLOCK_M: (m_idx + 1) * BLOCK_M, n_idx], B_smem_1)
-                    sem.semaphore_notify(m_idx)
-                elif tile_scheduler.fetched_task_type[0] == TaskType.REDUCE.value:
-                    m_idx = Tx.meta_var(tile_scheduler.fetched_task_idx[0])
-                    Tx.copy(B_smem_2, B_ptr[m_idx * BLOCK_M: (m_idx + 1) * BLOCK_M, :])
-                    Tx.cuda.cta_sync()
-                    Tx.sum(C_smem, B_smem_2)
-                    Tx.cuda.cta_sync()
-                    Tx.copy(C_ptr[m_idx * BLOCK_M: (m_idx + 1) * BLOCK_M, 0], C_smem)
-                tile_scheduler.next_tile()
+        A_smem = Tx.alloc_buffer([BLOCK_M, BLOCK_N], "float32", scope="shared")
+        B_smem_1 = Tx.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
+        B_smem_2 = Tx.alloc_buffer([BLOCK_M, NUM_BLOCK_N], "float32", scope="shared")
+        C_smem = Tx.alloc_buffer([BLOCK_M, 1], "float32", scope="shared")
+        tile_scheduler = DynamicTileScheduler(queue, tid)
+        tile_scheduler.init(bx)
+        while tile_scheduler.valid():
+            if tile_scheduler.fetched_task_type[0] == TaskType.PARTIAL.value:
+                m_idx = Tx.meta_var(tile_scheduler.fetched_task_idx[0])
+                n_idx = Tx.meta_var(tile_scheduler.fetched_task_idx[1])
+                Tx.cta.copy(A_smem, A_ptr[m_idx * BLOCK_M: (m_idx + 1) * BLOCK_M, n_idx * BLOCK_N: (n_idx + 1) * BLOCK_N])  # noqa: E501
+                Tx.cuda.cta_sync()
+                Tx.cta.sum(B_smem_1, A_smem)
+                Tx.cuda.cta_sync()
+                Tx.cta.copy(B_ptr[m_idx * BLOCK_M: (m_idx + 1) * BLOCK_M, n_idx], B_smem_1)
+                sem.semaphore_notify(m_idx)
+            elif tile_scheduler.fetched_task_type[0] == TaskType.REDUCE.value:
+                m_idx = Tx.meta_var(tile_scheduler.fetched_task_idx[0])
+                Tx.cta.copy(B_smem_2, B_ptr[m_idx * BLOCK_M: (m_idx + 1) * BLOCK_M, :])
+                Tx.cuda.cta_sync()
+                Tx.cta.sum(C_smem, B_smem_2)
+                Tx.cuda.cta_sync()
+                Tx.cta.copy(C_ptr[m_idx * BLOCK_M: (m_idx + 1) * BLOCK_M, 0], C_smem)
+            tile_scheduler.next_tile()
 
         # fmt: on
 

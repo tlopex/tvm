@@ -674,7 +674,7 @@ def create_test_statements():
         Tx.device_entry()
         Tx.add(A, B, 1.0)
 
-        # op_call.body is ExecScopeStmt, op_call.body.body is TilePrimitiveCall
+        # op_call.body is the tirx.device_entry AttrStmt, op_call.body.body is TilePrimitiveCall
 
     op_call_stmt = op_call.body.body
     op_call_block = tir.SBlock([], [], [], "op_call_block", op_call_stmt)
