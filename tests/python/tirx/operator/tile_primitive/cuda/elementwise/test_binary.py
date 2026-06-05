@@ -231,7 +231,12 @@ def test_binary_op_shared_subcta_scope(exec_scope, op_type):
     n_warps = 4 if exec_scope == "warpgroup" else 1
     g_shape = (n_warps * 32, 8)
     dev = tvm.cuda(0)
-    tx_op = {"add": Tx.add, "mul": Tx.mul}[op_type]
+    tx_op = {
+        ("warp", "add"): Tx.warp.add,
+        ("warp", "mul"): Tx.warp.mul,
+        ("warpgroup", "add"): Tx.wg.add,
+        ("warpgroup", "mul"): Tx.wg.mul,
+    }[(exec_scope, op_type)]
 
     @T.prim_func
     def kernel(A_ptr: T.handle, B_ptr: T.handle) -> None:

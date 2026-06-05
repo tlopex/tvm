@@ -196,8 +196,6 @@ class ThreadIdxExtractor : public tirx::StmtVisitor {
       if (iv->var->name_hint == "clusterCtaIdx.z" || iv->thread_tag == "clusterCtaIdx.z") {
         clusterCtaIdx_z_ext = op->value;
       }
-    } else if (op->attr_key == tirx::attr::kPersistentKernel) {
-      is_persistent_kernel = op->value.as<IntImmNode>()->value;
     }
     StmtVisitor::VisitStmt_(op);
   }
@@ -209,17 +207,11 @@ class ThreadIdxExtractor : public tirx::StmtVisitor {
   PrimExpr clusterCtaIdx_x_ext = IntImm(DataType::Int(32), 1);
   PrimExpr clusterCtaIdx_y_ext = IntImm(DataType::Int(32), 1);
   PrimExpr clusterCtaIdx_z_ext = IntImm(DataType::Int(32), 1);
-  bool is_persistent_kernel = false;
 };
 
 void CodeGenCUDA::PrintExtraAttrs(const PrimFunc& f, std::ostream& os) {
   ThreadIdxExtractor extractor;
   extractor(f->body);
-  // Also check PrimFunc attrs for persistent kernel (decorator-level)
-  bool is_persistent = extractor.is_persistent_kernel;
-  if (!is_persistent && f->attrs->dict.count(tirx::attr::kPersistentKernel)) {
-    is_persistent = true;
-  }
   arith::Analyzer analyzer;
   PrimExpr threadIdx_ext = analyzer.Simplify(extractor.threadIdx_x_ext * extractor.threadIdx_y_ext *
                                              extractor.threadIdx_z_ext);
@@ -235,8 +227,11 @@ void CodeGenCUDA::PrintExtraAttrs(const PrimFunc& f, std::ostream& os) {
       // unable to extract the number of threads per block, hence directly return
       return;
     }
-    if (is_persistent) {
-      os << " __launch_bounds__(" << threadIdx_ext_int->value << ", 1)";
+    auto min_blocks_per_sm = f->GetAttr<int64_t>(tirx::attr::kLaunchBoundsMinBlocksPerSM);
+    if (min_blocks_per_sm.has_value()) {
+      TVM_FFI_ICHECK_GT(min_blocks_per_sm.value(), 0);
+      os << " __launch_bounds__(" << threadIdx_ext_int->value << ", " << min_blocks_per_sm.value()
+         << ")";
     } else {
       os << " __launch_bounds__(" << threadIdx_ext_int->value << ")";
     }

@@ -41,6 +41,35 @@ def _helper_source(src: str, helper_name: str) -> str:
     return src[start:next_helper]
 
 
+def test_tirx_launch_bounds_omits_min_blocks_without_persistent_schedule():
+    @T.prim_func
+    def main(A: T.Buffer((4,), "int32")):
+        T.device_entry()
+        bx = T.cta_id([4])
+        tx = T.thread_id([128])
+        if tx == 0:
+            A[bx] = A[bx] + 1
+
+    src, _ = _get_source(main)
+    assert 'extern "C" __global__ void __launch_bounds__(128) main_kernel' in src
+    assert "__launch_bounds__(128, 1)" not in src
+
+
+def test_tirx_launch_bounds_min_blocks_attr_sets_one_block_per_sm():
+    @T.prim_func
+    def main(A: T.Buffer((4,), "int32")):
+        T.device_entry()
+        T.attr({"tirx.launch_bounds_min_blocks_per_sm": 1})
+        bx = T.cta_id([4])
+        tx = T.thread_id([128])
+        if tx == 0:
+            A[bx] = A[bx] + 1
+
+    src, _ = _get_source(main)
+    assert 'extern "C" __global__ void __launch_bounds__(128, 1) main_kernel' in src
+    assert "tirx.launch_bounds_min_blocks_per_sm" not in src
+
+
 def test_serial_pragma_unroll_codegen():
     @T.prim_func
     def main(A: T.Buffer((4,), "int32")):
