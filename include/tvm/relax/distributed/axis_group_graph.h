@@ -173,7 +173,7 @@ class BufferAxisGraphExtractor : public StmtExprVisitor {
           ffi::Array<PrimExpr> another_indices = another_access_pr.second;
           for (int j = 0; j < static_cast<int>(another_indices.size()); j++) {
             if (Match(indices[i], buffer->shape[i], another_indices[j], another_buffer->shape[j],
-                      &analyzer)) {
+                      analyzer.get())) {
               JoinBufferAxis({buffer, i}, {another_buffer, j});
             }
           }

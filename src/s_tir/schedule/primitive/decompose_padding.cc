@@ -435,7 +435,7 @@ StmtSRef DecomposePaddingImpl(ScheduleState self, const StmtSRef& block_sref,
     For cur_loop = ffi::GetRef<For>((*it)->StmtAs<ForNode>());
     Range range = Range::FromMinExtent(cur_loop->min, cur_loop->extent);
     dom_map.Set(cur_loop->loop_var, range);
-    analyzer.Bind(cur_loop->loop_var, range);
+    analyzer->Bind(cur_loop->loop_var, range);
     loops.push_back(cur_loop);
 
     if (cur_loop.same_as(const_filling_pos)) {
@@ -462,7 +462,7 @@ StmtSRef DecomposePaddingImpl(ScheduleState self, const StmtSRef& block_sref,
 
   // Check 3. match padding pattern and return padding operation info.
   PaddingSBlockInfo info =
-      PaddingInfoAnalyzer::CheckAndGetPaddingInfo(self->mod, realize, dom_map, &analyzer);
+      PaddingInfoAnalyzer::CheckAndGetPaddingInfo(self->mod, realize, dom_map, analyzer.get());
 
   // IR Manipulation
   // Step 1. Create const pad value filling part and in-bound value filling part.
@@ -470,9 +470,9 @@ StmtSRef DecomposePaddingImpl(ScheduleState self, const StmtSRef& block_sref,
   replace_desc.const_filling_pos = const_filling_pos;
   replace_desc.in_bound_filling_pos = in_bound_filling_pos;
   std::tie(replace_desc.const_filling_loop, replace_desc.const_filling_block) =
-      CreateConstBlock(realize, info, loops, const_filling_pos, &analyzer);
+      CreateConstBlock(realize, info, loops, const_filling_pos, analyzer.get());
   std::tie(replace_desc.in_bound_filling_loop, replace_desc.in_bound_filling_block) =
-      CreateInBoundBlock(realize, info, loops, in_bound_filling_pos, &analyzer);
+      CreateInBoundBlock(realize, info, loops, in_bound_filling_pos, analyzer.get());
 
   // Step 2. Execute IR replacement.
   SBlock old_scope_root_block = ffi::GetRef<SBlock>(scope_root_sref->StmtAs<SBlockNode>());

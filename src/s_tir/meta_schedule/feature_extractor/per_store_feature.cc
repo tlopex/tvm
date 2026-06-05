@@ -1324,7 +1324,7 @@ class PerStoreFeatureCollector : private StmtVisitor {
     feature.group1 = std::make_unique<group1::Feature>(store, loop_nest_, is_gpu_);
     feature.group2 =
         std::make_unique<group2::Feature>(store, loop_nest_, cache_line_bytes_, &for_touched_bytes_,
-                                          &buffer_touched_under_loop_, &analyzer_);
+                                          &buffer_touched_under_loop_, analyzer_.get());
     feature.group3 =
         std::make_unique<group3::Feature>(arith_intensity_curve_num_samples_, loop_nest_,
                                           for_touched_bytes_, feature.group1->arith_ops);
@@ -1340,7 +1340,7 @@ class PerStoreFeatureCollector : private StmtVisitor {
 
   void HandleBufferAlloc(const Buffer& buffer) {
     Feature& feature = buffer_features_[buffer.get()];
-    feature.group4 = std::make_unique<group4::Feature>(loop_nest_, buffer, &analyzer_);
+    feature.group4 = std::make_unique<group4::Feature>(loop_nest_, buffer, analyzer_.get());
   }
 
   explicit PerStoreFeatureCollector(bool is_gpu, int64_t cache_line_bytes,

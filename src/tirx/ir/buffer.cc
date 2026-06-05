@@ -306,7 +306,7 @@ ffi::Array<PrimExpr> BufferNode::ElemOffset(ffi::Array<PrimExpr> input_indices, 
     }
 
     if (i > 0) {
-      output_index = MergeMulMod(&ana, output_index);
+      output_index = MergeMulMod(ana.get(), output_index);
     }
 
     output_indices.Set(current_output_axis, output_index);
@@ -318,7 +318,7 @@ ffi::Array<PrimExpr> BufferNode::ElemOffset(ffi::Array<PrimExpr> input_indices, 
     }
   }
 
-  return SimplifyArray(&ana, output_indices);
+  return SimplifyArray(ana.get(), output_indices);
 }
 
 inline ffi::Array<PrimExpr> BufferOffset(const BufferNode* n, ffi::Array<PrimExpr> index,
@@ -499,9 +499,9 @@ Buffer Buffer::MakeSlice(ffi::Array<PrimExpr> begins, ffi::Array<PrimExpr> exten
   const BufferNode* n = operator->();
   TVM_FFI_ICHECK(n != nullptr);
   arith::Analyzer ana;
-  begins = SimplifyArray(&ana, begins);
+  begins = SimplifyArray(ana.get(), begins);
   ffi::Array<PrimExpr> elem_offset =
-      n->ElemOffset(begins).Map([&](const PrimExpr& expr) { return ana.Simplify(expr); });
+      n->ElemOffset(begins).Map([&](const PrimExpr& expr) { return ana->Simplify(expr); });
 
   ffi::Array<PrimExpr> strides = n->strides;
   if (strides.size() == 0) {
@@ -510,7 +510,7 @@ Buffer Buffer::MakeSlice(ffi::Array<PrimExpr> begins, ffi::Array<PrimExpr> exten
     // check if stride is needed.
     for (size_t i = 0; i < extents.size(); ++i) {
       if (!can_relax) {
-        if (!is_zero(begins[i]) || !is_zero(ana.Simplify(extents[i] - n->shape[i]))) {
+        if (!is_zero(begins[i]) || !is_zero(ana->Simplify(extents[i] - n->shape[i]))) {
           need_stride = true;
         }
       }

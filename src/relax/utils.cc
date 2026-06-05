@@ -81,7 +81,7 @@ class ExprBinder : public ExprMutator {
     auto new_expr = tirx::Substitute(expr, symbolic_var_map_);
     if (!expr.same_as(new_expr)) {
       arith::Analyzer analyzer;
-      new_expr = analyzer.Simplify(new_expr);
+      new_expr = analyzer->Simplify(new_expr);
     }
     return new_expr;
   }

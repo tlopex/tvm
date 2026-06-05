@@ -1369,8 +1369,8 @@ bool MatchBoundConstraints(PrimExpr pred, ffi::Map<Var, Range>* input_iters,
             };
         f_extract(sum_parts, true);
         arith::Analyzer analyzer;
-        lhs_expr = analyzer.Simplify(lhs_expr);
-        rhs_expr = analyzer.Simplify(rhs_expr);
+        lhs_expr = analyzer->Simplify(lhs_expr);
+        rhs_expr = analyzer->Simplify(rhs_expr);
       }
       ffi::Optional<PrimExpr> lower_bound = std::nullopt, upper_bound = std::nullopt;
       PrimExpr iter;
@@ -1521,7 +1521,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       [](const ffi::Array<PrimExpr>& indices, const ffi::Map<Var, Range>& input_iters,
          const PrimExpr& input_pred, int check_level, bool simplify_trivial_iterators) {
         arith::Analyzer ana;
-        return DetectIterMap(indices, input_iters, input_pred, IterMapLevel(check_level), &ana,
+        return DetectIterMap(indices, input_iters, input_pred, IterMapLevel(check_level), ana.get(),
                              simplify_trivial_iterators);
       });
 }
@@ -1547,7 +1547,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   refl::GlobalDef().def("arith.NormalizeToIterSum",
                         [](PrimExpr index, const ffi::Map<Var, Range>& input_iters) {
                           arith::Analyzer ana;
-                          return NormalizeToIterSum(index, input_iters, &ana);
+                          return NormalizeToIterSum(index, input_iters, ana.get());
                         });
 }
 
@@ -2141,7 +2141,7 @@ bool IterMapRewriter::CanProveDivisible(const PrimExpr& lhs, const PrimExpr& rhs
 
 PrimExpr NormalizeIterMapToExpr(const PrimExpr& expr) {
   arith::Analyzer analyzer;
-  IterMapToExprNormalizer normalizer(&analyzer);
+  IterMapToExprNormalizer normalizer(analyzer.get());
   return normalizer.Convert(expr);
 }
 
@@ -2185,7 +2185,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       [](const ffi::Array<PrimExpr>& indices, const ffi::Map<Var, Range>& input_iters,
          const PrimExpr& input_pred, int check_level, bool simplify_trivial_iterators) {
         arith::Analyzer ana;
-        return IterMapSimplify(indices, input_iters, input_pred, IterMapLevel(check_level), &ana,
+        return IterMapSimplify(indices, input_iters, input_pred, IterMapLevel(check_level), ana.get(),
                                simplify_trivial_iterators);
       });
 }
@@ -2525,7 +2525,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
          bool simplify_trivial_iterators) {
         arith::Analyzer ana;
         return SubspaceDivide(bindings, root_iters, sub_iters, predicate, IterMapLevel(check_level),
-                              &ana, simplify_trivial_iterators);
+                              ana.get(), simplify_trivial_iterators);
       });
 }
 
@@ -2657,7 +2657,7 @@ class InverseAffineIterMapTransformer {
 ffi::Map<Var, PrimExpr> InverseAffineIterMap(const ffi::Array<IterSumExpr>& iter_map,
                                              const ffi::Array<PrimExpr> outputs) {
   Analyzer analyzer;
-  return InverseAffineIterMapTransformer(&analyzer)(iter_map, outputs);
+  return InverseAffineIterMapTransformer(analyzer.get())(iter_map, outputs);
 }
 
 TVM_FFI_STATIC_INIT_BLOCK() {

@@ -45,7 +45,7 @@ class BufferFlattener : public arith::IRMutatorWithAnalyzer {
  public:
   static PrimFunc Flatten(PrimFunc func) {
     arith::Analyzer ana;
-    auto pass = BufferFlattener(&ana);
+    auto pass = BufferFlattener(ana.get());
     pass.MarkBufferMapShapes(func);
     auto body = pass.VisitStmt(func->body);
 

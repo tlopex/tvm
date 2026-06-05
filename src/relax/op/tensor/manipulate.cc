@@ -765,7 +765,7 @@ StructInfo InferStructInfoLayoutTransform(const Call& call, const BlockBuilder& 
   }
 
   arith::Analyzer analyzer;
-  ffi::Array<PrimExpr> output_shape = index_map->MapShape(shape_sinfo->values.value(), &analyzer);
+  ffi::Array<PrimExpr> output_shape = index_map->MapShape(shape_sinfo->values.value(), analyzer.get());
   return TensorStructInfo(ShapeExpr(output_shape), data_sinfo->dtype, data_sinfo->vdevice);
 }
 
@@ -991,7 +991,7 @@ Expr ConvertNewShapeToExpr(const Expr& data,
   if (dim_to_infer != -1) {
     arith::Analyzer analyzer;
     PrimExpr old_shape_prod = ComputeShapeProduct(shape_sinfo->values.value());
-    array_ref.Set(dim_to_infer, analyzer.Simplify(floordiv(old_shape_prod, new_shape_prod)));
+    array_ref.Set(dim_to_infer, analyzer->Simplify(floordiv(old_shape_prod, new_shape_prod)));
   }
   return ShapeExpr(array_ref);
 }

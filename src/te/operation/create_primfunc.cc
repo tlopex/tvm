@@ -776,7 +776,7 @@ PrimFunc CreatePrimFunc(const ffi::Array<te::Tensor>& arg_list,
 
   // Step 3. Rewrite compute stages into blocks.
   for (const te::Operation& op : order) {
-    RewriteStageToBlock(op, &info, &root_stmts, &analyzer);
+    RewriteStageToBlock(op, &info, &root_stmts, analyzer.get());
   }
 
   // Step 4. Create func and complete prim func.
@@ -854,7 +854,7 @@ PrimFunc CreatePrimFunc(const ffi::Array<ffi::ObjectRef>& arg_list,
 
   // Step 3. Rewrite compute stages into blocks.
   for (const te::Operation& op : order) {
-    RewriteStageToBlock(op, &info, &root_stmts, &analyzer);
+    RewriteStageToBlock(op, &info, &root_stmts, analyzer.get());
   }
   auto func = GenerateAndCompletePrimFunc(arg_list, root_stmts, &info);
   if (index_dtype_override.has_value()) {

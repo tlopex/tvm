@@ -250,7 +250,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       "s_tir.schedule.SuggestIndexMap",
       [](Buffer buffer, ffi::Array<PrimExpr> indices, ffi::Array<For> loops, PrimExpr predicate) {
         arith::Analyzer analyzer;
-        return SuggestIndexMap(buffer, indices, loops, predicate, &analyzer);
+        return SuggestIndexMap(buffer, indices, loops, predicate, analyzer.get());
       });
 }
 

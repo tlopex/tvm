@@ -99,7 +99,7 @@ class NoOpRemover : public arith::IRMutatorWithAnalyzer {
       auto wait_attrs = GetAsyncWaitAttributes(op);
       auto wait_cnt = wait_attrs.second;
       arith::Analyzer ana;
-      if (ana.CanProve(wait_cnt < 0)) {
+      if (ana->CanProve(wait_cnt < 0)) {
         // A negative wait count can arise if it depends on a loop variable.
         // For example, a wait count 1 - i can be negative after loop unrolling.
         // We assume that such wait is a nop.
@@ -276,14 +276,14 @@ Pass RemoveNoOp() {
             .value_or(tvm::transform::PassConfigWithDefaults<RemoveNoOpConfig>());
 
     arith::Analyzer analyzer;
-    analyzer.rewrite_simplify.SetMaximumRewriteSteps(config->max_simplification_steps);
+    analyzer->rewrite_simplify.SetMaximumRewriteSteps(config->max_simplification_steps);
 
     bool ignore_profiler_call = config->ignore_profiler_call;
 
     {
       auto* write_ptr = f.CopyOnWrite();
       write_ptr->body =
-          NoOpRemover::Apply(std::move(write_ptr->body), &analyzer, ignore_profiler_call);
+          NoOpRemover::Apply(std::move(write_ptr->body), analyzer.get(), ignore_profiler_call);
     }
     return f;
   };

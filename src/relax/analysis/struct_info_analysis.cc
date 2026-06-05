@@ -263,7 +263,7 @@ StructInfo EraseToWellDefined(
     std::function<ffi::Optional<Expr>(const Var& var)> f_var_map, arith::AnalyzerObj* ana) {
   if (ana == nullptr) {
     arith::Analyzer inst;
-    return WellDefinedEraser(f_shape_var_map, f_var_map, &inst).VisitStructInfo(info);
+    return WellDefinedEraser(f_shape_var_map, f_var_map, inst.get()).VisitStructInfo(info);
   } else {
     return WellDefinedEraser(f_shape_var_map, f_var_map, ana).VisitStructInfo(info);
   }
@@ -600,7 +600,7 @@ BaseCheckResult StructInfoBaseCheck(const StructInfo& base, const StructInfo& de
                                     arith::AnalyzerObj* ana) {
   if (ana == nullptr) {
     arith::Analyzer inst;
-    return StructInfoBaseChecker(&inst)(base, derived);
+    return StructInfoBaseChecker(inst.get())(base, derived);
   } else {
     return StructInfoBaseChecker(ana)(base, derived);
   }
@@ -965,7 +965,7 @@ StructInfo DeriveCallRetStructInfo(const FuncStructInfo& finfo, const Call& call
                                    const BlockBuilder& ctx, arith::AnalyzerObj* ana) {
   if (ana == nullptr) {
     arith::Analyzer inst;
-    return CallRetStructInfoDeriver(&inst).Derive(finfo, call, ctx);
+    return CallRetStructInfoDeriver(inst.get()).Derive(finfo, call, ctx);
   } else {
     return CallRetStructInfoDeriver(ana).Derive(finfo, call, ctx);
   }
@@ -1171,7 +1171,7 @@ class StructInfoLCAFinder
 StructInfo StructInfoLCA(const StructInfo& lhs, const StructInfo& rhs, arith::AnalyzerObj* ana) {
   if (ana == nullptr) {
     arith::Analyzer inst;
-    return StructInfoLCAFinder(&inst)(lhs, rhs);
+    return StructInfoLCAFinder(inst.get())(lhs, rhs);
   } else {
     return StructInfoLCAFinder(ana)(lhs, rhs);
   }

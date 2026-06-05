@@ -191,7 +191,7 @@ class SBlockInfoCollector : private StmtVisitor {
       info.affine_binding =
           IsAffineBinding(/*realize=*/block2realize_.at(scope_root->stmt),
                           /*loop_var_ranges=*/LoopDomainOfSRefTreePath(srefs_.back()),
-                          /*analyzer=*/&analyzer_);
+                          /*analyzer=*/analyzer_.get());
     }
     // Set `region_cover` to true, will be updated on its scope block
     info.region_cover = true;
@@ -296,7 +296,7 @@ class SBlockInfoCollector : private StmtVisitor {
                   /*predicate=*/producer_realize->predicate,
                   /*dom_low_inclusive=*/parent_sref,
                   /*dom_high_exclusive=*/lca,
-                  /*analyzer=*/&analyzer_));
+                  /*analyzer=*/analyzer_.get()));
             }
           }
         }
@@ -315,9 +315,9 @@ class SBlockInfoCollector : private StmtVisitor {
                   /*predicate=*/consumer_realize->predicate,
                   /*dom_low_inclusive=*/parent_sref,
                   /*dom_high_exclusive=*/lca,
-                  /*analyzer=*/&analyzer_);
+                  /*analyzer=*/analyzer_.get());
               if (!ProducerCoversConsumer(buffer->shape, produced_region, consumed_region,
-                                          &analyzer_)) {
+                                          analyzer_.get())) {
                 region_cover = false;
                 self_->block_info.at(consumer_block_sref).region_cover = region_cover;
                 break;
@@ -332,7 +332,7 @@ class SBlockInfoCollector : private StmtVisitor {
   }
 
   void VisitStmt_(const ForNode* loop) final {
-    analyzer_.Bind(loop->loop_var, Range::FromMinExtent(loop->min, loop->extent));
+    analyzer_->Bind(loop->loop_var, Range::FromMinExtent(loop->min, loop->extent));
     PushSRef(loop);
     VisitStmt(loop->body);
     PopSRef();

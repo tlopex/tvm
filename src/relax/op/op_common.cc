@@ -223,7 +223,7 @@ bool CanProveLayoutTransform(const SLayout& input_layout, const SLayout& desired
     arith::Analyzer analyzer;
     for (size_t i = 0; i < shape.size(); ++i) {
       if (tirx::is_const_int(shape[i])) {
-        if (!analyzer.CanProveEqual(shape[i], back_shape[i])) {
+        if (!analyzer->CanProveEqual(shape[i], back_shape[i])) {
           can_prove = false;
           break;
         }

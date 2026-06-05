@@ -1091,7 +1091,7 @@ class FusedTIRConstructor : public ExprVisitor {
 
     /*! \brief The map from symbolic var to its corresponding var in the fused function */
     tirx::SymbolicMatcher symbolic_var_matcher =
-        tirx::SymbolicMatcher(&analyzer, &symbolic_var_remap);
+        tirx::SymbolicMatcher(analyzer.get(), &symbolic_var_remap);
   };
 
   /*! \brief The IRModule */

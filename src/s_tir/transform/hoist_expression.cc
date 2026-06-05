@@ -450,7 +450,7 @@ class ExpressionHoister : public arith::IRMutatorWithAnalyzer {
     auto loop_info = HoistInfoCollector::Collect(stmt, config);
 
     arith::Analyzer analyzer;
-    ExpressionHoister hoister(std::move(loop_info), config, &analyzer);
+    ExpressionHoister hoister(std::move(loop_info), config, analyzer.get());
     stmt = hoister(std::move(stmt));
     stmt = ConvertSSA(std::move(stmt));
     return stmt;

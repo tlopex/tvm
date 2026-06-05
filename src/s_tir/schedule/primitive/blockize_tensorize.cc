@@ -240,9 +240,9 @@ ffi::Map<Var, PrimExpr> DeriveBlockBinding(
     IterVar outer_iter;
     if (reuse_outer) {
       outer_iter = outer_iter_vars->operator[](i);
-      TVM_FFI_ICHECK(ana.CanProveEqual(outer_iter->dom->extent, outer_mark->extent));
+      TVM_FFI_ICHECK(ana->CanProveEqual(outer_iter->dom->extent, outer_mark->extent));
       TVM_FFI_ICHECK(
-          ana.CanProveEqual(outer_bindings->operator[](i), NormalizeIterMapToExpr(outer_binding)));
+          ana->CanProveEqual(outer_bindings->operator[](i), NormalizeIterMapToExpr(outer_binding)));
     } else {
       outer_iter = IterVar(/*dom=*/RangeFromExtent(outer_mark->extent),
                            /*var=*/iter_var->var.copy_with_suffix("_o"),
@@ -565,7 +565,7 @@ StmtSRef Blockize(ScheduleState self, const StmtSRef& loop_sref, bool preserve_u
   arith::Analyzer analyzer;
   ffi::Map<SBlock, SBlock> block_sref_reuse;
   SBlockRealize blockized =
-      BlockizeImpl(self, loop_sref, &block_sref_reuse, &analyzer, preserve_unit_iters);
+      BlockizeImpl(self, loop_sref, &block_sref_reuse, analyzer.get(), preserve_unit_iters);
   self->Replace(loop_sref, blockized, block_sref_reuse);
   StmtSRef result = self->stmt2ref.at(blockized->block.get());
   StmtSRef scope_root = GetScopeRoot(self, result, /*require_stage_pipeline=*/false);
@@ -593,7 +593,7 @@ SBlockRealize BlockizeBlocks(const ScheduleState& self, const ffi::Array<StmtSRe
     // Step 1: Derive subspace division
     std::vector<const ForNode*> loops;
     ffi::Array<ffi::Array<arith::IterMark>> division = SubspaceDivide(
-        block_realize, block_sref, lca, &loops, &analyzer, preserve_unit_iters, true);
+        block_realize, block_sref, lca, &loops, analyzer.get(), preserve_unit_iters, true);
     if (division.empty()) {
       throw SubspaceNotDivisibleError(self->mod, ffi::GetRef<For>(loops.back()), block);
     }
@@ -617,10 +617,10 @@ SBlockRealize BlockizeBlocks(const ScheduleState& self, const ffi::Array<StmtSRe
     for (const IterVar& iter : inner_iter_vars) {
       Range dom = Substitute(iter->dom, loop_var_subst);
       inner_iter_dom.Set(iter->var, arith::IntSet::FromRange(dom));
-      analyzer.Bind(iter->var, dom);
+      analyzer->Bind(iter->var, dom);
     }
     SBlock block_subst =
-        Downcast<SBlock>(Substitute(block, block_var_subst, block_sref_reuse, &analyzer));
+        Downcast<SBlock>(Substitute(block, block_var_subst, block_sref_reuse, analyzer.get()));
     auto reads = EvalSetRegions(block_subst->reads, inner_iter_dom);
     auto writes = EvalSetRegions(block_subst->writes, inner_iter_dom);
     read_regions.insert(read_regions.end(), reads.begin(), reads.end());
@@ -760,7 +760,7 @@ void Tensorize(ScheduleState self, const StmtSRef& sref, const TensorIntrin& int
   } else if (sref->stmt->IsInstance<ForNode>()) {
     arith::Analyzer analyzer;
     ffi::Map<SBlock, SBlock> block_sref_reuse;
-    block_realize = BlockizeImpl(self, sref, &block_sref_reuse, &analyzer, preserve_unit_iters);
+    block_realize = BlockizeImpl(self, sref, &block_sref_reuse, analyzer.get(), preserve_unit_iters);
   } else {
     TVM_FFI_THROW(TypeError) << "Tensorize only support For or SBlock, but gets: "
                              << ffi::GetRef<Stmt>(sref->stmt);
@@ -768,7 +768,7 @@ void Tensorize(ScheduleState self, const StmtSRef& sref, const TensorIntrin& int
   }
 
   arith::Analyzer analyzer;
-  PrimFunc intrin_desc = StmtSimplify(intrin->desc, &analyzer);
+  PrimFunc intrin_desc = StmtSimplify(intrin->desc, analyzer.get());
   PrimFunc intrin_impl = DeepCopy(intrin->impl);
 
   int index_dtype_bits = -1;

@@ -145,7 +145,7 @@ std::tuple<ffi::Map<Var, Expr>, ffi::Map<tirx::Var, PrimExpr>> NormalizeBindings
   }
 
   arith::Analyzer analyzer;
-  ffi::Map<tirx::Var, PrimExpr> symbolic_var_map = InferSymbolicVarMap(relax_var_remap, &analyzer);
+  ffi::Map<tirx::Var, PrimExpr> symbolic_var_map = InferSymbolicVarMap(relax_var_remap, analyzer.get());
 
   // for (const auto& [bind_param, bind_expr] : relax_var_remap) {
   //   MatchSymbolicVar(bind_param, bind_expr, &symbolic_var_map, &analyzer);

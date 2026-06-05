@@ -46,7 +46,7 @@ class TextureAllocInjector : public arith::IRMutatorWithAnalyzer {
  public:
   static PrimFunc Inject(PrimFunc func) {
     arith::Analyzer ana;
-    auto pass = TextureAllocInjector(&ana);
+    auto pass = TextureAllocInjector(ana.get());
     auto writer = func.CopyOnWrite();
     pass.MarkBufferMapShapes(func);
     writer->body = pass.VisitStmt(func->body);

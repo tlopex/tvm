@@ -548,7 +548,7 @@ class CrossThreadReductionTransformer : public StmtMutator {
 
     // Step 1. If the block is not a reduction block, cross-thread reduction is not needed.
     if (!IsReductionBlock(ffi::GetRef<SBlockRealize>(realize), loop_range_map_,
-                          ffi::GetRef<SBlock>(block_stack_.back()), &analyzer_)) {
+                          ffi::GetRef<SBlock>(block_stack_.back()), analyzer_.get())) {
       return {};
     }
 

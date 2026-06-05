@@ -768,7 +768,7 @@ void ComputeAtOrReverseComputeAtImpl(ScheduleState self, const StmtSRef& block_s
 void ComputeAt(ScheduleState self, const StmtSRef& block_sref, const StmtSRef& loop_sref,
                bool preserve_unit_loops, int index) {
   arith::Analyzer analyzer;
-  ComputeAtOrReverseComputeAtImpl<true>(self, block_sref, loop_sref, preserve_unit_loops, &analyzer,
+  ComputeAtOrReverseComputeAtImpl<true>(self, block_sref, loop_sref, preserve_unit_loops, analyzer.get(),
                                         false, index);
 }
 
@@ -776,7 +776,7 @@ void ReverseComputeAt(ScheduleState self, const StmtSRef& block_sref, const Stmt
                       bool preserve_unit_loops, int index) {
   arith::Analyzer analyzer;
   ComputeAtOrReverseComputeAtImpl<false>(self, block_sref, loop_sref, preserve_unit_loops,
-                                         &analyzer, false, index);
+                                         analyzer.get(), false, index);
 }
 
 bool CanComputeAt(const ScheduleState& self, const StmtSRef& block_sref, const StmtSRef& loop_sref,
@@ -784,7 +784,7 @@ bool CanComputeAt(const ScheduleState& self, const StmtSRef& block_sref, const S
   arith::Analyzer analyzer;
   try {
     ComputeAtOrReverseComputeAtImpl<true>(self, block_sref, loop_sref, preserve_unit_loops,
-                                          &analyzer, true);
+                                          analyzer.get(), true);
   } catch (const tvm::ffi::Error& e) {
     return false;
   }
@@ -796,7 +796,7 @@ bool CanReverseComputeAt(const ScheduleState& self, const StmtSRef& block_sref,
   arith::Analyzer analyzer;
   try {
     ComputeAtOrReverseComputeAtImpl<false>(self, block_sref, loop_sref, preserve_unit_loops,
-                                           &analyzer, true);
+                                           analyzer.get(), true);
   } catch (const tvm::ffi::Error& e) {
     return false;
   }

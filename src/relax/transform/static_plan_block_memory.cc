@@ -902,7 +902,7 @@ class StorageAllocationRewriter : public ExprMutator {
       plan_dynamic_output_ = static_cast<bool>(
           func_->GetAttr<IntImm>(plan_dyn_attr_).value_or(IntImm(DataType::Int(32), 0))->value);
       if (plan_dynamic_output_) {
-        SetTIRVarRangeConstraints(ffi::GetRef<Function>(func_), &ana_, &dom_map_);
+        SetTIRVarRangeConstraints(ffi::GetRef<Function>(func_), ana_.get(), &dom_map_);
       }
       token2storage_var_.clear();
       Function func = Downcast<Function>(this->VisitExpr_(func_));
@@ -966,7 +966,7 @@ class StorageAllocationRewriter : public ExprMutator {
       TVM_FFI_ICHECK_NOTNULL(sinfo);
       const auto* shape = sinfo->shape.as<ShapeExprNode>();
       TVM_FFI_ICHECK_NOTNULL(shape);
-      ffi::Array<PrimExpr> upper_bounded_shape = GetUpperBoundShape(shape->values, &ana_, dom_map_);
+      ffi::Array<PrimExpr> upper_bounded_shape = GetUpperBoundShape(shape->values, ana_.get(), dom_map_);
       if (!IsStaticShape(shape->values)) {
         TVM_FFI_ICHECK(!sinfo->IsUnknownDtype());
         TVM_FFI_ICHECK_EQ(sinfo->dtype, Downcast<DataTypeImm>(call->args[1])->value);
@@ -1014,9 +1014,9 @@ IRModule StaticPlanBlockMemory(IRModule mod) {
 
   // Step 1. Initialize.
   std::unordered_map<const ExprNode*, Tokens> token_map =
-      StorageAllocatorInit::Initialize(mod, &ana);
+      StorageAllocatorInit::Initialize(mod, ana.get());
   // Step 2. Collect the memory allocation info.
-  StorageAllocator allocator(std::move(token_map), &ana);
+  StorageAllocator allocator(std::move(token_map), ana.get());
   allocator.Allocate(mod);
   // Step 3. Rewrite the function.
   StorageAllocationRewriter rewriter(std::move(mod),  //

@@ -261,7 +261,7 @@ Pass StmtSimplify() {
     arith::Analyzer analyzer;
     auto cfg = ctx->GetConfig<arith::StmtSimplifyConfig>("tirx.StmtSimplify");
 
-    return arith::StmtSimplifier::Apply(f, &analyzer, cfg);
+    return arith::StmtSimplifier::Apply(f, analyzer.get(), cfg);
   };
   return CreatePrimFuncPass(pass_func, 0, "tirx.StmtSimplify", {});
 }

@@ -759,10 +759,10 @@ class TransformLayoutRewriter : private arith::IRMutatorWithAnalyzer {
     auto plan = pad_value.defined()
                     ? TransformLayoutPlanner::Plan(scope_stmt, old_buffer, new_buffer, index_map,
                                                    opt_inverse.value(), padding_predicate,
-                                                   pad_value, &analyzer)
+                                                   pad_value, analyzer.get())
                     : TransformLayoutPlanner::NoPaddingRequired();
 
-    TransformLayoutRewriter rewriter(old_buffer, new_buffer, index_map, plan, &analyzer);
+    TransformLayoutRewriter rewriter(old_buffer, new_buffer, index_map, plan, analyzer.get());
     SBlock result = Downcast<SBlock>(rewriter(scope_stmt));
     if (auto plan_ptr = std::get_if<TransformLayoutPlanner::ProloguePlan>(&plan)) {
       auto write_ptr = result.CopyOnWrite();
@@ -793,7 +793,7 @@ class TransformLayoutRewriter : private arith::IRMutatorWithAnalyzer {
 
   void RewriteBufferAccess(Buffer* buffer, ffi::Array<PrimExpr>* indices) {
     *buffer = new_buffer_;
-    *indices = index_map_->MapIndices(*indices, &index_simplifier_);
+    *indices = index_map_->MapIndices(*indices, index_simplifier_.get());
     *indices = this->IterMapSimplifyWithContext(*indices, true);
   }
 
@@ -1088,7 +1088,7 @@ class TransformationIntroducesPaddingError : public ScheduleError {
 
   ffi::String DetailRenderTemplate() const final {
     arith::Analyzer analyzer;
-    auto new_shape = index_map_->MapShape(buffer_->shape, &analyzer);
+    auto new_shape = index_map_->MapShape(buffer_->shape, analyzer.get());
     std::ostringstream os;
     os << "The transformation " << index_map_ << " applied on buffer " << buffer_->name
        << " of shape " << buffer_->shape << " would result in shape " << new_shape
@@ -1158,7 +1158,7 @@ void TransformLayout(ScheduleState self, const StmtSRef& block_sref, int buffer_
                      BufferIndexType buffer_index_type, const IndexMap& index_map_orig,
                      const ffi::Optional<IndexMap>& pad_value, bool assume_injective_transform) {
   arith::Analyzer analyzer;
-  AddShapeVarBounds(self, block_sref.get(), &analyzer);
+  AddShapeVarBounds(self, block_sref.get(), analyzer.get());
   // Step 1: Input handling and error checking
   const SBlockNode* block_ptr = TVM_SREF_TO_SBLOCK(block_sref);
   Buffer old_buffer =
@@ -1194,7 +1194,7 @@ void TransformLayout(ScheduleState self, const StmtSRef& block_sref, int buffer_
       for (const auto& dim : old_buffer->shape) {
         region.push_back(Range::FromMinExtent(make_zero(dim.dtype()), dim));
       }
-      return index_map.NonSurjectiveInverse(region, &analyzer);
+      return index_map.NonSurjectiveInverse(region, analyzer.get());
     }();
   }
 
@@ -1205,7 +1205,7 @@ void TransformLayout(ScheduleState self, const StmtSRef& block_sref, int buffer_
 
   // Step 2: Infer the shape of the new buffer
   Buffer new_buffer = old_buffer;
-  new_buffer.CopyOnWrite()->shape = index_map->MapShape(old_buffer->shape, &analyzer);
+  new_buffer.CopyOnWrite()->shape = index_map->MapShape(old_buffer->shape, analyzer.get());
 
   // Step 3: Rewrite BufferLoad/BufferStore access indices, block read/write regions, and block
   // alloc_buffers.
@@ -1360,13 +1360,13 @@ void TransformBlockLayout(ScheduleState self, const StmtSRef& block_sref,
   const SBlockNode* block_ptr = TVM_SREF_TO_SBLOCK(block_sref);
   const SBlock& block = ffi::GetRef<SBlock>(block_ptr);
   arith::Analyzer analyzer;
-  AddShapeVarBounds(self, block_sref.get(), &analyzer);
+  AddShapeVarBounds(self, block_sref.get(), analyzer.get());
 
   // Step 1: Collect outer loops and loop vars
   ffi::Array<StmtSRef> loops = GetLoops(block_sref);  // outer loops of the block
   std::unordered_set<const VarNode*> loop_vars;       // loop vars of the outer loops
   for (const StmtSRef& loop_sref : loops) {
-    CheckLoopStartsWithZero(self, loop_sref, &analyzer);
+    CheckLoopStartsWithZero(self, loop_sref, analyzer.get());
     loop_vars.emplace(loop_sref->StmtAs<ForNode>()->loop_var.get());
   }
 
@@ -1400,9 +1400,9 @@ void TransformBlockLayout(ScheduleState self, const StmtSRef& block_sref,
 
   // Step 4: Apply the IndexMap to block iters.
   IndexMapNotApplicableToBlockIterError::Check(self->mod, block, index_map);
-  ffi::Array<PrimExpr> transformed_block_iters = index_map->MapIndices(block_vars, &analyzer);
+  ffi::Array<PrimExpr> transformed_block_iters = index_map->MapIndices(block_vars, analyzer.get());
   ffi::Array<PrimExpr> new_block_iter_range =
-      index_map->MapShape(block_iter_range_array, &analyzer);
+      index_map->MapShape(block_iter_range_array, analyzer.get());
 
   // Step 5: Create the new block after transformation.
 
@@ -1440,13 +1440,13 @@ void TransformBlockLayout(ScheduleState self, const StmtSRef& block_sref,
     }
     IndexMap inverse_index_map{nullptr};
     try {
-      inverse_index_map = index_map.Inverse(initial_ranges, &analyzer);
+      inverse_index_map = index_map.Inverse(initial_ranges, analyzer.get());
     } catch (...) {
       throw NotBijectiveAffineIndexMapError(self->mod, index_map);
     }
     // old block vars written in terms of new block vars
     ffi::Array<PrimExpr> inversed_new_block_vars =
-        inverse_index_map->MapIndices(new_block_vars, &analyzer);
+        inverse_index_map->MapIndices(new_block_vars, analyzer.get());
     for (int i = 0, n = block_vars.size(); i < n; ++i) {
       inverse_subst_map.Set(Downcast<Var>(block_vars[i]), inversed_new_block_vars[i]);
     }
@@ -1454,7 +1454,7 @@ void TransformBlockLayout(ScheduleState self, const StmtSRef& block_sref,
   SBlock new_block =
       Downcast<SBlock>(Substitute(ffi::GetRef<SBlock>(block_ptr), inverse_subst_map));
   new_block.CopyOnWrite()->iter_vars = new_block_iters;
-  new_block = Downcast<SBlock>(BlockBufferAccessSimplifier::Simplify(new_block, &analyzer));
+  new_block = Downcast<SBlock>(BlockBufferAccessSimplifier::Simplify(new_block, analyzer.get()));
 
   // Step 5.3: Create outer loops for each new block iter.
 

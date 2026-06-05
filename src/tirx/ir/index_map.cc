@@ -130,11 +130,11 @@ std::pair<IndexMap, PrimExpr> IndexMapInverseImpl(const IndexMap& self,
 
     arith::Analyzer analyzer;
     for (size_t i = 0; i < output_vars.size(); ++i) {
-      analyzer.Bind(output_vars[i], output_ranges[i]);
+      analyzer->Bind(output_vars[i], output_ranges[i]);
     }
 
     // Additional simplification steps required to unwrap nested floordiv/floormod
-    padding_predicate = analyzer.Simplify(padding_predicate, 10);
+    padding_predicate = analyzer->Simplify(padding_predicate, 10);
   }
 
   return {IndexMap(output_vars, inverse_exprs), padding_predicate};
@@ -271,7 +271,7 @@ runtime::Tensor IndexMapNode::MapTensor(runtime::Tensor arr_src) const {
     size_1d *= shape[i];
     orig_shape.push_back(PrimExpr(static_cast<int>((shape[i]))));
   }
-  auto dst_shape = MapShape(orig_shape, &analyzer);
+  auto dst_shape = MapShape(orig_shape, analyzer.get());
 
   std::vector<int64_t> dst_shape_int;
   for (size_t i = 0; i < dst_shape.size(); ++i) {
@@ -295,7 +295,7 @@ runtime::Tensor IndexMapNode::MapTensor(runtime::Tensor arr_src) const {
       src_indices.push_back(PrimExpr(static_cast<int>((src_linear_index / div_factor))));
       src_linear_index %= div_factor;
     }
-    auto dst_indices = MapIndices(src_indices, &analyzer);
+    auto dst_indices = MapIndices(src_indices, analyzer.get());
 
     // Convert an N-d coordinate to a linear coordinate
     // (z, y, x) -> z * height * width + y * width + x
@@ -436,24 +436,24 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def("tirx.IndexMapMapIndices",
            [](IndexMap map, ffi::Array<PrimExpr> indices) {
              arith::Analyzer analyzer;
-             return map->MapIndices(indices, &analyzer);
+             return map->MapIndices(indices, analyzer.get());
            })
       .def("tirx.IndexMapMapShape",
            [](IndexMap map, ffi::Array<PrimExpr> shape) {
              arith::Analyzer analyzer;
-             return map->MapShape(shape, &analyzer);
+             return map->MapShape(shape, analyzer.get());
            })
       .def("tirx.IndexMapInverse",
            [](IndexMap map, ffi::Array<Range> initial_ranges) {
              arith::Analyzer analyzer;
-             return map.Inverse(initial_ranges, &analyzer);
+             return map.Inverse(initial_ranges, analyzer.get());
            })
       .def("tirx.IndexMapMapTensor",
            [](IndexMap map, runtime::Tensor arr) { return map->MapTensor(arr); })
       .def("tirx.IndexMapNonSurjectiveInverse",
            [](IndexMap forward, ffi::Array<Range> initial_ranges) {
              arith::Analyzer analyzer;
-             auto result = forward.NonSurjectiveInverse(initial_ranges, &analyzer);
+             auto result = forward.NonSurjectiveInverse(initial_ranges, analyzer.get());
              return ffi::Array<ffi::ObjectRef>{result.first, result.second};
            });
 }

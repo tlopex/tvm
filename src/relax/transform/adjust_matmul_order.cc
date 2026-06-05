@@ -244,15 +244,15 @@ std::tuple<DFPattern, ffi::TypedFunction<Expr(Expr, ffi::Map<DFPattern, Expr>)>>
     auto prefix_b = GetBatchPrefix(shape_b);
     auto prefix_c = GetBatchPrefix(shape_c);
 
-    auto opt_prefix_ab = InferBatchedMatmulBroadcastPrefix(&analyzer, prefix_a, prefix_b);
+    auto opt_prefix_ab = InferBatchedMatmulBroadcastPrefix(analyzer.get(), prefix_a, prefix_b);
     if (!opt_prefix_ab) return expr;
-    auto opt_prefix_bc = InferBatchedMatmulBroadcastPrefix(&analyzer, prefix_b, prefix_c);
+    auto opt_prefix_bc = InferBatchedMatmulBroadcastPrefix(analyzer.get(), prefix_b, prefix_c);
     if (!opt_prefix_bc) return expr;
     auto opt_prefix_outer_lhs =
-        InferBatchedMatmulBroadcastPrefix(&analyzer, opt_prefix_ab.value(), prefix_c);
+        InferBatchedMatmulBroadcastPrefix(analyzer.get(), opt_prefix_ab.value(), prefix_c);
     if (!opt_prefix_outer_lhs) return expr;
     auto opt_prefix_outer_rhs =
-        InferBatchedMatmulBroadcastPrefix(&analyzer, prefix_a, opt_prefix_bc.value());
+        InferBatchedMatmulBroadcastPrefix(analyzer.get(), prefix_a, opt_prefix_bc.value());
     if (!opt_prefix_outer_rhs) return expr;
 
     PrimExpr batch_ab = ProductDims(opt_prefix_ab.value());
@@ -275,17 +275,17 @@ std::tuple<DFPattern, ffi::TypedFunction<Expr(Expr, ffi::Map<DFPattern, Expr>)>>
     PrimExpr ops_with_rhs_first =
         batch_bc * size_R * size_M * size_B + batch_outer_rhs * size_N * size_R * size_B;
 
-    analyzer.rewrite_simplify.SetEnabledExtensions(static_cast<arith::RewriteSimplifier::Extension>(
-        analyzer.rewrite_simplify.GetEnabledExtensions() |
+    analyzer->rewrite_simplify.SetEnabledExtensions(static_cast<arith::RewriteSimplifier::Extension>(
+        analyzer->rewrite_simplify.GetEnabledExtensions() |
         arith::RewriteSimplifier::Extension::kComparisonOfProductAndSum));
-    With<arith::ConstraintContext> func_attr_constraint(&analyzer, symbolic_var_constraints);
+    With<arith::ConstraintContext> func_attr_constraint(analyzer.get(), symbolic_var_constraints);
     With<arith::ConstraintContext> analyzer_constraint(
-        &analyzer, batch_ab > 0 && batch_bc > 0 && batch_outer_lhs > 0 && batch_outer_rhs > 0 &&
+        analyzer.get(), batch_ab > 0 && batch_bc > 0 && batch_outer_lhs > 0 && batch_outer_rhs > 0 &&
                        size_N > 0 && size_R > 0 && size_M > 0 && size_B > 0);
 
-    if (analyzer.CanProve(ops_with_lhs_first < ops_with_rhs_first)) {
+    if (analyzer->CanProve(ops_with_lhs_first < ops_with_rhs_first)) {
       return matmul(matmul(expr_a, expr_b, DataType::Void()), expr_c, DataType::Void());
-    } else if (analyzer.CanProve(ops_with_rhs_first < ops_with_lhs_first)) {
+    } else if (analyzer->CanProve(ops_with_rhs_first < ops_with_lhs_first)) {
       return matmul(expr_a, matmul(expr_b, expr_c, DataType::Void()), DataType::Void());
     }
 

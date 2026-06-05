@@ -470,7 +470,7 @@ class WarpMemoryRewriter : private StmtMutator {
 
   Stmt Rewrite(Stmt stmt) {
     if (warp_size_ == 1) return stmt;
-    BindVarBoundInfo binder(&analyzer_);
+    BindVarBoundInfo binder(analyzer_.get());
     binder(stmt);
     stmt = operator()(std::move(stmt));
     return stmt;
@@ -493,7 +493,7 @@ class WarpMemoryRewriter : private StmtMutator {
           remaining.push_back(op->seq[j]);
         }
         Stmt body = remaining.empty() ? Stmt(Evaluate(0)) : SeqStmt::Flatten(remaining);
-        WarpAccessRewriter rewriter(warp_size_, &analyzer_);
+        WarpAccessRewriter rewriter(warp_size_, analyzer_.get());
         Stmt rewritten = rewriter.Rewrite(alloc, body);
         new_seq.push_back(rewritten);
         changed = true;

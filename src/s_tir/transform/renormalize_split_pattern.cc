@@ -201,7 +201,7 @@ Pass RenormalizeSplitPattern() {
   auto pass_func = [](PrimFunc f, IRModule m, PassContext ctx) {
     auto* n = f.CopyOnWrite();
     arith::Analyzer analyzer;
-    n->body = SplitPatternReNormalizer(&analyzer)(std::move(n->body));
+    n->body = SplitPatternReNormalizer(analyzer.get())(std::move(n->body));
     return f;
   };
   return CreatePrimFuncPass(pass_func, 0, "s_tir.RenormalizeSplitPattern", {});

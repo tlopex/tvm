@@ -348,7 +348,7 @@ ffi::Optional<ffi::Map<DFPattern, Var>> MatchGraph(const PatternContext& ctx,
 
   arith::Analyzer analyzer;
   auto match = MatchTree({}, 0, pattern2node, var2node, &matcher, roots,
-                         ctx->validation_constraints, ud_analysis, &analyzer);
+                         ctx->validation_constraints, ud_analysis, analyzer.get());
   if (!match) {
     return std::nullopt;
   }

@@ -626,7 +626,7 @@ void CheckPartialAffineBinding(const ScheduleState& self, SBlock block,
     arith::Analyzer analyzer;
     ffi::Map<Var, Range> dom_map =
         LoopDomainOfSRefTreePath(ffi::GetRef<StmtSRef>(block_sref->parent), high_exclusive);
-    if (IsAffineBinding(GetSBlockRealize(self, block_sref), dom_map, &analyzer)) {
+    if (IsAffineBinding(GetSBlockRealize(self, block_sref), dom_map, analyzer.get())) {
       return;
     }
   }
@@ -1761,7 +1761,7 @@ ffi::Optional<TensorizeInfo> GetTensorizeLoopMapping(const s_tir::ScheduleState&
   arith::Analyzer analyzer;
   const tirx::SBlockRealize& block = GetSBlockRealize(self, block_sref);
   // Step 1. Analyze desc_func, extract its block, loops and loop vars
-  TensorIntrinDescInfo desc_info = ExtractTensorIntrinDescInfo(&analyzer, desc_func);
+  TensorIntrinDescInfo desc_info = ExtractTensorIntrinDescInfo(analyzer.get(), desc_func);
   // Step 2. Collect loops from block_sref
   const tirx::StmtSRef& scope_sref = GetScopeRoot(self, block_sref, false);
   TVM_SREF_TO_SBLOCK(scope_sref);
@@ -1775,7 +1775,7 @@ ffi::Optional<TensorizeInfo> GetTensorizeLoopMapping(const s_tir::ScheduleState&
       }
       block_loops.push_back(loop);
       block_loop_vars.insert(loop->loop_var.get());
-      if (!analyzer.CanProve(loop->min == 0)) {
+      if (!analyzer->CanProve(loop->min == 0)) {
         return std::nullopt;
       }
     }
@@ -1826,7 +1826,7 @@ ffi::Optional<TensorizeInfo> GetTensorizeLoopMapping(const s_tir::ScheduleState&
     IterVarType iter_type_desc = iter_types_desc[i_desc];
     for (int i = 0, n = desc_loops.size(); i < n; ++i) {
       // Check if desc_bind = loops[i]->loop_var + stuff-irrelevant-of-loop-vars
-      PrimExpr residual = analyzer.Simplify(desc_bind - desc_loops[i]->loop_var);
+      PrimExpr residual = analyzer->Simplify(desc_bind - desc_loops[i]->loop_var);
       if (!UsesVar(residual,
                    [&desc_loop_vars](const VarNode* var) { return desc_loop_vars.count(var); })) {
         desc_loop = desc_loops[i];
@@ -1861,7 +1861,7 @@ ffi::Optional<TensorizeInfo> GetTensorizeLoopMapping(const s_tir::ScheduleState&
       // Skip i-th loop if it has already been mapped
       if (ret->loop_map.find(block_loop_sref) != ret->loop_map.end()) continue;
 
-      PrimExpr residual = analyzer.Simplify(block_bind - block_loops[i]->loop_var);
+      PrimExpr residual = analyzer->Simplify(block_bind - block_loops[i]->loop_var);
       if (UsesVar(residual,
                   [&block_loop_vars](const VarNode* var) { return block_loop_vars.count(var); })) {
         continue;
@@ -2115,7 +2115,7 @@ bool CheckAutoTensorizeApplicable(const ScheduleState& state, const tirx::StmtSR
   // Ignore the scope of buffers when comparing, since we can do cache_read/write
   const SBlockRealize& block = GetSBlockRealize(state, block_sref);
   arith::Analyzer analyzer;
-  auto desc_info = ExtractTensorIntrinDescInfo(&analyzer, desc_func);
+  auto desc_info = ExtractTensorIntrinDescInfo(analyzer.get(), desc_func);
 
   return extractor->VisitStmt(block->block, desc_info.desc_block->block);
 }
@@ -2135,7 +2135,7 @@ ffi::Optional<AutoTensorizeMappingInfo> GetAutoTensorizeMappingInfo(
   }
   arith::Analyzer analyzer;
   ffi::Array<IndexMap> mappings =
-      AutoTensorizeMappingProposer::ProposeMappings(&extractor, &analyzer);
+      AutoTensorizeMappingProposer::ProposeMappings(&extractor, analyzer.get());
   if (mappings.empty()) {
     return std::nullopt;
   }

@@ -176,7 +176,7 @@ Pass LowerAsyncDMA() {
     arith::Analyzer analyzer;
     bool dma_bypass_cache =
         ctx->GetConfig<bool>("tirx.experimental_dma_bypass_cache", false).value();
-    fptr->body = AsyncDMALowerer(dma_bypass_cache, &analyzer)(std::move(fptr->body));
+    fptr->body = AsyncDMALowerer(dma_bypass_cache, analyzer.get())(std::move(fptr->body));
     return f;
   };
   return CreatePrimFuncPass(pass_func, 0, "s_tir.LowerAsyncDMA", {});
