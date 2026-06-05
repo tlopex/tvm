@@ -115,7 +115,7 @@ class ParseAssumeAndOvercompute : public IRMutatorWithAnalyzer {
 
  public:
   using Parent = IRMutatorWithAnalyzer;
-  explicit ParseAssumeAndOvercompute(Analyzer* analyzer) : Parent(analyzer) {}
+  explicit ParseAssumeAndOvercompute(AnalyzerObj* analyzer) : Parent(analyzer) {}
 
  private:
   using Parent::VisitExpr_;

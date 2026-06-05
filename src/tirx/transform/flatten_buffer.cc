@@ -78,7 +78,7 @@ class BufferFlattener : public arith::IRMutatorWithAnalyzer {
   using IRMutatorWithAnalyzer::VisitStmt;
   using IRMutatorWithAnalyzer::VisitStmt_;
 
-  explicit BufferFlattener(arith::Analyzer* ana) : IRMutatorWithAnalyzer(ana) {}
+  explicit BufferFlattener(arith::AnalyzerObj* ana) : IRMutatorWithAnalyzer(ana) {}
 
   Stmt VisitStmt_(const SBlockNode* op) final {
     TVM_FFI_ICHECK_EQ(op->match_buffers.size(), 0)

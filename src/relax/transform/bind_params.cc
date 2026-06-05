@@ -33,7 +33,7 @@ namespace tvm {
 namespace relax {
 
 void MatchSymbolicVar(const Expr& arg, const Expr& constant,
-                      ffi::Map<tirx::Var, PrimExpr>* symbolic_var_map, arith::Analyzer* analyzer_) {
+                      ffi::Map<tirx::Var, PrimExpr>* symbolic_var_map, arith::AnalyzerObj* analyzer_) {
   auto opt_arg_sinfo = MatchStructInfo<TensorStructInfo>(arg);
   TVM_FFI_ICHECK(opt_arg_sinfo)
       << "The struct info of the bound parameter is expected to be TensorStructInfo, but got: "

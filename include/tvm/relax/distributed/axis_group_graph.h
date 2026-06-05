@@ -59,7 +59,7 @@ class BufferAxisHash {
  * \return The iter var whose extent to be changed
  */
 Var GetShardingVarFromIndex(PrimExpr index, ffi::Map<Var, Range> var_range,
-                            arith::Analyzer* analyzer);
+                            arith::AnalyzerObj* analyzer);
 
 /*!
  * \brief Construct an axis group graph from a PrimFunc. Two buffer axis are connected if they
@@ -125,7 +125,7 @@ class BufferAxisGraphExtractor : public StmtExprVisitor {
   }
 
   bool Match(PrimExpr a, PrimExpr buffer_shape_a, PrimExpr b, PrimExpr buffer_shape_b,
-             arith::Analyzer* analyzer) {
+             arith::AnalyzerObj* analyzer) {
     if (b.as<VarNode>()) {
       std::swap(a, b);
       std::swap(buffer_shape_a, buffer_shape_b);

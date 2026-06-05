@@ -46,7 +46,7 @@ class IntrinInjecter : public tvm::arith::IRMutatorWithAnalyzer {
   using IRMutatorWithAnalyzer::VisitStmt_;
   using FLowerGeneral = ffi::TypedFunction<PrimExpr(PrimExpr)>;
 
-  IntrinInjecter(arith::Analyzer* analyzer, const Target& tgt, bool enable_fast_math)
+  IntrinInjecter(arith::AnalyzerObj* analyzer, const Target& tgt, bool enable_fast_math)
       : IRMutatorWithAnalyzer(analyzer) {
     std::string target = tgt->kind->name;
     ffi::String mtriple = tgt->GetAttr<ffi::String>("mtriple").value_or("");

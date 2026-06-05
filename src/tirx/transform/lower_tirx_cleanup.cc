@@ -101,7 +101,7 @@ class LayoutApplier : public arith::IRMutatorWithAnalyzer {
   using IRMutatorWithAnalyzer::VisitExpr_;
   using IRMutatorWithAnalyzer::VisitStmt_;
 
-  explicit LayoutApplier(arith::Analyzer* analyzer, const Target& target)
+  explicit LayoutApplier(arith::AnalyzerObj* analyzer, const Target& target)
       : arith::IRMutatorWithAnalyzer(analyzer), target_(target) {}
 
   ffi::Any VisitAny(const ffi::Any& any) {

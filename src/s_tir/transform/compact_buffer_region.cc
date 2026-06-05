@@ -49,7 +49,7 @@ using support::NDIntSet;
 /*! \brief a more constrained bound estimate for n-dimentional int set */
 NDIntSet NDIntSetEval(Region region, PrimExpr predicate,
                       const std::unordered_map<const VarNode*, arith::IntSet>& dom_map,
-                      arith::Analyzer* analyzer) {
+                      arith::AnalyzerObj* analyzer) {
   std::unordered_map<Var, Range, ffi::ObjectPtrHash, ffi::ObjectPtrEqual> var_dom;
   for (const auto& it : dom_map) {
     var_dom[ffi::GetRef<Var>(it.first)] = it.second.CoverRange(Range::FromMinExtent(0, 0));

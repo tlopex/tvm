@@ -35,6 +35,7 @@
 
 namespace tvm {
 namespace arith {
+class AnalyzerObj;
 class Analyzer;
 }
 }  // namespace tvm
@@ -103,7 +104,7 @@ class IndexMapNode : public ffi::Object {
    * each expression in `final_indices`.
    */
   ffi::Array<PrimExpr> MapIndices(const ffi::Array<PrimExpr>& indices,
-                                  arith::Analyzer* analyzer) const;
+                                  arith::AnalyzerObj* analyzer) const;
 
   /*! \brief Map a memory range to the output space
    *
@@ -121,7 +122,7 @@ class IndexMapNode : public ffi::Object {
    * \returns The ranges in the output space.  Contains one value for
    * each expression in `final_indices`.
    */
-  ffi::Array<Range> MapRanges(const ffi::Array<Range>& ranges, arith::Analyzer* analyzer) const;
+  ffi::Array<Range> MapRanges(const ffi::Array<Range>& ranges, arith::AnalyzerObj* analyzer) const;
 
   /*! \brief Map a buffer shape to the output space
    *
@@ -134,7 +135,7 @@ class IndexMapNode : public ffi::Object {
    * \returns The buffer shape in the output space.  Contains one
    * value for each expression in `final_indices`.
    */
-  ffi::Array<PrimExpr> MapShape(const ffi::Array<PrimExpr>& shape, arith::Analyzer* analyzer) const;
+  ffi::Array<PrimExpr> MapShape(const ffi::Array<PrimExpr>& shape, arith::AnalyzerObj* analyzer) const;
 
   /* \brief Map an Tensor according to this index map
    *
@@ -195,7 +196,7 @@ class IndexMap : public ffi::ObjectRef {
    * If the user has supplied an `inverse_index_map`, that map is
    * assumed to be correct and bijective, and is returned.
    */
-  IndexMap Inverse(ffi::Array<Range> initial_ranges, arith::Analyzer* analyzer) const;
+  IndexMap Inverse(ffi::Array<Range> initial_ranges, arith::AnalyzerObj* analyzer) const;
 
   /*! \brief Rename the variables in the index map and ensure the names are unique.
    *
@@ -218,7 +219,7 @@ class IndexMap : public ffi::ObjectRef {
    * which the inverse maps to a valid range.
    */
   std::pair<IndexMap, PrimExpr> NonSurjectiveInverse(ffi::Array<Range> initial_ranges,
-                                                     arith::Analyzer* analyzer) const;
+                                                     arith::AnalyzerObj* analyzer) const;
 
   TVM_FFI_DEFINE_OBJECT_REF_METHODS_NULLABLE(IndexMap, ffi::ObjectRef, IndexMapNode);
 };

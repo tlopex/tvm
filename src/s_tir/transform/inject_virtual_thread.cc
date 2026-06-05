@@ -183,7 +183,7 @@ class VTInjector : public arith::IRMutatorWithAnalyzer {
   using IRMutatorWithAnalyzer::VisitStmt_;
 
   // constructor
-  VTInjector(arith::Analyzer* analyzer, Var var, int num_threads,
+  VTInjector(arith::AnalyzerObj* analyzer, Var var, int num_threads,
              const std::unordered_set<const VarNode*>& touched_var, bool allow_share)
       : IRMutatorWithAnalyzer(analyzer),
         var_(var),

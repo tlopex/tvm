@@ -45,7 +45,7 @@ ffi::Array<arith::IntSet> AnalyzeRegionUpperBound(const BufferRegion& region,   
                                                   const PrimExpr& predicate,           //
                                                   const StmtSRef& dom_low_inclusive,   //
                                                   const StmtSRef& dom_high_exclusive,  //
-                                                  arith::Analyzer* analyzer) {
+                                                  arith::AnalyzerObj* analyzer) {
   ffi::Map<Var, Range> var_dom = LoopDomainOfSRefTreePath(
       /*low_inclusive=*/dom_low_inclusive,
       /*high_exclusive=*/dom_high_exclusive,
@@ -70,7 +70,7 @@ ffi::Array<arith::IntSet> AnalyzeRegionLowerBound(const BufferRegion& region,   
                                                   const PrimExpr& predicate,           //
                                                   const StmtSRef& dom_low_inclusive,   //
                                                   const StmtSRef& dom_high_exclusive,  //
-                                                  arith::Analyzer* analyzer) {
+                                                  arith::AnalyzerObj* analyzer) {
   ffi::Map<Var, Range> var_dom = LoopDomainOfSRefTreePath(
       /*low_inclusive=*/dom_low_inclusive,
       /*high_exclusive=*/dom_high_exclusive,
@@ -95,7 +95,7 @@ ffi::Array<arith::IntSet> AnalyzeRegionLowerBound(const BufferRegion& region,   
 bool ProducerCoversConsumer(const ffi::Array<PrimExpr>& buffer_shape,
                             const ffi::Array<arith::IntSet>& produced_region,
                             const ffi::Array<arith::IntSet>& consumed_region,
-                            arith::Analyzer* analyzer) {
+                            arith::AnalyzerObj* analyzer) {
   TVM_FFI_ICHECK_EQ(buffer_shape.size(), consumed_region.size());
   TVM_FFI_ICHECK_EQ(produced_region.size(), consumed_region.size());
   int ndim = produced_region.size();

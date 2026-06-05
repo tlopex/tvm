@@ -98,7 +98,7 @@ class TransformLayoutPlanner : private StmtExprVisitor {
 
   static TransformPlan Plan(SBlock block, Buffer old_buffer, Buffer new_buffer, IndexMap index_map,
                             IndexMap inverse, PrimExpr padding_predicate,
-                            ffi::Optional<IndexMap> pad_value, arith::Analyzer* analyzer) {
+                            ffi::Optional<IndexMap> pad_value, arith::AnalyzerObj* analyzer) {
     TVM_FFI_ICHECK(!pad_value.defined() || pad_value.value()->final_indices.size() == 1)
         << "Internal error: Should be caught by ScheduleError checks prior to this point";
     TransformLayoutPlanner visitor(old_buffer);
@@ -225,7 +225,7 @@ class TransformLayoutPlanner : private StmtExprVisitor {
    public:
     BufferStoreReplacer(const WriteInfo& info, const Buffer& new_buffer, PrimExpr padding_predicate,
                         const IndexMap& inverse, const ffi::Optional<IndexMap>& pad_value,
-                        ffi::Map<SBlock, SBlock>* new_block_to_old, arith::Analyzer* analyzer)
+                        ffi::Map<SBlock, SBlock>* new_block_to_old, arith::AnalyzerObj* analyzer)
         : info(info),
           new_buffer(new_buffer),
           new_indices(inverse->initial_indices),
@@ -435,14 +435,14 @@ class TransformLayoutPlanner : private StmtExprVisitor {
     const ffi::Optional<IndexMap>& pad_value;
     ffi::Map<SBlock, SBlock>& new_block_to_old;
     bool all_stores_replaced{true};
-    arith::Analyzer* analyzer;
+    arith::AnalyzerObj* analyzer;
 
     ffi::Map<Var, PrimExpr> var_remap;
   };
 
   TransformPlan Finalize(Buffer new_buffer, IndexMap index_map, IndexMap inverse,
                          PrimExpr padding_predicate, ffi::Optional<IndexMap> pad_value,
-                         arith::Analyzer* analyzer) const {
+                         arith::AnalyzerObj* analyzer) const {
     if (auto prologue_plan = FinalizeProloguePlan(new_buffer, index_map, inverse, padding_predicate,
                                                   pad_value, analyzer);
         prologue_plan.has_value()) {
@@ -463,7 +463,7 @@ class TransformLayoutPlanner : private StmtExprVisitor {
   std::optional<ProloguePlan> FinalizeProloguePlan(Buffer new_buffer, IndexMap index_map,
                                                    IndexMap inverse, PrimExpr padding_predicate,
                                                    ffi::Optional<IndexMap> pad_value,
-                                                   arith::Analyzer* analyzer) const {
+                                                   arith::AnalyzerObj* analyzer) const {
     if (write_info_.size() || is_zero(padding_predicate) || !pad_value.defined()) {
       return std::nullopt;
     }
@@ -508,7 +508,7 @@ class TransformLayoutPlanner : private StmtExprVisitor {
                                                          IndexMap inverse,
                                                          PrimExpr padding_predicate,
                                                          ffi::Optional<IndexMap> pad_value,
-                                                         arith::Analyzer* analyzer) const {
+                                                         arith::AnalyzerObj* analyzer) const {
     if (write_info_.empty() || is_zero(padding_predicate) || !pad_value.defined()) {
       return std::nullopt;
     }
@@ -558,7 +558,7 @@ class TransformLayoutPlanner : private StmtExprVisitor {
   std::optional<EpiloguePlan> FinalizeEpiloguePlan(Buffer new_buffer, IndexMap index_map,
                                                    IndexMap inverse, PrimExpr padding_predicate,
                                                    ffi::Optional<IndexMap> pad_value,
-                                                   arith::Analyzer* analyzer) const {
+                                                   arith::AnalyzerObj* analyzer) const {
     if (write_info_.empty() || is_zero(padding_predicate) || !pad_value.defined()) {
       return std::nullopt;
     }
@@ -779,7 +779,7 @@ class TransformLayoutRewriter : private arith::IRMutatorWithAnalyzer {
   TransformLayoutRewriter(const Buffer& old_buffer, const Buffer& new_buffer,
                           const IndexMap& index_map,
                           const TransformLayoutPlanner::TransformPlan& plan,
-                          arith::Analyzer* analyzer)
+                          arith::AnalyzerObj* analyzer)
       : IRMutatorWithAnalyzer(analyzer),
         old_buffer_(old_buffer),
         new_buffer_(new_buffer),

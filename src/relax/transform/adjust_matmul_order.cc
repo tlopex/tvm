@@ -55,7 +55,7 @@ PrimExpr ProductDims(const ffi::Array<PrimExpr>& dims) {
 }
 
 ffi::Optional<ffi::Array<PrimExpr>> InferBatchedMatmulBroadcastPrefix(
-    arith::Analyzer* analyzer, const ffi::Array<PrimExpr>& x1, const ffi::Array<PrimExpr>& x2) {
+    arith::AnalyzerObj* analyzer, const ffi::Array<PrimExpr>& x1, const ffi::Array<PrimExpr>& x2) {
   auto infer_result = InferBinaryBroadcastShape(analyzer, x1, x2);
   if (infer_result.status == BinaryBroadcastShapeInferResult::Status::kSuccess) {
     return infer_result.shape;

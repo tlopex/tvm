@@ -109,7 +109,7 @@ bool IsDominantBlock(const SBlock& scope_block, const SBlock& block) {
  * check again.
  */
 bool IsReductionBlock(const SBlockRealize& realize, const ffi::Map<Var, Range>& loop_range_map,
-                      const SBlock& scope_block, arith::Analyzer* analyzer) {
+                      const SBlock& scope_block, arith::AnalyzerObj* analyzer) {
   const auto* block = realize->block.as<SBlockNode>();
   // Cond 1. The block has the `init` statement.
   if (!block->init.defined()) {

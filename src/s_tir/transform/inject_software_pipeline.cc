@@ -609,7 +609,7 @@ class PipelineRewriter : public StmtExprMutator {
 
   // Determine where to insert async_wait and the corresponding wait count.
   void PopulateWaitCounts(const std::vector<RewrittenSBlockInfo>& new_blocks,
-                          arith::Analyzer* ana_normalized,
+                          arith::AnalyzerObj* ana_normalized,
                           const std::unordered_map<const BufferNode*, int>& buffer_to_commit_group,
                           std::map<int, AsyncStateLocal>* async_states_local) {
     for (size_t i = 0; i < new_blocks.size(); ++i) {
@@ -739,7 +739,7 @@ class PipelineRewriter : public StmtExprMutator {
   ffi::Array<Stmt> CompletePipelineLoopStatements(
       const std::vector<RewrittenSBlockInfo>& blocks,
       const std::map<int, AsyncStateLocal>& async_states_local,
-      arith::Analyzer* ana_normalized) const {
+      arith::AnalyzerObj* ana_normalized) const {
     std::vector<RewrittenSBlockInfo> new_blocks = blocks;
     std::vector<int> commit_group_indices(new_blocks.size(), -1);
     for (const auto& [stage_id, state] : async_states_local) {

@@ -135,7 +135,7 @@ void CollectDerivedConstraintFacts(const PrimExpr& condition, std::vector<PrimEx
   }
 }
 
-void EnterConstraintFacts(WithGroup<ConstraintContext>* constraints, Analyzer* analyzer,
+void EnterConstraintFacts(WithGroup<ConstraintContext>* constraints, AnalyzerObj* analyzer,
                           const PrimExpr& condition) {
   constraints->Emplace(analyzer, condition);
   std::vector<PrimExpr> derived;

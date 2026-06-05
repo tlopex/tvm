@@ -555,7 +555,7 @@ bool IsWriteCache(const StmtSRef& block_sref) {
 /******** Binding ********/
 
 bool IsAffineBinding(const SBlockRealize& realize, const ffi::Map<Var, Range>& loop_var_ranges,
-                     arith::Analyzer* analyzer) {
+                     arith::AnalyzerObj* analyzer) {
   if (loop_var_ranges.empty()) {
     return true;
   }
@@ -746,7 +746,7 @@ bool GetVarsTouchedByBlockIters(const SBlockRealize& block_realize,
 /******** Loop properties ********/
 
 void CheckLoopStartsWithZero(const ScheduleState& self, const StmtSRef& loop_sref,
-                             arith::Analyzer* analyzer) {
+                             arith::AnalyzerObj* analyzer) {
   class LoopNotStartWithZeroError : public ScheduleError {
    public:
     explicit LoopNotStartWithZeroError(IRModule mod, For loop)
@@ -1304,7 +1304,7 @@ StmtSRef GetSRefTreeRoot(const StmtSRef& sref) {
 }
 
 void AddShapeVarBounds(const ScheduleState& state, const StmtSRefNode* sref,
-                       arith::Analyzer* analyzer) {
+                       arith::AnalyzerObj* analyzer) {
   while (sref->parent != nullptr) {
     sref = sref->parent;
   }
@@ -1698,7 +1698,7 @@ bool NeedsRFactorOrCrossThreadReduction(const s_tir::ScheduleState& self,  //
   }
 }
 
-PrimExpr SimplifyNonTrivialExpr(const PrimExpr& expr, arith::Analyzer* analyzer) {
+PrimExpr SimplifyNonTrivialExpr(const PrimExpr& expr, arith::AnalyzerObj* analyzer) {
   auto simplified = analyzer->Simplify(expr);
   if (simplified->IsInstance<IntImmNode>()) {
     return expr;
@@ -1725,7 +1725,7 @@ struct TensorIntrinDescInfo {
  * \param desc_func The description PrimFunc
  * \return The auxilary information
  */
-TensorIntrinDescInfo ExtractTensorIntrinDescInfo(arith::Analyzer* analyzer,
+TensorIntrinDescInfo ExtractTensorIntrinDescInfo(arith::AnalyzerObj* analyzer,
                                                  const PrimFunc& desc_func) {
   TensorIntrinDescInfo info;
   const auto* desc_scope_realize = desc_func->body.as<SBlockRealizeNode>();
@@ -1930,7 +1930,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
 class AutoTensorizeMappingProposer {
  public:
   static ffi::Array<IndexMap> ProposeMappings(const AutoTensorizeComparator* extractor,
-                                              arith::Analyzer* analyzer) {
+                                              arith::AnalyzerObj* analyzer) {
     AutoTensorizeMappingProposer proposer(extractor, analyzer);
     proposer.CollectFeasibleSet();
     return proposer.ProposeAllFuseMapping();
@@ -1938,7 +1938,7 @@ class AutoTensorizeMappingProposer {
 
  private:
   explicit AutoTensorizeMappingProposer(const AutoTensorizeComparator* extractor,
-                                        arith::Analyzer* analyzer)
+                                        arith::AnalyzerObj* analyzer)
       : extractor_(extractor), analyzer_(analyzer) {}
 
   using VarSet = std::unordered_set<Var>;
@@ -2102,7 +2102,7 @@ class AutoTensorizeMappingProposer {
   // tensor intrin.
   const AutoTensorizeComparator* extractor_;
   // The arithmetic analyzer.
-  arith::Analyzer* analyzer_;
+  arith::AnalyzerObj* analyzer_;
   /*! \brief Potential mappings on RHS for each variable on LHS */
   std::unordered_map<Var, VarSet> lhs_feasible_vars_;
 };

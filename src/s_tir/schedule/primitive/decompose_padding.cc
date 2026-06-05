@@ -71,7 +71,7 @@ class PaddingInfoAnalyzer {
  public:
   static PaddingSBlockInfo CheckAndGetPaddingInfo(IRModule mod, const SBlockRealizeNode* realize,
                                                   const ffi::Map<Var, Range>& dom_map,
-                                                  arith::Analyzer* analyzer) {
+                                                  arith::AnalyzerObj* analyzer) {
     PaddingInfoAnalyzer padding_analyzer(analyzer);
     if (!padding_analyzer.MatchPadding(realize, dom_map)) {
       throw PaddingPatternMatchError(mod, realize->block, padding_analyzer.error_msg_);
@@ -80,7 +80,7 @@ class PaddingInfoAnalyzer {
   }
 
  private:
-  explicit PaddingInfoAnalyzer(arith::Analyzer* analyzer) : analyzer_(analyzer) {}
+  explicit PaddingInfoAnalyzer(arith::AnalyzerObj* analyzer) : analyzer_(analyzer) {}
 
   /*! \brief Detect padding pattern and update result. */
   bool MatchPadding(const SBlockRealizeNode* realize, const ffi::Map<Var, Range>& dom_map) {
@@ -192,7 +192,7 @@ class PaddingInfoAnalyzer {
   /*! \brief current error message. */
   std::string error_msg_;
   /*! \brief arithmetic analyzer. */
-  arith::Analyzer* analyzer_;
+  arith::AnalyzerObj* analyzer_;
 };
 
 /*! \brief Create block to fill constant pad values into full region */
@@ -200,7 +200,7 @@ static std::pair<Stmt, SBlockRealize> CreateConstBlock(const SBlockRealizeNode* 
                                                        const PaddingSBlockInfo& info,
                                                        const ffi::Array<For>& loops,
                                                        const Stmt& highest_pos_inclusive,
-                                                       arith::Analyzer* analyzer) {
+                                                       arith::AnalyzerObj* analyzer) {
   const SBlock& block = realize->block;
   ffi::Array<IterVar> new_iter_vars;
   ffi::Map<Var, PrimExpr> repl_dict;
@@ -269,7 +269,7 @@ static std::pair<Stmt, SBlockRealize> CreateInBoundBlock(const SBlockRealizeNode
 
                                                          const ffi::Array<For>& loops,
                                                          const Stmt& highest_pos_inclusive,
-                                                         arith::Analyzer* analyzer) {
+                                                         arith::AnalyzerObj* analyzer) {
   const SBlock& block = realize->block;
   ffi::Array<IterVar> new_iter_vars;
   ffi::Map<Var, PrimExpr> repl_dict;

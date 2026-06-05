@@ -55,7 +55,7 @@ namespace relax {
  *       two shapes equals to each other during runtime.
  */
 TVM_DLL bool CanProveShapeEqual(const ffi::Array<PrimExpr>& lhs, const ffi::Array<PrimExpr>& rhs,
-                                arith::Analyzer* ana);
+                                arith::AnalyzerObj* ana);
 
 /*!
  * \brief Can prove the two symbolic shape expressions equals to each other.
@@ -68,7 +68,7 @@ TVM_DLL bool CanProveShapeEqual(const ffi::Array<PrimExpr>& lhs, const ffi::Arra
  *       if result is false, there is still possibility that
  *       two shapes equals to each other during runtime.
  */
-TVM_DLL bool CanProveShapeEqual(const Expr& lhs, const Expr& rhs, arith::Analyzer* ana);
+TVM_DLL bool CanProveShapeEqual(const Expr& lhs, const Expr& rhs, arith::AnalyzerObj* ana);
 
 //-----------------------------------
 // Foundational StructInfo analysis
@@ -98,7 +98,7 @@ TVM_DLL StructInfo StructInfoFromType(const Type& type);
  *        presented by func_sinfo.
  */
 TVM_DLL StructInfo DeriveCallRetStructInfo(const FuncStructInfo& finfo, const Call& call,
-                                           const BlockBuilder& ctx, arith::Analyzer* ana = nullptr);
+                                           const BlockBuilder& ctx, arith::AnalyzerObj* ana = nullptr);
 
 /*!
  * \brief Erase the info to a corresponding more coarse grained
@@ -160,7 +160,7 @@ TVM_DLL StructInfo EraseToWellDefined(
     const StructInfo& info,
     std::function<ffi::Optional<PrimExpr>(const tirx::Var& var)> f_shape_var_map = nullptr,
     std::function<ffi::Optional<Expr>(const Var& var)> f_var_map = nullptr,
-    arith::Analyzer* ana = nullptr);
+    arith::AnalyzerObj* ana = nullptr);
 
 /*!
  * \brief EraseToWellDefined variant with map.
@@ -177,7 +177,7 @@ TVM_DLL StructInfo EraseToWellDefined(
  */
 TVM_DLL StructInfo EraseToWellDefined(const StructInfo& info,
                                       ffi::Map<tirx::Var, PrimExpr> shape_var_map,
-                                      ffi::Map<Var, Expr> var_map, arith::Analyzer* ana = nullptr);
+                                      ffi::Map<Var, Expr> var_map, arith::AnalyzerObj* ana = nullptr);
 
 /*!
  * \brief Fine grained result of base check.
@@ -239,7 +239,7 @@ enum class BaseCheckResult {
  * \sa BaseCheckResult
  */
 TVM_DLL BaseCheckResult StructInfoBaseCheck(const StructInfo& base, const StructInfo& derived,
-                                            arith::Analyzer* ana = nullptr);
+                                            arith::AnalyzerObj* ana = nullptr);
 
 /*!
  * \brief Check the relation of two struct info to see if one subsumes another one.
@@ -250,7 +250,7 @@ TVM_DLL BaseCheckResult StructInfoBaseCheck(const StructInfo& base, const Struct
  * \return Whether the relation holds.
  */
 TVM_DLL bool IsBaseOf(const StructInfo& base, const StructInfo& derived,
-                      arith::Analyzer* ana = nullptr);
+                      arith::AnalyzerObj* ana = nullptr);
 
 /*!
  * \brief Return the condition for which base is a superset of derived
@@ -283,7 +283,7 @@ TVM_DLL PrimExpr StructInfoBaseCheckPrecondition(const StructInfo& base, const S
  * \return The unified information.
  */
 TVM_DLL StructInfo StructInfoLCA(const StructInfo& lhs, const StructInfo& rhs,
-                                 arith::Analyzer* ana = nullptr);
+                                 arith::AnalyzerObj* ana = nullptr);
 
 /*!
  * \brief Get the TIR variables that appear in the input struct info.

@@ -307,7 +307,7 @@ class BlockBuilderImpl : public BlockBuilderNode {
     }
   }
 
-  arith::Analyzer* GetAnalyzer() final { return &analyzer_; }
+  arith::AnalyzerObj* GetAnalyzer() final { return &analyzer_; }
 
  protected:
   /*!

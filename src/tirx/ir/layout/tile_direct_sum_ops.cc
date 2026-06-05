@@ -70,7 +70,7 @@ Layout TileLayoutNode::DirectSum(const TileLayout& left_in, const Array<PrimExpr
   return TileLayout(sum_shard, sum_rep, sum_off)->Canonicalize();
 }
 
-static bool IterEqualRelaxUnit(const Iter& a, const Iter& b, arith::Analyzer* analyzer) {
+static bool IterEqualRelaxUnit(const Iter& a, const Iter& b, arith::AnalyzerObj* analyzer) {
   if (!(*analyzer).CanProveEqual(a->extent, b->extent)) return false;
   if (!is_one(a->extent)) {
     if (!(*analyzer).CanProveEqual(a->stride, b->stride)) return false;

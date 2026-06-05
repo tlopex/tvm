@@ -31,7 +31,7 @@
 namespace tvm {
 namespace tirx {
 Var GetShardingVarFromIndex(PrimExpr index, ffi::Map<Var, Range> var_range,
-                            arith::Analyzer* analyzer) {
+                            arith::AnalyzerObj* analyzer) {
   if (index.as<VarNode>()) {
     return Downcast<Var>(index);
   }

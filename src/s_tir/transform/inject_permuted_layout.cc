@@ -52,7 +52,7 @@ class PermutedLayoutInjector : private IRMutatorWithAnalyzer {
   }
 
  private:
-  explicit PermutedLayoutInjector(PrimFunc func, Analyzer* analyzer)
+  explicit PermutedLayoutInjector(PrimFunc func, AnalyzerObj* analyzer)
       : IRMutatorWithAnalyzer(analyzer) {
     buffer_map_.insert(func->buffer_map.begin(), func->buffer_map.end());
   }

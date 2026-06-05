@@ -61,7 +61,7 @@ IndexMap IndexMap::FromFunc(int ndim,
 std::pair<IndexMap, PrimExpr> IndexMapInverseImpl(const IndexMap& self,
                                                   const ffi::Array<Range>& initial_ranges,
                                                   arith::IterMapLevel check_level,
-                                                  arith::Analyzer* analyzer) {
+                                                  arith::AnalyzerObj* analyzer) {
   TVM_FFI_ICHECK(analyzer != nullptr);
   if (self->inverse_index_map.defined()) {
     // return the pre-defined inverse index map if exists.  In this
@@ -141,12 +141,12 @@ std::pair<IndexMap, PrimExpr> IndexMapInverseImpl(const IndexMap& self,
 }
 
 std::pair<IndexMap, PrimExpr> IndexMap::NonSurjectiveInverse(ffi::Array<Range> initial_ranges,
-                                                             arith::Analyzer* analyzer) const {
+                                                             arith::AnalyzerObj* analyzer) const {
   TVM_FFI_ICHECK(analyzer != nullptr);
   return IndexMapInverseImpl(*this, initial_ranges, arith::IterMapLevel::NoCheck, analyzer);
 }
 
-IndexMap IndexMap::Inverse(ffi::Array<Range> initial_ranges, arith::Analyzer* analyzer) const {
+IndexMap IndexMap::Inverse(ffi::Array<Range> initial_ranges, arith::AnalyzerObj* analyzer) const {
   TVM_FFI_ICHECK(analyzer != nullptr);
   auto [inverse, padding_predicate] =
       IndexMapInverseImpl(*this, initial_ranges, arith::IterMapLevel::Bijective, analyzer);
@@ -157,7 +157,7 @@ IndexMap IndexMap::Inverse(ffi::Array<Range> initial_ranges, arith::Analyzer* an
 }
 
 ffi::Array<PrimExpr> IndexMapNode::MapIndices(const ffi::Array<PrimExpr>& indices,
-                                              arith::Analyzer* analyzer) const {
+                                              arith::AnalyzerObj* analyzer) const {
   TVM_FFI_ICHECK(analyzer != nullptr);
   TVM_FFI_ICHECK_EQ(indices.size(), initial_indices.size());
 
@@ -176,7 +176,7 @@ ffi::Array<PrimExpr> IndexMapNode::MapIndices(const ffi::Array<PrimExpr>& indice
 }
 
 ffi::Array<Range> IndexMapNode::MapRanges(const ffi::Array<Range>& ranges,
-                                          arith::Analyzer* analyzer) const {
+                                          arith::AnalyzerObj* analyzer) const {
   TVM_FFI_ICHECK(analyzer != nullptr);
   TVM_FFI_ICHECK_EQ(ranges.size(), initial_indices.size());
 
@@ -240,7 +240,7 @@ ffi::Array<Range> IndexMapNode::MapRanges(const ffi::Array<Range>& ranges,
 }
 
 ffi::Array<PrimExpr> IndexMapNode::MapShape(const ffi::Array<PrimExpr>& shape,
-                                            arith::Analyzer* analyzer) const {
+                                            arith::AnalyzerObj* analyzer) const {
   TVM_FFI_ICHECK(analyzer != nullptr);
   TVM_FFI_ICHECK_EQ(shape.size(), initial_indices.size());
 

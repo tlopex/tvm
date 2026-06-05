@@ -82,7 +82,7 @@ class NotInSameScopeError : public ScheduleError {
  public:
   static void CheckAndBindLoopDomain(const ScheduleState& self, const StmtSRef& block_sref,
                                      const StmtSRef& loop_sref, const StmtSRef& scope_root_sref,
-                                     arith::Analyzer* analyzer) {
+                                     arith::AnalyzerObj* analyzer) {
     for (const StmtSRefNode* p = loop_sref.get();; p = p->parent) {
       if (const ForNode* loop = p->StmtAs<ForNode>()) {
         analyzer->Bind(loop->loop_var, Range::FromMinExtent(loop->min, loop->extent));
@@ -201,7 +201,7 @@ struct BlockVarDomainInfo {
   }
 
   /*! \brief Simplify domain info */
-  void Simplify(arith::Analyzer* analyzer) {
+  void Simplify(arith::AnalyzerObj* analyzer) {
     auto to_simplified = [analyzer](const arith::IntSet& set) {
       PrimExpr min = set.HasLowerBound() ? analyzer->Simplify(set.min()) : set.min();
       PrimExpr max = set.HasUpperBound() ? analyzer->Simplify(set.max()) : set.max();
@@ -255,7 +255,7 @@ class ScopeReconstructor : private StmtMutator {
    * \param preserve_unit_loops Whether to generate unit loops where the loop extent is 1
    */
   void MakeNewLoop(int insert_position, std::vector<BlockVarDomainInfo> iter_doms,
-                   arith::Analyzer* analyzer, bool preserve_unit_loops) {
+                   arith::AnalyzerObj* analyzer, bool preserve_unit_loops) {
     int n_iters = iter_doms.size();
     ffi::Array<Var> loop_vars;
     ffi::Array<PrimExpr> loop_extents;
@@ -409,7 +409,7 @@ void RelaxBufferRegions(const ffi::Map<Var, PrimExpr>& binding,
 std::pair<Var, BlockVarDomainInfo> SolveBlockVarDomain(const arith::IntSet& provided,
                                                        const arith::IntSet& required,
                                                        PrimExpr dim_max,
-                                                       arith::Analyzer* analyzer) {
+                                                       arith::AnalyzerObj* analyzer) {
   PrimExpr provided_min = analyzer->Simplify(provided.min());
   PrimExpr provided_max = analyzer->Simplify(provided.max());
   PrimExpr required_min = analyzer->Simplify(required.min());
@@ -484,7 +484,7 @@ std::pair<Var, BlockVarDomainInfo> SolveBlockVarDomain(const arith::IntSet& prov
  */
 void UpdateBlockVarDomainDimwise(
     const BufferNode* buffer, const NDIntSet& provided_region, const NDIntSet& required_region,
-    arith::Analyzer* analyzer, std::unordered_map<const VarNode*, BlockVarDomainInfo>* iter_doms) {
+    arith::AnalyzerObj* analyzer, std::unordered_map<const VarNode*, BlockVarDomainInfo>* iter_doms) {
   size_t ndim = buffer->shape.size();
   for (size_t i = 0; i < ndim; ++i) {
     arith::IntSet provided = provided_region[i];
@@ -511,7 +511,7 @@ void UpdateBlockVarDomainDimwise(
 /*! \brief Helper function to implement intset version of `InverseAffineIterMap`. */
 ffi::Map<Var, arith::IntSet> InverseAffineIterMap(const ffi::Array<arith::IterSumExpr>& iter_map,
                                                   const NDIntSet& outputs,
-                                                  arith::Analyzer* analyzer) {
+                                                  arith::AnalyzerObj* analyzer) {
   ffi::Array<PrimExpr> min_point, max_point;
   min_point.reserve(outputs.size());
   max_point.reserve(outputs.size());
@@ -549,7 +549,7 @@ ffi::Map<Var, arith::IntSet> InverseAffineIterMap(const ffi::Array<arith::IterSu
  */
 bool UpdateBlockVarDomainAffine(const BufferNode* buffer, const ffi::Array<IterVar>& iter_vars,
                                 const NDIntSet& provided_region, const NDIntSet& required_region,
-                                arith::Analyzer* analyzer,
+                                arith::AnalyzerObj* analyzer,
                                 std::unordered_map<const VarNode*, BlockVarDomainInfo>* iter_doms) {
   // we only support single point provided region now, which could cover most cases
   for (const auto& intset : provided_region) {
@@ -602,7 +602,7 @@ std::vector<BlockVarDomainInfo> CalculateBlockVarDomain(
     const ffi::Array<IterVar>& iter_vars,
     std::unordered_map<const BufferNode*, std::vector<NDIntSet>> provided_regions,
     std::unordered_map<const BufferNode*, std::vector<NDIntSet>> required_regions,
-    arith::Analyzer* analyzer) {
+    arith::AnalyzerObj* analyzer) {
   int n_iters = iter_vars.size();
   // Step 1. Construct the mapping from block var to their iteration domain (initialized to empty)
   std::unordered_map<const VarNode*, BlockVarDomainInfo> iter_doms;
@@ -693,7 +693,7 @@ void CalculateProvidedRequiredRegions(
 template <bool is_compute_at>
 void ComputeAtOrReverseComputeAtImpl(ScheduleState self, const StmtSRef& block_sref,
                                      const StmtSRef& loop_sref, bool preserve_unit_loops,
-                                     arith::Analyzer* analyzer, bool check_only = false,
+                                     arith::AnalyzerObj* analyzer, bool check_only = false,
                                      int index = -1) {
   const SBlockNode* block = TVM_SREF_TO_SBLOCK(block_sref);
   const ForNode* loop = TVM_SREF_TO_FOR(loop_sref);

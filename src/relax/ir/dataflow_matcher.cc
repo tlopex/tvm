@@ -479,7 +479,7 @@ PrimExpr DFPatternMatcher::SimplifyCondition(PrimExpr condition) {
   return analyzer_.Simplify(sorted_condition);
 }
 
-static bool ShapeEqual(Analyzer* analyzer, const ffi::Array<PrimExpr>& lhs,
+static bool ShapeEqual(AnalyzerObj* analyzer, const ffi::Array<PrimExpr>& lhs,
                        const ffi::Array<PrimExpr>& rhs) {
   if (lhs.size() != rhs.size()) return false;
   for (size_t i = 0; i < lhs.size(); ++i)

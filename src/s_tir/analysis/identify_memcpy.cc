@@ -44,7 +44,7 @@ namespace s_tir {
 using namespace tvm::tirx;
 
 std::variant<MemCpyDetails, std::string> IdentifyMemCpyImpl(const For& loop,
-                                                            arith::Analyzer* analyzer) {
+                                                            arith::AnalyzerObj* analyzer) {
   ffi::Map<Var, arith::IntSet> loop_intervals;
   ffi::Map<Var, Range> loop_ranges;
   PrimExpr total_loop_iterations = 1;
@@ -276,7 +276,7 @@ std::variant<MemCpyDetails, std::string> IdentifyMemCpyImpl(const For& loop,
   return MemCpyDetails{src_region, dst_region};
 }
 
-std::optional<MemCpyDetails> IdentifyMemCpy(const For& loop, arith::Analyzer* analyzer) {
+std::optional<MemCpyDetails> IdentifyMemCpy(const For& loop, arith::AnalyzerObj* analyzer) {
   auto result = IdentifyMemCpyImpl(loop, analyzer);
   if (auto* ptr = std::get_if<MemCpyDetails>(&result)) {
     return *ptr;

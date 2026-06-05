@@ -121,7 +121,7 @@ class WellDefinedEraser : public StructInfoMutator,
  public:
   WellDefinedEraser(std::function<ffi::Optional<PrimExpr>(const tirx::Var& var)> f_shape_var_map,
                     std::function<ffi::Optional<Expr>(const Var& var)> f_var_map,
-                    arith::Analyzer* ana)
+                    arith::AnalyzerObj* ana)
       : f_shape_var_map_(f_shape_var_map), f_var_map_(f_var_map), ana_(ana) {}
 
   StructInfo VisitStructInfo_(const PrimStructInfoNode* op) final {
@@ -254,13 +254,13 @@ class WellDefinedEraser : public StructInfoMutator,
   bool has_undefined_ = false;
   std::function<ffi::Optional<PrimExpr>(const tirx::Var& var)> f_shape_var_map_;
   std::function<ffi::Optional<Expr>(const Var& var)> f_var_map_;
-  arith::Analyzer* ana_;
+  arith::AnalyzerObj* ana_;
 };
 
 StructInfo EraseToWellDefined(
     const StructInfo& info,
     std::function<ffi::Optional<PrimExpr>(const tirx::Var& var)> f_shape_var_map,
-    std::function<ffi::Optional<Expr>(const Var& var)> f_var_map, arith::Analyzer* ana) {
+    std::function<ffi::Optional<Expr>(const Var& var)> f_var_map, arith::AnalyzerObj* ana) {
   if (ana == nullptr) {
     arith::Analyzer inst;
     return WellDefinedEraser(f_shape_var_map, f_var_map, &inst).VisitStructInfo(info);
@@ -270,7 +270,7 @@ StructInfo EraseToWellDefined(
 }
 
 StructInfo EraseToWellDefined(const StructInfo& info, ffi::Map<tirx::Var, PrimExpr> shape_var_map,
-                              ffi::Map<Var, Expr> var_map, arith::Analyzer* ana) {
+                              ffi::Map<Var, Expr> var_map, arith::AnalyzerObj* ana) {
   std::function<ffi::Optional<PrimExpr>(const tirx::Var& var)> f_shape_var_map = nullptr;
   std::function<ffi::Optional<Expr>(const Var& var)> f_var_map = nullptr;
 
@@ -307,7 +307,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
 class StructInfoBaseChecker
     : public StructInfoFunctor<BaseCheckResult(const StructInfo&, const StructInfo&)> {
  public:
-  explicit StructInfoBaseChecker(arith::Analyzer* ana) : analyzer_(ana) {}
+  explicit StructInfoBaseChecker(arith::AnalyzerObj* ana) : analyzer_(ana) {}
 
   BaseCheckResult VisitStructInfo(const StructInfo& lhs, const StructInfo& other) override {
     // quick path
@@ -485,7 +485,7 @@ class StructInfoBaseChecker
 
  protected:
   // analyzer
-  arith::Analyzer* analyzer_;
+  arith::AnalyzerObj* analyzer_;
   // struct equal checker
   ffi::StructuralEqual struct_equal_;
 
@@ -597,7 +597,7 @@ class StructInfoBaseChecker
 };
 
 BaseCheckResult StructInfoBaseCheck(const StructInfo& base, const StructInfo& derived,
-                                    arith::Analyzer* ana) {
+                                    arith::AnalyzerObj* ana) {
   if (ana == nullptr) {
     arith::Analyzer inst;
     return StructInfoBaseChecker(&inst)(base, derived);
@@ -614,7 +614,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
                         });
 }
 
-bool IsBaseOf(const StructInfo& base, const StructInfo& derived, arith::Analyzer* ana) {
+bool IsBaseOf(const StructInfo& base, const StructInfo& derived, arith::AnalyzerObj* ana) {
   return StructInfoBaseCheck(base, derived, ana) == BaseCheckResult::kPass;
 }
 
@@ -833,7 +833,7 @@ PrimExpr StructInfoBaseCheckPrecondition(const StructInfo& base, const StructInf
 // from the expressions in arg(rhs) to var in param.
 class CallRetStructInfoDeriver : public StructInfoBaseChecker {
  public:
-  explicit CallRetStructInfoDeriver(arith::Analyzer* ana) : StructInfoBaseChecker(ana) {}
+  explicit CallRetStructInfoDeriver(arith::AnalyzerObj* ana) : StructInfoBaseChecker(ana) {}
 
   // No short cut, so we can recursively populate all pairs.
   BaseCheckResult VisitStructInfo(const StructInfo& lhs, const StructInfo& other) final {
@@ -962,7 +962,7 @@ class CallRetStructInfoDeriver : public StructInfoBaseChecker {
 };
 
 StructInfo DeriveCallRetStructInfo(const FuncStructInfo& finfo, const Call& call,
-                                   const BlockBuilder& ctx, arith::Analyzer* ana) {
+                                   const BlockBuilder& ctx, arith::AnalyzerObj* ana) {
   if (ana == nullptr) {
     arith::Analyzer inst;
     return CallRetStructInfoDeriver(&inst).Derive(finfo, call, ctx);
@@ -985,7 +985,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
 class StructInfoLCAFinder
     : public StructInfoFunctor<StructInfo(const StructInfo&, const StructInfo&)> {
  public:
-  explicit StructInfoLCAFinder(arith::Analyzer* ana) : analyzer_(ana) {}
+  explicit StructInfoLCAFinder(arith::AnalyzerObj* ana) : analyzer_(ana) {}
 
   StructInfo VisitStructInfo(const StructInfo& lhs, const StructInfo& other) final {
     // quick path
@@ -1154,7 +1154,7 @@ class StructInfoLCAFinder
 
  private:
   // analyzer
-  arith::Analyzer* analyzer_;
+  arith::AnalyzerObj* analyzer_;
   // struct equal checker
   ffi::StructuralEqual struct_equal_;
 
@@ -1168,7 +1168,7 @@ class StructInfoLCAFinder
   }
 };
 
-StructInfo StructInfoLCA(const StructInfo& lhs, const StructInfo& rhs, arith::Analyzer* ana) {
+StructInfo StructInfoLCA(const StructInfo& lhs, const StructInfo& rhs, arith::AnalyzerObj* ana) {
   if (ana == nullptr) {
     arith::Analyzer inst;
     return StructInfoLCAFinder(&inst)(lhs, rhs);

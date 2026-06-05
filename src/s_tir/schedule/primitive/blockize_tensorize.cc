@@ -164,7 +164,7 @@ ffi::Array<ffi::Array<arith::IterMark>> SubspaceDivide(const SBlockRealize& real
                                                        const StmtSRef& block_sref,  //
                                                        const StmtSRef& loop_sref,   //
                                                        std::vector<const ForNode*>* loops,
-                                                       arith::Analyzer* analyzer,
+                                                       arith::AnalyzerObj* analyzer,
                                                        bool preserve_unit_iters,
                                                        bool loop_sref_as_outer = false) {
   ffi::Array<Var> inner_vars;
@@ -382,10 +382,10 @@ Stmt GenerateOuterInit(const Stmt& block_init, const SBlockRealize& inner_realiz
  * \return The substituted stmt.
  */
 Stmt Substitute(const Stmt& stmt, const ffi::Map<Var, PrimExpr>& sub,
-                ffi::Map<SBlock, SBlock>* block_sref_reuse, arith::Analyzer* analyzer) {
+                ffi::Map<SBlock, SBlock>* block_sref_reuse, arith::AnalyzerObj* analyzer) {
   struct Replacer : public StmtExprMutator {
     explicit Replacer(const ffi::Map<Var, PrimExpr>& sub,
-                      ffi::Map<SBlock, SBlock>* block_sref_reuse, arith::Analyzer* analyzer)
+                      ffi::Map<SBlock, SBlock>* block_sref_reuse, arith::AnalyzerObj* analyzer)
         : sub_(sub), block_sref_reuse_(block_sref_reuse), analyzer_(analyzer) {}
 
     PrimExpr VisitExpr(const PrimExpr& op) final {
@@ -414,7 +414,7 @@ Stmt Substitute(const Stmt& stmt, const ffi::Map<Var, PrimExpr>& sub,
 
     const ffi::Map<Var, PrimExpr>& sub_;
     ffi::Map<SBlock, SBlock>* block_sref_reuse_;
-    arith::Analyzer* analyzer_;
+    arith::AnalyzerObj* analyzer_;
   };
   return Replacer(sub, block_sref_reuse, analyzer)(stmt);
 }
@@ -492,7 +492,7 @@ Stmt MakeLoopNest(Stmt stmt, const std::vector<const ForNode*>& loops) {
 }
 
 SBlockRealize BlockizeImpl(const ScheduleState& self, const StmtSRef& loop_sref,
-                           ffi::Map<SBlock, SBlock>* block_sref_reuse, arith::Analyzer* analyzer,
+                           ffi::Map<SBlock, SBlock>* block_sref_reuse, arith::AnalyzerObj* analyzer,
                            bool preserve_unit_iters) {
   TVM_SREF_TO_FOR(loop_sref);
   // Step 1: Check and get the only block under `loop`.

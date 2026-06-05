@@ -38,6 +38,7 @@
 namespace tvm {
 
 namespace arith {
+class AnalyzerObj;
 class Analyzer;
 }
 

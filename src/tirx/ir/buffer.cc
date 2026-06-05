@@ -44,7 +44,7 @@ TVM_FFI_STATIC_INIT_BLOCK() { BufferNode::RegisterReflection(); }
 using IndexMod = tirx::FloorModNode;
 using IndexDiv = tirx::FloorDivNode;
 
-ffi::Array<PrimExpr> SimplifyArray(arith::Analyzer* ana, ffi::Array<PrimExpr> array) {
+ffi::Array<PrimExpr> SimplifyArray(arith::AnalyzerObj* ana, ffi::Array<PrimExpr> array) {
   for (size_t i = 0; i < array.size(); ++i) {
     array.Set(i, ana->Simplify(array[i]));
   }
@@ -89,7 +89,7 @@ inline std::vector<const PrimExpr*> ExprSplitAddition(const PrimExpr& expr) {
 // If it can be optimized, returns (true, (a1 + a2 + ... + aj) * kt * ... * ki + c1)
 // Currently the we will not search the add/mult combinations exhaustively
 //   as it will take too much computation.
-inline std::pair<bool, PrimExpr> MergeMulModInner(arith::Analyzer* analyzer,
+inline std::pair<bool, PrimExpr> MergeMulModInner(arith::AnalyzerObj* analyzer,
                                                   const PrimExpr& mult_expr,
                                                   const PrimExpr& mod_l_expr,
                                                   const PrimExpr& mod_r_expr) {
@@ -186,7 +186,7 @@ inline void MergeMulModInsertElements(const std::vector<const PrimExpr*>& eles,
 // The search will be performed repeatively until no pattern is found.
 // Return: a pair with (false, Expr()) if cannot be optimized.
 //         a pair with (true, optimized_expr) if can be optimized
-inline PrimExpr MergeMulMod(arith::Analyzer* analyzer, const PrimExpr& base) {
+inline PrimExpr MergeMulMod(arith::AnalyzerObj* analyzer, const PrimExpr& base) {
   using namespace tirx;
   // 1. Prepare the lists.
   // We store two lists, a list that contain all the elements that match Mul and

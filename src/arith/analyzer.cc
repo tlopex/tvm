@@ -34,14 +34,14 @@
 namespace tvm {
 namespace arith {
 
-Analyzer::Analyzer()
+AnalyzerObj::AnalyzerObj()
     : const_int_bound(this),
       modular_set(this),
       rewrite_simplify(this),
       canonical_simplify(this),
       int_set(this) {}
 
-void Analyzer::Bind(const Var& var, const PrimExpr& expr, bool allow_override) {
+void AnalyzerObj::Bind(const Var& var, const PrimExpr& expr, bool allow_override) {
   PrimExpr new_expr = expr;
   new_expr = this->canonical_simplify(new_expr);
   new_expr = this->rewrite_simplify(new_expr);
@@ -54,7 +54,7 @@ void Analyzer::Bind(const Var& var, const PrimExpr& expr, bool allow_override) {
   this->transitive_comparisons.Bind(var, expr, allow_override);
 }
 
-void Analyzer::Bind(const Var& var, const Range& range, bool allow_override) {
+void AnalyzerObj::Bind(const Var& var, const Range& range, bool allow_override) {
   TVM_FFI_ICHECK(range.defined());
   if (tirx::is_one(range->extent)) {
     this->Bind(var, range->min, allow_override);
@@ -67,7 +67,7 @@ void Analyzer::Bind(const Var& var, const Range& range, bool allow_override) {
   // skip rewrite simplify
 }
 
-void Analyzer::MarkGlobalNonNegValue(const PrimExpr& value) {
+void AnalyzerObj::MarkGlobalNonNegValue(const PrimExpr& value) {
   // decompose value as symbol * scale + offset
   int64_t offset = 0;
   PrimExpr symbol_scale = tirx::make_const(value.dtype(), 0);
@@ -117,7 +117,7 @@ void Analyzer::MarkGlobalNonNegValue(const PrimExpr& value) {
   }
 }
 
-void Analyzer::Bind(const ffi::Map<Var, Range>& variables, bool allow_override) {
+void AnalyzerObj::Bind(const ffi::Map<Var, Range>& variables, bool allow_override) {
   for (const auto& iter : variables) {
     this->Bind(iter.first, iter.second, allow_override);
   }
@@ -143,7 +143,7 @@ void ConstraintContext::ExitWithScope() {
   }
 }
 
-bool Analyzer::CanProveGreaterEqual(const PrimExpr& expr, int64_t lower_bound) {
+bool AnalyzerObj::CanProveGreaterEqual(const PrimExpr& expr, int64_t lower_bound) {
   if (const auto* ptr = expr.as<tirx::IntImmNode>()) {
     return ptr->value >= lower_bound;
   }
@@ -152,7 +152,7 @@ bool Analyzer::CanProveGreaterEqual(const PrimExpr& expr, int64_t lower_bound) {
   return false;
 }
 
-bool Analyzer::CanProveLess(const PrimExpr& expr, int64_t upper_bound) {
+bool AnalyzerObj::CanProveLess(const PrimExpr& expr, int64_t upper_bound) {
   if (const auto* ptr = expr.as<tirx::IntImmNode>()) {
     return ptr->value < upper_bound;
   }
@@ -161,7 +161,7 @@ bool Analyzer::CanProveLess(const PrimExpr& expr, int64_t upper_bound) {
   return false;
 }
 
-bool Analyzer::CanProveEqual(const PrimExpr& lhs, const PrimExpr& rhs) {
+bool AnalyzerObj::CanProveEqual(const PrimExpr& lhs, const PrimExpr& rhs) {
   const auto* clhs = lhs.as<IntImmNode>();
   const auto* crhs = rhs.as<IntImmNode>();
   if (clhs && crhs) return clhs->value == crhs->value;
@@ -171,7 +171,7 @@ bool Analyzer::CanProveEqual(const PrimExpr& lhs, const PrimExpr& rhs) {
   return CanProve(lhs - rhs == 0);
 }
 
-bool Analyzer::CanProveLessEqualThanSymbolicShapeValue(const PrimExpr& lhs, const PrimExpr& shape) {
+bool AnalyzerObj::CanProveLessEqualThanSymbolicShapeValue(const PrimExpr& lhs, const PrimExpr& shape) {
   if (this->CanProve(lhs <= shape, ProofStrength::kSymbolicBound)) return true;
   // no need to do further attempt if shape is already a constant.
   if (tirx::is_const_int(shape)) return false;
@@ -189,7 +189,7 @@ bool Analyzer::CanProveLessEqualThanSymbolicShapeValue(const PrimExpr& lhs, cons
   return false;
 }
 
-bool Analyzer::CanProve(const PrimExpr& expr, ProofStrength strength) {
+bool AnalyzerObj::CanProve(const PrimExpr& expr, ProofStrength strength) {
   // Avoid potentially expensive simplification unless required.
   if (const auto* ptr = expr.as<IntImmNode>()) {
     return ptr->value != 0;
@@ -233,7 +233,7 @@ bool Analyzer::CanProve(const PrimExpr& expr, ProofStrength strength) {
   return false;
 }
 
-PrimExpr Analyzer::Simplify(const PrimExpr& expr, int steps) {
+PrimExpr AnalyzerObj::Simplify(const PrimExpr& expr, int steps) {
   PrimExpr res = expr;
 
   // Always starts with a canonical simplification, as some structural property
@@ -259,7 +259,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   refl::GlobalDef().def_packed("arith.CreateAnalyzer", [](ffi::PackedArgs args, ffi::Any* ret) {
     using ffi::Function;
     using ffi::TypedFunction;
-    auto self = std::make_shared<Analyzer>();
+    auto self = ffi::make_object<AnalyzerObj>();
     auto f = [self](std::string name) -> ffi::Function {
       if (name == "const_int_bound") {
         return ffi::Function([self](ffi::PackedArgs args, ffi::Any* ret) {

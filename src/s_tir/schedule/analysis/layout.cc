@@ -80,7 +80,7 @@ class SplitExprCollector {
                                         const ffi::Map<Var, Range>& input_iters,  //
                                         const PrimExpr& predicate,                //
                                         arith::IterMapLevel check_level,          //
-                                        arith::Analyzer* analyzer) {
+                                        arith::AnalyzerObj* analyzer) {
     arith::IterMapResult res = arith::DetectIterMap({analyzer->Simplify(index)}, input_iters,
                                                     predicate, check_level, analyzer);
     const auto& iter_sum_exprs = res->indices;
@@ -130,7 +130,7 @@ class SplitExprCollector {
 
 ffi::Optional<IndexMap> SuggestIndexMap(const Buffer& buffer, const ffi::Array<PrimExpr>& indices,
                                         const ffi::Array<For>& loops, const PrimExpr& predicate,
-                                        arith::Analyzer* analyzer) {
+                                        arith::AnalyzerObj* analyzer) {
   int ndim = buffer->shape.size();
   int n_loops = loops.size();
   // Step 1. Collect the domains and indices of loop variables

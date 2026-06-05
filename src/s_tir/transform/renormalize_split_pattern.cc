@@ -52,7 +52,7 @@ using namespace arith;
 
 class SplitPatternReNormalizer : public IRMutatorWithAnalyzer {
  public:
-  explicit SplitPatternReNormalizer(Analyzer* analyzer) : IRMutatorWithAnalyzer(analyzer) {}
+  explicit SplitPatternReNormalizer(AnalyzerObj* analyzer) : IRMutatorWithAnalyzer(analyzer) {}
 
   using IRMutatorWithAnalyzer::VisitExpr_;
 

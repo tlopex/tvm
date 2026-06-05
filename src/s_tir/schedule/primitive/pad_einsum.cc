@@ -159,7 +159,7 @@ struct BufferPadding {
     return result;
   }
 
-  Stmt MakeCopyBlock(bool is_read, ffi::Array<SBlock>* blocks, arith::Analyzer* analyzer) {
+  Stmt MakeCopyBlock(bool is_read, ffi::Array<SBlock>* blocks, arith::AnalyzerObj* analyzer) {
     ffi::Array<Var> loop_vars;
     ffi::Array<Range> loop_doms;
     ffi::Array<IterVar> iter_vars;

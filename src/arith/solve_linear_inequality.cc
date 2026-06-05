@@ -100,7 +100,7 @@ class NormalizeComparisons : public ExprMutator {
 };
 
 void AddInequality(std::vector<PrimExpr>* inequality_set, const PrimExpr& new_ineq,
-                   Analyzer* analyzer) {
+                   AnalyzerObj* analyzer) {
   if (analyzer->CanProve(new_ineq) ||
       std::find_if(inequality_set->begin(), inequality_set->end(), [&](const PrimExpr& e) {
         return ffi::StructuralEqual()(e, new_ineq);
@@ -128,7 +128,7 @@ void AddInequality(std::vector<PrimExpr>* inequality_set, const PrimExpr& new_in
 void ClassifyByPolarity(const Var& var, const std::vector<PrimExpr>& current_ineq_set,
                         std::vector<PrimExpr>* next_ineq_set, std::vector<PrimExpr>* rest,
                         std::vector<std::pair<int64_t, PrimExpr>>* coef_pos,
-                        std::vector<std::pair<int64_t, PrimExpr>>* coef_neg, Analyzer* analyzer) {
+                        std::vector<std::pair<int64_t, PrimExpr>>* coef_neg, AnalyzerObj* analyzer) {
   // Take formulas from current_ineq_set and classify them according to polarity wrt var
   // and store to coef_pos and coef_neg respectively.
   for (const PrimExpr& ineq : current_ineq_set) {

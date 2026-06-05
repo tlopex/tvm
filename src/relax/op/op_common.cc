@@ -109,7 +109,7 @@ ffi::Array<TensorStructInfo> GetTensorStructInfoFromTuple(const Call& call, cons
   return tensor_sinfo;
 }
 
-BinaryBroadcastShapeInferResult InferBinaryBroadcastShape(arith::Analyzer* analyzer,
+BinaryBroadcastShapeInferResult InferBinaryBroadcastShape(arith::AnalyzerObj* analyzer,
                                                           const ffi::Array<PrimExpr>& x1_shape,
                                                           const ffi::Array<PrimExpr>& x2_shape) {
   BinaryBroadcastShapeInferResult result;

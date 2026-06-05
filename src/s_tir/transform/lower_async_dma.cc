@@ -46,7 +46,7 @@ using namespace tvm::tirx;
 
 class AsyncDMALowerer : public arith::IRMutatorWithAnalyzer {
  public:
-  explicit AsyncDMALowerer(bool dma_bypass_cache, arith::Analyzer* analyzer)
+  explicit AsyncDMALowerer(bool dma_bypass_cache, arith::AnalyzerObj* analyzer)
       : IRMutatorWithAnalyzer(analyzer), dma_bypass_cache_(dma_bypass_cache) {}
 
   // TODO(leiwang1999): split lower async DMA support for CUDA and Hexagon Backend
