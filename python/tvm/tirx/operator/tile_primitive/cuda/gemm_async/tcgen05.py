@@ -46,7 +46,12 @@ from tvm.tirx.stmt import AllocBuffer, Evaluate, SeqStmt, TilePrimitiveCall
 
 from ..common import get_st_extent, smem_desc_add_16B_offset
 from ..exec_scope_utils import single_thread
-from ..tma_utils import SwizzleMode, mma_atom_layout, mma_atom_shape
+from ..tma_utils import (
+    SwizzleMode,
+    get_swizzle_mode_from_layout,
+    mma_atom_layout,
+    mma_atom_shape,
+)
 
 # Mirror of ``format_map`` in the dense ``encode_instr_descriptor`` codegen
 # (``python/tvm/tirx/operator/intrinsics/cuda/tcgen05.py``). Used to fold the
@@ -516,80 +521,152 @@ def gemm_async_tcgen05_impl(op_call: TilePrimitiveCall, sctx: DispatchContext) -
             Tuple of (swizzle_mode, ldo, sdo, is_mn_major).
         """
         region = list(buf_region.region)
-        slice_layout = buf.layout.slice(buf.shape, region)
-        # Strip unit dims to get the 2D matrix shape.
-        shape_2d = [int(r.extent) for r in region if int(r.extent) != 1]
-        assert len(shape_2d) == 2, (
-            f"Expected exactly 2 non-unit dims in region {[int(r.extent) for r in region]}"
-        )
 
-        def _try_atom(atom, atom_shape):
-            if any(s % a != 0 for s, a in zip(shape_2d, atom_shape)):
-                return None
-            atom_size = functools.reduce(operator.mul, atom_shape, 1)
-            tiler = atom.is_tile_inner(slice_layout, shape_2d, atom_shape)
-            if tiler is None:
-                return None
-            tiler_shape = [s // a for s, a in zip(shape_2d, atom_shape)]
-            tiler_grouped, seps = tiler.canonicalize().group(tiler_shape)
-            elem_per_128b = 128 // tvm.DataType(dtype).bits
-            ldo = (tiler_grouped.shard[-1].stride * atom_size) // elem_per_128b
-            sdo = (tiler_grouped.shard[-2].stride * atom_size) // elem_per_128b
-            return mode, ldo, sdo
+        def _match(slice_layout, shape_2d):
+            """Match ``slice_layout`` (of ``shape_2d``) against the swizzle atoms.
 
-        for mode in (
+            Returns ``(swizzle_mode, ldo, sdo, is_mn_major)`` or ``None``.
+            """
+
+            def _try_atom(atom, atom_shape):
+                if any(s % a != 0 for s, a in zip(shape_2d, atom_shape)):
+                    return None
+                atom_size = functools.reduce(operator.mul, atom_shape, 1)
+                tiler = atom.is_tile_inner(slice_layout, shape_2d, atom_shape)
+                if tiler is None:
+                    return None
+                tiler_shape = [s // a for s, a in zip(shape_2d, atom_shape)]
+                tiler_grouped, seps = tiler.canonicalize().group(tiler_shape)
+                elem_per_128b = 128 // tvm.DataType(dtype).bits
+                ldo = (tiler_grouped.shard[-1].stride * atom_size) // elem_per_128b
+                sdo = (tiler_grouped.shard[-2].stride * atom_size) // elem_per_128b
+                return mode, ldo, sdo
+
+            for mode in (
+                SwizzleMode.SWIZZLE_128B_ATOM,
+                SwizzleMode.SWIZZLE_64B_ATOM,
+                SwizzleMode.SWIZZLE_32B_ATOM,
+            ):
+                swizzle_atom = mma_atom_layout(dtype, mode)
+                base_shape = mma_atom_shape(dtype, mode)  # [8, T*s]
+                swapped_shape = [base_shape[1], base_shape[0]]  # [T*s, 8]
+
+                # MN-major atom: compose SwizzleLayout with stride-reversed TileLayout
+                # so the first dim (T*s) is contiguous instead of the second.
+                # Needed when the penultimate dim is physically contiguous.
+                mn_tile = TileLayout(S[tuple(swapped_shape) : (1, swapped_shape[0])])
+                mn_atom = ComposeLayout(swizzle_atom, mn_tile)
+
+                # Determine K-major vs MN-major based on which dim is contiguous.
+                # K-major: K dim contiguous (last dim for [MN,K], first dim for [K,MN])
+                # MN-major: MN dim contiguous
+                #
+                # The plain swizzle_atom has last dim contiguous.
+                # The mn_atom has first dim contiguous.
+                #
+                # For non-transposed [MN, K]: K is last dim
+                #   - K-major = swizzle_atom with [8, T*s] (K contiguous in last dim)
+                #   - MN-major = mn_atom with [T*s, 8] (MN contiguous in first dim)
+                # For transposed [K, MN]: MN is last dim
+                #   - K-major = mn_atom with [T*s, 8] (K contiguous in first dim)
+                #   - MN-major = swizzle_atom with [8, T*s] (MN contiguous in last dim)
+                if is_transposed:
+                    candidates = [
+                        (False, mn_atom, swapped_shape),  # K-major: K in first dim
+                        (True, swizzle_atom, base_shape),  # MN-major: MN in last dim
+                    ]
+                else:
+                    candidates = [
+                        (False, swizzle_atom, base_shape),  # K-major: K in last dim
+                        (True, mn_atom, swapped_shape),  # MN-major: MN in first dim
+                    ]
+
+                for is_mn_major, atom, atom_shape in candidates:
+                    result = _try_atom(atom, atom_shape)
+                    if result is not None:
+                        sw, ldo_val, sdo_val = result
+                        # shard[-1] = last-dim groups, shard[-2] = first-dim groups.
+                        # LBO strides MN-groups for MN-major, K-groups for K-major.
+                        # Non-transposed [MN,K]: last=K, first=MN → swap for MN-major
+                        # Transposed [K,MN]: last=MN, first=K → swap for K-major
+                        if is_mn_major != is_transposed:
+                            ldo_val, sdo_val = sdo_val, ldo_val
+                        return sw, ldo_val, sdo_val, is_mn_major
+            return None
+
+        # The MMA SMEM descriptor describes the buffer's *physical* swizzle, which
+        # spans whole atoms and is a property of the buffer -- not of any sub-tile.
+        # Round the contiguous (innermost) axis up to a swizzle-atom multiple before
+        # matching, so the descriptor is always derived from a whole number of atoms:
+        #   * for an already atom-aligned region (full-K, stride-axis P@V slices,
+        #     non-swizzled buffers) this is a no-op -- desc_region == region, so the
+        #     derived (swizzle, ldo, sdo, is_mn_major) are identical to matching the
+        #     region directly;
+        #   * for a sub-atom contiguous slice (fine K-major split-K, e.g.
+        #     Asmem[..., :, lo:hi]) it rounds up to the smallest atom count covering
+        #     the slice and describes it from the buffer origin.
+        # Either way the actual [lo:hi] range is addressed by K_iters + the per-MMA
+        # -tile 16B offset (from the *sliced* region in _a_operand / _b_desc_val),
+        # not by this descriptor. Verified hardware-correct for every MMA_K-aligned
+        # contiguous slice -- this is what enables fine K-major split-K.
+        cax = len(region) - 1  # innermost (contiguous) axis
+        elem_per_16b = 128 // DataType(dtype).bits
+        phys_mode = get_swizzle_mode_from_layout(buf.layout)
+        desc_region = list(region)
+        if phys_mode in (
             SwizzleMode.SWIZZLE_128B_ATOM,
             SwizzleMode.SWIZZLE_64B_ATOM,
             SwizzleMode.SWIZZLE_32B_ATOM,
         ):
-            swizzle_atom = mma_atom_layout(dtype, mode)
-            base_shape = mma_atom_shape(dtype, mode)  # [8, T*s]
-            swapped_shape = [base_shape[1], base_shape[0]]  # [T*s, 8]
+            atom_inner = mma_atom_shape(dtype, phys_mode)[-1]
+            contig = int(region[cax].extent)
+            rounded = ((contig + atom_inner - 1) // atom_inner) * atom_inner
+            if rounded != contig:
+                # Sub-atom contiguous slice. The per-tile 16B offset that locates the
+                # slice start must be exact, so the start has to sit on a 16B
+                # (= elem_per_16b element) boundary; otherwise reject rather than
+                # silently mis-address.
+                if not analyzer.can_prove_equal(
+                    tvm.tirx.floormod(region[cax].min, elem_per_16b), 0
+                ):
+                    raise ValueError(
+                        f"gemm_async: contiguous-axis slice start {region[cax].min} is not "
+                        f"16B-aligned (={elem_per_16b} elements, dtype {dtype}). A sub-atom "
+                        f"contiguous slice must start on a 16B boundary; otherwise keep that "
+                        f"axis full and split on a stride/outer axis instead (lay the operand "
+                        f"out MN-major)."
+                    )
+                desc_region[cax] = tvm.ir.Range.from_min_extent(0, rounded)
 
-            # MN-major atom: compose SwizzleLayout with stride-reversed TileLayout
-            # so the first dim (T*s) is contiguous instead of the second.
-            # Needed when the penultimate dim is physically contiguous.
-            mn_tile = TileLayout(S[tuple(swapped_shape) : (1, swapped_shape[0])])
-            mn_atom = ComposeLayout(swizzle_atom, mn_tile)
+        slice_layout = buf.layout.slice(buf.shape, desc_region)
+        # Strip unit dims to get the 2D matrix shape.
+        shape_2d = [int(r.extent) for r in desc_region if int(r.extent) != 1]
+        assert len(shape_2d) == 2, (
+            f"Expected exactly 2 non-unit dims in region {[int(r.extent) for r in desc_region]}"
+        )
+        result = _match(slice_layout, shape_2d)
+        if result is not None:
+            return result
 
-            # Determine K-major vs MN-major based on which dim is contiguous.
-            # K-major: K dim contiguous (last dim for [MN,K], first dim for [K,MN])
-            # MN-major: MN dim contiguous
-            #
-            # The plain swizzle_atom has last dim contiguous.
-            # The mn_atom has first dim contiguous.
-            #
-            # For non-transposed [MN, K]: K is last dim
-            #   - K-major = swizzle_atom with [8, T*s] (K contiguous in last dim)
-            #   - MN-major = mn_atom with [T*s, 8] (MN contiguous in first dim)
-            # For transposed [K, MN]: MN is last dim
-            #   - K-major = mn_atom with [T*s, 8] (K contiguous in first dim)
-            #   - MN-major = swizzle_atom with [8, T*s] (MN contiguous in last dim)
-            if is_transposed:
-                candidates = [
-                    (False, mn_atom, swapped_shape),  # K-major: K in first dim
-                    (True, swizzle_atom, base_shape),  # MN-major: MN in last dim
-                ]
-            else:
-                candidates = [
-                    (False, swizzle_atom, base_shape),  # K-major: K in last dim
-                    (True, mn_atom, swapped_shape),  # MN-major: MN in first dim
-                ]
-
-            for is_mn_major, atom, atom_shape in candidates:
-                result = _try_atom(atom, atom_shape)
-                if result is not None:
-                    sw, ldo_val, sdo_val = result
-                    # shard[-1] = last-dim groups, shard[-2] = first-dim groups.
-                    # LBO strides MN-groups for MN-major, K-groups for K-major.
-                    # Non-transposed [MN,K]: last=K, first=MN → swap for MN-major
-                    # Transposed [K,MN]: last=MN, first=K → swap for K-major
-                    if is_mn_major != is_transposed:
-                        ldo_val, sdo_val = sdo_val, ldo_val
-                    return sw, ldo_val, sdo_val, is_mn_major
-
+        # Genuinely unsupported: the layout doesn't tile any swizzle atom even at
+        # full atom width. Actionable error (the old generic "no swizzle mode"
+        # message read like a hard limit and was mistaken for one).
+        hint = ""
+        if phys_mode in (
+            SwizzleMode.SWIZZLE_128B_ATOM,
+            SwizzleMode.SWIZZLE_64B_ATOM,
+            SwizzleMode.SWIZZLE_32B_ATOM,
+        ):
+            atom_inner = mma_atom_shape(dtype, phys_mode)[-1]
+            atom_bytes = atom_inner * DataType(dtype).bits // 8
+            hint = (
+                f" The buffer is physically {phys_mode.name}-swizzled (contiguous atom "
+                f"= {atom_inner} elements / {atom_bytes} B); the region's layout does not "
+                f"tile it."
+            )
         raise ValueError(
-            f"No compatible swizzle mode found for dtype {dtype} with region shape {shape_2d}"
+            f"gemm_async: no MMA SMEM descriptor matches region shape {shape_2d} "
+            f"for dtype {dtype}.{hint}"
         )
 
     if a_is_tmem:
