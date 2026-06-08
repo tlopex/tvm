@@ -73,6 +73,47 @@ workloads:
   - {kernel: deepgemm_sm100_fp8_mqa_logits, config: s4096_skv4096_h64_d128_bf16_compressed_nocp}
   - {kernel: deepgemm_sm100_fp8_mqa_logits, config: s4096_skv8192_h64_d128_bf16_compressed_cp}
   - {kernel: deepgemm_sm100_fp8_mqa_logits, config: s4096_skv8192_h64_d128_bf16_compressed_nocp}
+  # ── deepgemm_sm100_fp8_paged_mqa_logits
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b1_n1_mp1_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b1_n1_mp8_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b1_n1_mp32_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b1_n1_mp128_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b2_n1_mp1_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b2_n1_mp8_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b2_n1_mp32_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b2_n1_mp128_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b4_n1_mp1_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b4_n1_mp8_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b4_n1_mp32_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b4_n1_mp128_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b8_n1_mp1_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b8_n1_mp8_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b8_n1_mp32_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b8_n1_mp128_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b16_n1_mp1_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b16_n1_mp8_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b16_n1_mp32_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b16_n1_mp128_ps64_h64_d128_f32_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b1_n1_mp1_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b1_n1_mp8_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b1_n1_mp32_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b1_n1_mp128_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b2_n1_mp1_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b2_n1_mp8_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b2_n1_mp32_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b2_n1_mp128_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b4_n1_mp1_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b4_n1_mp8_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b4_n1_mp32_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b4_n1_mp128_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b8_n1_mp1_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b8_n1_mp8_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b8_n1_mp32_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b8_n1_mp128_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b16_n1_mp1_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b16_n1_mp8_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b16_n1_mp32_ps64_h64_d128_bf16_fixed}
+  - {kernel: deepgemm_sm100_fp8_paged_mqa_logits, config: b16_n1_mp128_ps64_h64_d128_bf16_fixed}
   # ── flash_attention4
   - {kernel: flash_attention4, config: s1024_h32kv4}
   - {kernel: flash_attention4, config: s1024_h32kv4_causal}

@@ -1,14 +1,14 @@
 {
-  "timestamp": "20260602T153027Z",
-  "label": "b8092a5f",
+  "timestamp": "20260608T193110Z-noise-median",
+  "label": "fp8-paged-mqa-logits-full-sweep+failed-retry+noise-median",
   "git": {
-    "tir": "8c6a8c76-dirty",
-    "tirx-kernels": "b8092a5f",
+    "tir": "e97cbf48-dirty",
+    "tirx-kernels": "9d2cf401",
     "tirx-bench-ci": "08a57cf3"
   },
   "kernel_tree": {
-    "tir:python/tvm/tirx": "6c47de3df46def40e7c8e2ce5e23818d99e1d06e",
-    "tirx-kernels:tirx_kernels": "68a9da675ed2fd0184582728fadd007fb8f09e9e"
+    "tir:python/tvm/tirx": "68c0515ffc372877393da72993153ee851f58cd0",
+    "tirx-kernels:tirx_kernels": "731f67f536c6c76760c861c86be3d1a0b22a52d6"
   },
   "baselines": {
     "torch": {
@@ -64,11 +64,11 @@
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv4096_h64_d128_bf16_compressed_cp",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:31:35+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:48:10+00:00",
       "impls": {
-        "deepgemm": 0.042667000000000004,
-        "tirx": 0.040631
+        "deepgemm": 0.04262,
+        "tirx": 0.040394
       },
       "errors": {},
       "timer": "proton",
@@ -89,17 +89,17 @@
       "max_diff": 1.3774309132186247e-06,
       "label": "s2048_skv4096_h64_d128_bf16_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:54+00:00",
+      "finished_at": "2026-06-08T18:48:26+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv4096_h64_d128_bf16_compressed_nocp",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:31:35+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:36:55+00:00",
       "impls": {
-        "deepgemm": 0.055171,
-        "tirx": 0.052317999999999996
+        "deepgemm": 0.055653,
+        "tirx": 0.053253
       },
       "errors": {},
       "timer": "proton",
@@ -120,17 +120,17 @@
       "max_diff": 1.3753107865888126e-06,
       "label": "s2048_skv4096_h64_d128_bf16_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:54+00:00",
+      "finished_at": "2026-06-08T18:37:14+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv4096_h64_d128_bf16_dense_cp",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:31:12+00:00",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:36:38+00:00",
       "impls": {
-        "deepgemm": 0.042013,
-        "tirx": 0.041344
+        "deepgemm": 0.042146,
+        "tirx": 0.041441000000000006
       },
       "errors": {},
       "timer": "proton",
@@ -151,17 +151,17 @@
       "max_diff": 1.3792105381105202e-06,
       "label": "s2048_skv4096_h64_d128_bf16_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:29+00:00",
+      "finished_at": "2026-06-08T18:36:55+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv4096_h64_d128_bf16_dense_nocp",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:31:16+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:45:00+00:00",
       "impls": {
-        "deepgemm": 0.054207000000000005,
-        "tirx": 0.053076
+        "deepgemm": 0.054725,
+        "tirx": 0.053535
       },
       "errors": {},
       "timer": "proton",
@@ -182,17 +182,17 @@
       "max_diff": 1.3785051262704684e-06,
       "label": "s2048_skv4096_h64_d128_bf16_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:34+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:45:16+00:00",
+      "attempt": 5
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv4096_h64_d128_f32_compressed_cp",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:30:53+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:36:29+00:00",
       "impls": {
-        "deepgemm": 0.043898000000000006,
-        "tirx": 0.041173
+        "deepgemm": 0.043774,
+        "tirx": 0.041037
       },
       "errors": {},
       "timer": "proton",
@@ -213,17 +213,17 @@
       "max_diff": 4.107825191113079e-15,
       "label": "s2048_skv4096_h64_d128_f32_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:11+00:00",
+      "finished_at": "2026-06-08T18:36:46+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv4096_h64_d128_f32_compressed_nocp",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:30:53+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:36:30+00:00",
       "impls": {
-        "deepgemm": 0.057508000000000004,
-        "tirx": 0.053528
+        "deepgemm": 0.057294,
+        "tirx": 0.053345
       },
       "errors": {},
       "timer": "proton",
@@ -244,17 +244,17 @@
       "max_diff": 3.9968028886505635e-15,
       "label": "s2048_skv4096_h64_d128_f32_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:11+00:00",
+      "finished_at": "2026-06-08T18:36:49+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv4096_h64_d128_f32_dense_cp",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:30:37+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:36:08+00:00",
       "impls": {
-        "deepgemm": 0.039636000000000005,
-        "tirx": 0.040192
+        "deepgemm": 0.039527,
+        "tirx": 0.040072
       },
       "errors": {},
       "timer": "proton",
@@ -275,17 +275,17 @@
       "max_diff": 4.218847493575595e-15,
       "label": "s2048_skv4096_h64_d128_f32_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:30:52+00:00",
+      "finished_at": "2026-06-08T18:36:28+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv4096_h64_d128_f32_dense_nocp",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:30:37+00:00",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:36:08+00:00",
       "impls": {
-        "deepgemm": 0.051648000000000006,
-        "tirx": 0.052196
+        "deepgemm": 0.051487000000000005,
+        "tirx": 0.052046999999999996
       },
       "errors": {},
       "timer": "proton",
@@ -306,17 +306,17 @@
       "max_diff": 3.9968028886505635e-15,
       "label": "s2048_skv4096_h64_d128_f32_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:30:54+00:00",
+      "finished_at": "2026-06-08T18:36:29+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv8192_h64_d128_bf16_compressed_cp",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:31:36+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:44:29+00:00",
       "impls": {
-        "deepgemm": 0.07405500000000001,
-        "tirx": 0.070471
+        "deepgemm": 0.073313,
+        "tirx": 0.06958400000000001
       },
       "errors": {},
       "timer": "proton",
@@ -337,17 +337,17 @@
       "max_diff": 1.3788610764287057e-06,
       "label": "s2048_skv8192_h64_d128_bf16_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:54+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:44:44+00:00",
+      "attempt": 4
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv8192_h64_d128_bf16_compressed_nocp",
       "gpu": "6",
-      "started_at": "2026-06-02T15:31:40+00:00",
+      "started_at": "2026-06-08T18:44:26+00:00",
       "impls": {
-        "deepgemm": 0.11431100000000001,
-        "tirx": 0.108431
+        "deepgemm": 0.114139,
+        "tirx": 0.10864900000000001
       },
       "errors": {},
       "timer": "proton",
@@ -368,17 +368,17 @@
       "max_diff": 1.3769480183833949e-06,
       "label": "s2048_skv8192_h64_d128_bf16_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:58+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:44:43+00:00",
+      "attempt": 4
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv8192_h64_d128_bf16_dense_cp",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:31:16+00:00",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:48:10+00:00",
       "impls": {
-        "deepgemm": 0.072521,
-        "tirx": 0.070968
+        "deepgemm": 0.071858,
+        "tirx": 0.070867
       },
       "errors": {},
       "timer": "proton",
@@ -399,17 +399,17 @@
       "max_diff": 1.3785193276882879e-06,
       "label": "s2048_skv8192_h64_d128_bf16_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:35+00:00",
+      "finished_at": "2026-06-08T18:48:28+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv8192_h64_d128_bf16_dense_nocp",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:31:17+00:00",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:42:58+00:00",
       "impls": {
-        "deepgemm": 0.109378,
-        "tirx": 0.107897
+        "deepgemm": 0.10977100000000001,
+        "tirx": 0.108173
       },
       "errors": {},
       "timer": "proton",
@@ -430,17 +430,17 @@
       "max_diff": 1.3775896979817404e-06,
       "label": "s2048_skv8192_h64_d128_bf16_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:35+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:43:15+00:00",
+      "attempt": 2
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv8192_h64_d128_f32_compressed_cp",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:30:54+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:36:30+00:00",
       "impls": {
-        "deepgemm": 0.076499,
-        "tirx": 0.07083700000000001
+        "deepgemm": 0.07701000000000001,
+        "tirx": 0.071392
       },
       "errors": {},
       "timer": "proton",
@@ -461,17 +461,17 @@
       "max_diff": 3.9968028886505635e-15,
       "label": "s2048_skv8192_h64_d128_f32_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:16+00:00",
+      "finished_at": "2026-06-08T18:36:47+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv8192_h64_d128_f32_compressed_nocp",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:30:54+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:42:57+00:00",
       "impls": {
-        "deepgemm": 0.119238,
-        "tirx": 0.10886900000000001
+        "deepgemm": 0.12055500000000001,
+        "tirx": 0.110277
       },
       "errors": {},
       "timer": "proton",
@@ -492,17 +492,17 @@
       "max_diff": 3.9968028886505635e-15,
       "label": "s2048_skv8192_h64_d128_f32_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:16+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:43:12+00:00",
+      "attempt": 2
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv8192_h64_d128_f32_dense_cp",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:30:37+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:36:08+00:00",
       "impls": {
-        "deepgemm": 0.06874899999999999,
-        "tirx": 0.069831
+        "deepgemm": 0.068353,
+        "tirx": 0.06979300000000001
       },
       "errors": {},
       "timer": "proton",
@@ -523,17 +523,17 @@
       "max_diff": 4.3298697960381105e-15,
       "label": "s2048_skv8192_h64_d128_f32_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:30:53+00:00",
+      "finished_at": "2026-06-08T18:36:29+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s2048_skv8192_h64_d128_f32_dense_nocp",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:30:38+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:36:09+00:00",
       "impls": {
-        "deepgemm": 0.104932,
-        "tirx": 0.106261
+        "deepgemm": 0.105285,
+        "tirx": 0.106404
       },
       "errors": {},
       "timer": "proton",
@@ -554,17 +554,17 @@
       "max_diff": 3.9968028886505635e-15,
       "label": "s2048_skv8192_h64_d128_f32_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:30:53+00:00",
+      "finished_at": "2026-06-08T18:36:29+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv4096_h64_d128_bf16_compressed_cp",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:31:44+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:42:39+00:00",
       "impls": {
-        "deepgemm": 0.076695,
-        "tirx": 0.071915
+        "deepgemm": 0.076117,
+        "tirx": 0.071551
       },
       "errors": {},
       "timer": "proton",
@@ -585,17 +585,17 @@
       "max_diff": 1.379564555148427e-06,
       "label": "s4096_skv4096_h64_d128_bf16_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:02+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:42:54+00:00",
+      "attempt": 2
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv4096_h64_d128_bf16_compressed_nocp",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:31:47+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:42:46+00:00",
       "impls": {
-        "deepgemm": 0.075485,
-        "tirx": 0.071006
+        "deepgemm": 0.075434,
+        "tirx": 0.070592
       },
       "errors": {},
       "timer": "proton",
@@ -616,17 +616,17 @@
       "max_diff": 1.3779008407599491e-06,
       "label": "s4096_skv4096_h64_d128_bf16_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:04+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:43:03+00:00",
+      "attempt": 2
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv4096_h64_d128_bf16_dense_cp",
-      "gpu": "6",
-      "started_at": "2026-06-02T15:31:19+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:36:46+00:00",
       "impls": {
-        "deepgemm": 0.074832,
-        "tirx": 0.07226
+        "deepgemm": 0.07402700000000001,
+        "tirx": 0.071257
       },
       "errors": {},
       "timer": "proton",
@@ -647,17 +647,17 @@
       "max_diff": 1.3783752872420507e-06,
       "label": "s4096_skv4096_h64_d128_bf16_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:38+00:00",
+      "finished_at": "2026-06-08T18:37:03+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv4096_h64_d128_bf16_dense_nocp",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:31:23+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:36:48+00:00",
       "impls": {
-        "deepgemm": 0.075405,
-        "tirx": 0.072595
+        "deepgemm": 0.074787,
+        "tirx": 0.071941
       },
       "errors": {},
       "timer": "proton",
@@ -678,17 +678,17 @@
       "max_diff": 1.3768132963720703e-06,
       "label": "s4096_skv4096_h64_d128_bf16_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:44+00:00",
+      "finished_at": "2026-06-08T18:37:05+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv4096_h64_d128_f32_compressed_cp",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:30:55+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:36:30+00:00",
       "impls": {
-        "deepgemm": 0.077572,
-        "tirx": 0.07114000000000001
+        "deepgemm": 0.077582,
+        "tirx": 0.071166
       },
       "errors": {},
       "timer": "proton",
@@ -709,17 +709,17 @@
       "max_diff": 3.9968028886505635e-15,
       "label": "s4096_skv4096_h64_d128_f32_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:15+00:00",
+      "finished_at": "2026-06-08T18:36:49+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv4096_h64_d128_f32_compressed_nocp",
-      "gpu": "6",
-      "started_at": "2026-06-02T15:30:57+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:36:31+00:00",
       "impls": {
-        "deepgemm": 0.078814,
-        "tirx": 0.072377
+        "deepgemm": 0.07807800000000001,
+        "tirx": 0.071873
       },
       "errors": {},
       "timer": "proton",
@@ -740,17 +740,17 @@
       "max_diff": 4.107825191113079e-15,
       "label": "s4096_skv4096_h64_d128_f32_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:16+00:00",
+      "finished_at": "2026-06-08T18:36:48+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv4096_h64_d128_f32_dense_cp",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:30:38+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:36:09+00:00",
       "impls": {
-        "deepgemm": 0.069669,
-        "tirx": 0.069759
+        "deepgemm": 0.069608,
+        "tirx": 0.069495
       },
       "errors": {},
       "timer": "proton",
@@ -771,17 +771,17 @@
       "max_diff": 4.107825191113079e-15,
       "label": "s4096_skv4096_h64_d128_f32_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:30:54+00:00",
+      "finished_at": "2026-06-08T18:36:29+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv4096_h64_d128_f32_dense_nocp",
-      "gpu": "6",
-      "started_at": "2026-06-02T15:30:38+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:36:09+00:00",
       "impls": {
-        "deepgemm": 0.07095699999999999,
-        "tirx": 0.070777
+        "deepgemm": 0.070233,
+        "tirx": 0.070181
       },
       "errors": {},
       "timer": "proton",
@@ -802,17 +802,17 @@
       "max_diff": 3.9968028886505635e-15,
       "label": "s4096_skv4096_h64_d128_f32_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:30:54+00:00",
+      "finished_at": "2026-06-08T18:36:29+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv8192_h64_d128_bf16_compressed_cp",
       "gpu": "3",
-      "started_at": "2026-06-02T15:31:49+00:00",
+      "started_at": "2026-06-08T18:48:11+00:00",
       "impls": {
-        "deepgemm": 0.132888,
-        "tirx": 0.12461
+        "deepgemm": 0.133078,
+        "tirx": 0.125157
       },
       "errors": {},
       "timer": "proton",
@@ -833,17 +833,17 @@
       "max_diff": 1.3779582305195603e-06,
       "label": "s4096_skv8192_h64_d128_bf16_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:06+00:00",
+      "finished_at": "2026-06-08T18:48:28+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv8192_h64_d128_bf16_compressed_nocp",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:31:55+00:00",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:37:12+00:00",
       "impls": {
-        "deepgemm": 0.189588,
-        "tirx": 0.17760700000000001
+        "deepgemm": 0.192361,
+        "tirx": 0.180553
       },
       "errors": {},
       "timer": "proton",
@@ -864,17 +864,17 @@
       "max_diff": 1.3776171443602436e-06,
       "label": "s4096_skv8192_h64_d128_bf16_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:12+00:00",
+      "finished_at": "2026-06-08T18:37:26+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv8192_h64_d128_bf16_dense_cp",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:31:29+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:36:49+00:00",
       "impls": {
-        "deepgemm": 0.129,
-        "tirx": 0.126115
+        "deepgemm": 0.129751,
+        "tirx": 0.126226
       },
       "errors": {},
       "timer": "proton",
@@ -895,17 +895,17 @@
       "max_diff": 1.3775181564312788e-06,
       "label": "s4096_skv8192_h64_d128_bf16_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:46+00:00",
+      "finished_at": "2026-06-08T18:37:05+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv8192_h64_d128_bf16_dense_nocp",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:31:29+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:36:49+00:00",
       "impls": {
-        "deepgemm": 0.184386,
-        "tirx": 0.180455
+        "deepgemm": 0.18443600000000002,
+        "tirx": 0.18021199999999998
       },
       "errors": {},
       "timer": "proton",
@@ -926,17 +926,17 @@
       "max_diff": 1.377557574455679e-06,
       "label": "s4096_skv8192_h64_d128_bf16_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:48+00:00",
+      "finished_at": "2026-06-08T18:37:05+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv8192_h64_d128_f32_compressed_cp",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:32:07+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:36:33+00:00",
       "impls": {
-        "deepgemm": 0.13894399999999998,
-        "tirx": 0.126216
+        "deepgemm": 0.140279,
+        "tirx": 0.127787
       },
       "errors": {},
       "timer": "proton",
@@ -957,17 +957,17 @@
       "max_diff": 4.218847493575595e-15,
       "label": "s4096_skv8192_h64_d128_f32_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:24+00:00",
+      "finished_at": "2026-06-08T18:36:53+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv8192_h64_d128_f32_compressed_nocp",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:31:11+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:48:10+00:00",
       "impls": {
-        "deepgemm": 0.19886600000000001,
-        "tirx": 0.1805
+        "deepgemm": 0.198713,
+        "tirx": 0.180304
       },
       "errors": {},
       "timer": "proton",
@@ -988,17 +988,17 @@
       "max_diff": 4.3298697960381105e-15,
       "label": "s4096_skv8192_h64_d128_f32_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:27+00:00",
+      "finished_at": "2026-06-08T18:48:26+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv8192_h64_d128_f32_dense_cp",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:30:39+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:36:10+00:00",
       "impls": {
-        "deepgemm": 0.125437,
-        "tirx": 0.125912
+        "deepgemm": 0.124644,
+        "tirx": 0.125095
       },
       "errors": {},
       "timer": "proton",
@@ -1019,17 +1019,17 @@
       "max_diff": 4.3298697960381105e-15,
       "label": "s4096_skv8192_h64_d128_f32_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:30:57+00:00",
+      "finished_at": "2026-06-08T18:36:29+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp4_mqa_logits",
       "config": "s4096_skv8192_h64_d128_f32_dense_nocp",
       "gpu": "7",
-      "started_at": "2026-06-02T15:31:02+00:00",
+      "started_at": "2026-06-08T18:36:16+00:00",
       "impls": {
-        "deepgemm": 0.17866900000000002,
-        "tirx": 0.179368
+        "deepgemm": 0.178809,
+        "tirx": 0.17941100000000001
       },
       "errors": {},
       "timer": "proton",
@@ -1050,17 +1050,17 @@
       "max_diff": 4.218847493575595e-15,
       "label": "s4096_skv8192_h64_d128_f32_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:31:20+00:00",
+      "finished_at": "2026-06-08T18:36:33+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv4096_h64_d128_bf16_compressed_cp",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:33:01+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:37:51+00:00",
       "impls": {
-        "deepgemm": 0.046795,
-        "tirx": 0.045895000000000005
+        "deepgemm": 0.045807,
+        "tirx": 0.045058
       },
       "errors": {},
       "timer": "proton",
@@ -1081,17 +1081,17 @@
       "max_diff": 2.525219708782167e-06,
       "label": "s2048_skv4096_h64_d128_bf16_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:20+00:00",
+      "finished_at": "2026-06-08T18:38:12+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv4096_h64_d128_bf16_compressed_nocp",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:33:01+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:37:52+00:00",
       "impls": {
-        "deepgemm": 0.060558,
-        "tirx": 0.059694000000000004
+        "deepgemm": 0.06052300000000001,
+        "tirx": 0.059662
       },
       "errors": {},
       "timer": "proton",
@@ -1112,17 +1112,17 @@
       "max_diff": 2.5434508256205746e-06,
       "label": "s2048_skv4096_h64_d128_bf16_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:20+00:00",
+      "finished_at": "2026-06-08T18:38:08+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv4096_h64_d128_bf16_dense_cp",
       "gpu": "6",
-      "started_at": "2026-06-02T15:32:39+00:00",
+      "started_at": "2026-06-08T18:37:33+00:00",
       "impls": {
-        "deepgemm": 0.044622,
-        "tirx": 0.044917000000000006
+        "deepgemm": 0.044409,
+        "tirx": 0.044831
       },
       "errors": {},
       "timer": "proton",
@@ -1143,17 +1143,17 @@
       "max_diff": 2.54763569706995e-06,
       "label": "s2048_skv4096_h64_d128_bf16_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:57+00:00",
+      "finished_at": "2026-06-08T18:37:52+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv4096_h64_d128_bf16_dense_nocp",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:32:42+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:43:46+00:00",
       "impls": {
-        "deepgemm": 0.058151,
-        "tirx": 0.058101
+        "deepgemm": 0.057848000000000004,
+        "tirx": 0.058038
       },
       "errors": {},
       "timer": "proton",
@@ -1174,17 +1174,17 @@
       "max_diff": 2.5349719559031314e-06,
       "label": "s2048_skv4096_h64_d128_bf16_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:01+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:43:59+00:00",
+      "attempt": 3
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv4096_h64_d128_f32_compressed_cp",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:32:13+00:00",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:37:38+00:00",
       "impls": {
-        "deepgemm": 0.046219,
-        "tirx": 0.044304
+        "deepgemm": 0.046708,
+        "tirx": 0.044963
       },
       "errors": {},
       "timer": "proton",
@@ -1205,17 +1205,17 @@
       "max_diff": 1.2000996665317842e-06,
       "label": "s2048_skv4096_h64_d128_f32_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:31+00:00",
+      "finished_at": "2026-06-08T18:37:53+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv4096_h64_d128_f32_compressed_nocp",
       "gpu": "6",
-      "started_at": "2026-06-02T15:32:20+00:00",
+      "started_at": "2026-06-08T18:37:14+00:00",
       "impls": {
-        "deepgemm": 0.061202,
-        "tirx": 0.059409000000000003
+        "deepgemm": 0.061275,
+        "tirx": 0.059324
       },
       "errors": {},
       "timer": "proton",
@@ -1236,17 +1236,17 @@
       "max_diff": 1.175091285166019e-06,
       "label": "s2048_skv4096_h64_d128_f32_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:38+00:00",
+      "finished_at": "2026-06-08T18:37:32+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv4096_h64_d128_f32_dense_cp",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:31:55+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:37:09+00:00",
       "impls": {
-        "deepgemm": 0.043028,
-        "tirx": 0.043473
+        "deepgemm": 0.043051000000000006,
+        "tirx": 0.043665
       },
       "errors": {},
       "timer": "proton",
@@ -1267,17 +1267,17 @@
       "max_diff": 1.176528334867477e-06,
       "label": "s2048_skv4096_h64_d128_f32_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:13+00:00",
+      "finished_at": "2026-06-08T18:37:24+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv4096_h64_d128_f32_dense_nocp",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:31:56+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:37:10+00:00",
       "impls": {
-        "deepgemm": 0.057373,
-        "tirx": 0.057821
+        "deepgemm": 0.057709,
+        "tirx": 0.058451
       },
       "errors": {},
       "timer": "proton",
@@ -1298,17 +1298,17 @@
       "max_diff": 1.1782539057758612e-06,
       "label": "s2048_skv4096_h64_d128_f32_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:13+00:00",
+      "finished_at": "2026-06-08T18:37:26+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv8192_h64_d128_bf16_compressed_cp",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:33:02+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:37:52+00:00",
       "impls": {
-        "deepgemm": 0.080641,
-        "tirx": 0.079109
+        "deepgemm": 0.07991100000000001,
+        "tirx": 0.078249
       },
       "errors": {},
       "timer": "proton",
@@ -1329,17 +1329,17 @@
       "max_diff": 2.549897109349608e-06,
       "label": "s2048_skv8192_h64_d128_bf16_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:20+00:00",
+      "finished_at": "2026-06-08T18:38:12+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv8192_h64_d128_bf16_compressed_nocp",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:33:09+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:37:53+00:00",
       "impls": {
-        "deepgemm": 0.12411100000000001,
-        "tirx": 0.12209900000000001
+        "deepgemm": 0.12551500000000002,
+        "tirx": 0.122844
       },
       "errors": {},
       "timer": "proton",
@@ -1360,17 +1360,17 @@
       "max_diff": 2.565442067559154e-06,
       "label": "s2048_skv8192_h64_d128_bf16_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:26+00:00",
+      "finished_at": "2026-06-08T18:38:12+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv8192_h64_d128_bf16_dense_cp",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:32:42+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:37:36+00:00",
       "impls": {
-        "deepgemm": 0.079056,
-        "tirx": 0.078974
+        "deepgemm": 0.076925,
+        "tirx": 0.07712000000000001
       },
       "errors": {},
       "timer": "proton",
@@ -1391,17 +1391,17 @@
       "max_diff": 2.555146156879573e-06,
       "label": "s2048_skv8192_h64_d128_bf16_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:59+00:00",
+      "finished_at": "2026-06-08T18:37:52+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv8192_h64_d128_bf16_dense_nocp",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:32:43+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:37:37+00:00",
       "impls": {
-        "deepgemm": 0.118795,
-        "tirx": 0.118302
+        "deepgemm": 0.119589,
+        "tirx": 0.119273
       },
       "errors": {},
       "timer": "proton",
@@ -1422,17 +1422,17 @@
       "max_diff": 2.5727197027203275e-06,
       "label": "s2048_skv8192_h64_d128_bf16_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:01+00:00",
+      "finished_at": "2026-06-08T18:37:51+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv8192_h64_d128_f32_compressed_cp",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:32:22+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:43:52+00:00",
       "impls": {
-        "deepgemm": 0.08172199999999999,
-        "tirx": 0.078993
+        "deepgemm": 0.080654,
+        "tirx": 0.077829
       },
       "errors": {},
       "timer": "proton",
@@ -1453,17 +1453,17 @@
       "max_diff": 1.2019895891945964e-06,
       "label": "s2048_skv8192_h64_d128_f32_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:41+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:44:10+00:00",
+      "attempt": 3
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv8192_h64_d128_f32_compressed_nocp",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:32:23+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:43:45+00:00",
       "impls": {
-        "deepgemm": 0.12524,
-        "tirx": 0.119416
+        "deepgemm": 0.122323,
+        "tirx": 0.117987
       },
       "errors": {},
       "timer": "proton",
@@ -1484,17 +1484,47 @@
       "max_diff": 1.191881321527255e-06,
       "label": "s2048_skv8192_h64_d128_f32_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:41+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:43:59+00:00",
+      "attempt": 3,
+      "restabilized": {
+        "reps": 5,
+        "source_run_ids": [
+          "20260608T192658Z",
+          "20260608T192815Z",
+          "20260608T192919Z",
+          "20260608T193014Z",
+          "20260608T193110Z"
+        ],
+        "old_impls": {
+          "deepgemm": 0.122467,
+          "tirx": 0.118289
+        },
+        "samples": {
+          "deepgemm": [
+            0.12208,
+            0.122323,
+            0.122239,
+            0.12239900000000001,
+            0.122455
+          ],
+          "tirx": [
+            0.11795800000000001,
+            0.117987,
+            0.118011,
+            0.117925,
+            0.11819199999999999
+          ]
+        }
+      }
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv8192_h64_d128_f32_dense_cp",
-      "gpu": "6",
-      "started_at": "2026-06-02T15:32:01+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:42:43+00:00",
       "impls": {
-        "deepgemm": 0.07782299999999999,
-        "tirx": 0.078532
+        "deepgemm": 0.076291,
+        "tirx": 0.077205
       },
       "errors": {},
       "timer": "proton",
@@ -1515,17 +1545,17 @@
       "max_diff": 1.1926007633666913e-06,
       "label": "s2048_skv8192_h64_d128_f32_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:20+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:42:58+00:00",
+      "attempt": 2
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s2048_skv8192_h64_d128_f32_dense_nocp",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:32:02+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:42:46+00:00",
       "impls": {
-        "deepgemm": 0.118374,
-        "tirx": 0.118908
+        "deepgemm": 0.116189,
+        "tirx": 0.116978
       },
       "errors": {},
       "timer": "proton",
@@ -1546,17 +1576,17 @@
       "max_diff": 1.1811263653793702e-06,
       "label": "s2048_skv8192_h64_d128_f32_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:21+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:43:03+00:00",
+      "attempt": 2
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv4096_h64_d128_bf16_compressed_cp",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:33:09+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:37:56+00:00",
       "impls": {
-        "deepgemm": 0.081731,
-        "tirx": 0.08024200000000001
+        "deepgemm": 0.082319,
+        "tirx": 0.080577
       },
       "errors": {},
       "timer": "proton",
@@ -1577,17 +1607,17 @@
       "max_diff": 2.5662790410496683e-06,
       "label": "s4096_skv4096_h64_d128_bf16_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:29+00:00",
+      "finished_at": "2026-06-08T18:38:15+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv4096_h64_d128_bf16_compressed_nocp",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:33:11+00:00",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:37:57+00:00",
       "impls": {
-        "deepgemm": 0.081994,
-        "tirx": 0.08045000000000001
+        "deepgemm": 0.083315,
+        "tirx": 0.082029
       },
       "errors": {},
       "timer": "proton",
@@ -1608,17 +1638,17 @@
       "max_diff": 2.573891893176139e-06,
       "label": "s4096_skv4096_h64_d128_bf16_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:30+00:00",
+      "finished_at": "2026-06-08T18:38:16+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv4096_h64_d128_bf16_dense_cp",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:32:50+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:37:37+00:00",
       "impls": {
-        "deepgemm": 0.077235,
-        "tirx": 0.076864
+        "deepgemm": 0.076935,
+        "tirx": 0.07694
       },
       "errors": {},
       "timer": "proton",
@@ -1639,17 +1669,17 @@
       "max_diff": 2.550895423336641e-06,
       "label": "s4096_skv4096_h64_d128_bf16_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:09+00:00",
+      "finished_at": "2026-06-08T18:37:51+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv4096_h64_d128_bf16_dense_nocp",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:32:50+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:37:37+00:00",
       "impls": {
-        "deepgemm": 0.076707,
-        "tirx": 0.07665000000000001
+        "deepgemm": 0.077736,
+        "tirx": 0.078068
       },
       "errors": {},
       "timer": "proton",
@@ -1670,17 +1700,17 @@
       "max_diff": 2.555888410804563e-06,
       "label": "s4096_skv4096_h64_d128_bf16_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:09+00:00",
+      "finished_at": "2026-06-08T18:37:53+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv4096_h64_d128_f32_compressed_cp",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:32:24+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:48:11+00:00",
       "impls": {
-        "deepgemm": 0.082039,
-        "tirx": 0.07719100000000001
+        "deepgemm": 0.081717,
+        "tirx": 0.076768
       },
       "errors": {},
       "timer": "proton",
@@ -1701,17 +1731,17 @@
       "max_diff": 1.1731217538502037e-06,
       "label": "s4096_skv4096_h64_d128_f32_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:42+00:00",
+      "finished_at": "2026-06-08T18:48:28+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv4096_h64_d128_f32_compressed_nocp",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:32:31+00:00",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:43:46+00:00",
       "impls": {
-        "deepgemm": 0.08164,
-        "tirx": 0.07666800000000001
+        "deepgemm": 0.083516,
+        "tirx": 0.078611
       },
       "errors": {},
       "timer": "proton",
@@ -1732,17 +1762,17 @@
       "max_diff": 1.1873495850966975e-06,
       "label": "s4096_skv4096_h64_d128_f32_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:50+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:44:01+00:00",
+      "attempt": 3
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv4096_h64_d128_f32_dense_cp",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:34:19+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:37:11+00:00",
       "impls": {
-        "deepgemm": 0.075822,
-        "tirx": 0.076107
+        "deepgemm": 0.07602500000000001,
+        "tirx": 0.07624299999999999
       },
       "errors": {},
       "timer": "proton",
@@ -1763,17 +1793,17 @@
       "max_diff": 1.1959700515484784e-06,
       "label": "s4096_skv4096_h64_d128_f32_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:34:33+00:00",
+      "finished_at": "2026-06-08T18:37:26+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv4096_h64_d128_f32_dense_nocp",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:32:07+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:42:46+00:00",
       "impls": {
-        "deepgemm": 0.075896,
-        "tirx": 0.076202
+        "deepgemm": 0.07582,
+        "tirx": 0.07665000000000001
       },
       "errors": {},
       "timer": "proton",
@@ -1794,17 +1824,17 @@
       "max_diff": 1.1760488713985495e-06,
       "label": "s4096_skv4096_h64_d128_f32_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:22+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:43:01+00:00",
+      "attempt": 2
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv8192_h64_d128_bf16_compressed_cp",
-      "gpu": "6",
-      "started_at": "2026-06-02T15:33:19+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:43:46+00:00",
       "impls": {
-        "deepgemm": 0.146597,
-        "tirx": 0.143034
+        "deepgemm": 0.145135,
+        "tirx": 0.14150000000000001
       },
       "errors": {},
       "timer": "proton",
@@ -1825,17 +1855,17 @@
       "max_diff": 2.559772938948157e-06,
       "label": "s4096_skv8192_h64_d128_bf16_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:38+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:43:59+00:00",
+      "attempt": 3
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv8192_h64_d128_bf16_compressed_nocp",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:33:20+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:38:21+00:00",
       "impls": {
-        "deepgemm": 0.20635499999999998,
-        "tirx": 0.20264300000000002
+        "deepgemm": 0.203839,
+        "tirx": 0.201293
       },
       "errors": {},
       "timer": "proton",
@@ -1856,17 +1886,17 @@
       "max_diff": 2.57000874337443e-06,
       "label": "s4096_skv8192_h64_d128_bf16_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:38+00:00",
+      "finished_at": "2026-06-08T18:38:38+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv8192_h64_d128_bf16_dense_cp",
       "gpu": "5",
-      "started_at": "2026-06-02T15:32:51+00:00",
+      "started_at": "2026-06-08T18:37:38+00:00",
       "impls": {
-        "deepgemm": 0.13682,
-        "tirx": 0.13614300000000001
+        "deepgemm": 0.13672700000000002,
+        "tirx": 0.135882
       },
       "errors": {},
       "timer": "proton",
@@ -1887,17 +1917,17 @@
       "max_diff": 2.5559830745258694e-06,
       "label": "s4096_skv8192_h64_d128_bf16_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:10+00:00",
+      "finished_at": "2026-06-08T18:37:53+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv8192_h64_d128_bf16_dense_nocp",
-      "gpu": "6",
-      "started_at": "2026-06-02T15:32:57+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:37:55+00:00",
       "impls": {
-        "deepgemm": 0.198469,
-        "tirx": 0.19607300000000003
+        "deepgemm": 0.196615,
+        "tirx": 0.19603
       },
       "errors": {},
       "timer": "proton",
@@ -1918,17 +1948,17 @@
       "max_diff": 2.553350818668143e-06,
       "label": "s4096_skv8192_h64_d128_bf16_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:18+00:00",
+      "finished_at": "2026-06-08T18:38:12+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv8192_h64_d128_f32_compressed_cp",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:32:31+00:00",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:43:53+00:00",
       "impls": {
-        "deepgemm": 0.14517500000000003,
-        "tirx": 0.135021
+        "deepgemm": 0.144489,
+        "tirx": 0.133908
       },
       "errors": {},
       "timer": "proton",
@@ -1949,17 +1979,17 @@
       "max_diff": 1.1828110724199092e-06,
       "label": "s4096_skv8192_h64_d128_f32_compressed_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:50+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:44:11+00:00",
+      "attempt": 3
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv8192_h64_d128_f32_compressed_nocp",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:32:32+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:43:46+00:00",
       "impls": {
-        "deepgemm": 0.206608,
-        "tirx": 0.195502
+        "deepgemm": 0.207227,
+        "tirx": 0.195458
       },
       "errors": {},
       "timer": "proton",
@@ -1980,17 +2010,17 @@
       "max_diff": 1.168848233645825e-06,
       "label": "s4096_skv8192_h64_d128_f32_compressed_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:50+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:43:59+00:00",
+      "attempt": 3
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv8192_h64_d128_f32_dense_cp",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:32:13+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:37:12+00:00",
       "impls": {
-        "deepgemm": 0.133896,
-        "tirx": 0.133464
+        "deepgemm": 0.13334100000000002,
+        "tirx": 0.133413
       },
       "errors": {},
       "timer": "proton",
@@ -2011,17 +2041,17 @@
       "max_diff": 1.1701566348110148e-06,
       "label": "s4096_skv8192_h64_d128_f32_dense_cp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:31+00:00",
+      "finished_at": "2026-06-08T18:37:26+00:00",
       "attempt": 1
     },
     {
       "kernel": "deepgemm_sm100_fp8_mqa_logits",
       "config": "s4096_skv8192_h64_d128_f32_dense_nocp",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:32:13+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:37:12+00:00",
       "impls": {
-        "deepgemm": 0.191615,
-        "tirx": 0.191554
+        "deepgemm": 0.191952,
+        "tirx": 0.19193600000000002
       },
       "errors": {},
       "timer": "proton",
@@ -2042,18 +2072,1258 @@
       "max_diff": 1.1758747723300544e-06,
       "label": "s4096_skv8192_h64_d128_f32_dense_nocp",
       "status": "ok",
-      "finished_at": "2026-06-02T15:32:31+00:00",
+      "finished_at": "2026-06-08T18:37:26+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b16_n1_mp128_ps64_h64_d128_bf16_fixed",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:39:28+00:00",
+      "impls": {
+        "deepgemm": 0.004481,
+        "tirx": 0.00454
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 101132264,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.2112591535616843e-06,
+      "label": "b16_n1_mp128_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:45+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b16_n1_mp128_ps64_h64_d128_f32_fixed",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:44:32+00:00",
+      "impls": {
+        "deepgemm": 0.004441,
+        "tirx": 0.004475
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 101394408,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 8.497649895966575e-07,
+      "label": "b16_n1_mp128_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:44:48+00:00",
+      "attempt": 4
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b16_n1_mp1_ps64_h64_d128_bf16_fixed",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:39:21+00:00",
+      "impls": {
+        "deepgemm": 0.003618,
+        "tirx": 0.003647
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100870184,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.2710241126544517e-06,
+      "label": "b16_n1_mp1_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:39+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b16_n1_mp1_ps64_h64_d128_f32_fixed",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:43:15+00:00",
+      "impls": {
+        "deepgemm": 0.003734,
+        "tirx": 0.003745
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100878376,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 8.562632021202887e-07,
+      "label": "b16_n1_mp1_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:43:29+00:00",
+      "attempt": 2
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b16_n1_mp32_ps64_h64_d128_bf16_fixed",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:39:22+00:00",
+      "impls": {
+        "deepgemm": 0.004018,
+        "tirx": 0.0040999999999999995
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100929512,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.2989218162461356e-06,
+      "label": "b16_n1_mp32_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:41+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b16_n1_mp32_ps64_h64_d128_f32_fixed",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:44:31+00:00",
+      "impls": {
+        "deepgemm": 0.003932,
+        "tirx": 0.003985
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100995048,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 6.552570275264458e-07,
+      "label": "b16_n1_mp32_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:44:46+00:00",
+      "attempt": 4
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b16_n1_mp8_ps64_h64_d128_bf16_fixed",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:39:22+00:00",
+      "impls": {
+        "deepgemm": 0.004035,
+        "tirx": 0.004091
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100878824,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.245212179841083e-06,
+      "label": "b16_n1_mp8_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:41+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b16_n1_mp8_ps64_h64_d128_f32_fixed",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:38:39+00:00",
+      "impls": {
+        "deepgemm": 0.0036190000000000003,
+        "tirx": 0.0036509999999999997
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100895208,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 1.0555911417187147e-06,
+      "label": "b16_n1_mp8_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:38:54+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b1_n1_mp128_ps64_h64_d128_bf16_fixed",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:38:47+00:00",
+      "impls": {
+        "deepgemm": 0.004017000000000001,
+        "tirx": 0.00405
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100752044,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.744638747498307e-06,
+      "label": "b1_n1_mp128_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:04+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b1_n1_mp128_ps64_h64_d128_f32_fixed",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:43:59+00:00",
+      "impls": {
+        "deepgemm": 0.004026,
+        "tirx": 0.004076
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100768428,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 1.3438036100543727e-06,
+      "label": "b1_n1_mp128_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:44:17+00:00",
+      "attempt": 3
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b1_n1_mp1_ps64_h64_d128_bf16_fixed",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:38:43+00:00",
+      "impls": {
+        "deepgemm": 0.003633,
+        "tirx": 0.003646
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100735664,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.694121976176689e-06,
+      "label": "b1_n1_mp1_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:04+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b1_n1_mp1_ps64_h64_d128_f32_fixed",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:44:10+00:00",
+      "impls": {
+        "deepgemm": 0.003644,
+        "tirx": 0.003637
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100736176,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 1.3363154245382702e-06,
+      "label": "b1_n1_mp1_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:44:26+00:00",
+      "attempt": 3
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b1_n1_mp32_ps64_h64_d128_bf16_fixed",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:38:47+00:00",
+      "impls": {
+        "deepgemm": 0.004018,
+        "tirx": 0.004037
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100739372,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.502857083808152e-06,
+      "label": "b1_n1_mp32_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:04+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b1_n1_mp32_ps64_h64_d128_f32_fixed",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:44:44+00:00",
+      "impls": {
+        "deepgemm": 0.003657,
+        "tirx": 0.003677
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100743468,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 9.503645422848095e-07,
+      "label": "b1_n1_mp32_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:45:00+00:00",
+      "attempt": 4
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b1_n1_mp8_ps64_h64_d128_bf16_fixed",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:38:47+00:00",
+      "impls": {
+        "deepgemm": 0.003904,
+        "tirx": 0.003896
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100736204,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.027576392671371e-06,
+      "label": "b1_n1_mp8_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:03+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b1_n1_mp8_ps64_h64_d128_f32_fixed",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:45:07+00:00",
+      "impls": {
+        "deepgemm": 0.003654,
+        "tirx": 0.003655
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100737228,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 1.5249635046954424e-06,
+      "label": "b1_n1_mp8_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:45:21+00:00",
+      "attempt": 5
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b2_n1_mp128_ps64_h64_d128_bf16_fixed",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:39:03+00:00",
+      "impls": {
+        "deepgemm": 0.0039310000000000005,
+        "tirx": 0.003945
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100777392,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.5834711400163357e-06,
+      "label": "b2_n1_mp128_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:19+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b2_n1_mp128_ps64_h64_d128_f32_fixed",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:38:23+00:00",
+      "impls": {
+        "deepgemm": 0.0036090000000000002,
+        "tirx": 0.003614
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100810160,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 1.0830482355395077e-06,
+      "label": "b2_n1_mp128_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:38:38+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b2_n1_mp1_ps64_h64_d128_bf16_fixed",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:38:48+00:00",
+      "impls": {
+        "deepgemm": 0.0036650000000000003,
+        "tirx": 0.003663
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100744632,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.148378958954922e-06,
+      "label": "b2_n1_mp1_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:04+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b2_n1_mp1_ps64_h64_d128_f32_fixed",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:38:15+00:00",
+      "impls": {
+        "deepgemm": 0.0036720000000000004,
+        "tirx": 0.003662
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100745656,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 1.1252990442800481e-06,
+      "label": "b2_n1_mp1_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:38:34+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b2_n1_mp32_ps64_h64_d128_bf16_fixed",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:38:55+00:00",
+      "impls": {
+        "deepgemm": 0.0035800000000000003,
+        "tirx": 0.003581
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100752048,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.7669951077058386e-06,
+      "label": "b2_n1_mp32_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:12+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b2_n1_mp32_ps64_h64_d128_f32_fixed",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:43:15+00:00",
+      "impls": {
+        "deepgemm": 0.003601,
+        "tirx": 0.003622
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100760240,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 8.959778703410137e-07,
+      "label": "b2_n1_mp32_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:43:31+00:00",
+      "attempt": 2
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b2_n1_mp8_ps64_h64_d128_bf16_fixed",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:38:54+00:00",
+      "impls": {
+        "deepgemm": 0.00363,
+        "tirx": 0.003674
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100745712,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.5246128765310516e-06,
+      "label": "b2_n1_mp8_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:11+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b2_n1_mp8_ps64_h64_d128_f32_fixed",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:44:30+00:00",
+      "impls": {
+        "deepgemm": 0.0040620000000000005,
+        "tirx": 0.004083000000000001
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100747760,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 9.638239937270754e-07,
+      "label": "b2_n1_mp8_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:44:45+00:00",
+      "attempt": 4
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b4_n1_mp128_ps64_h64_d128_bf16_fixed",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:39:07+00:00",
+      "impls": {
+        "deepgemm": 0.00394,
+        "tirx": 0.003973
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100828088,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.431208713349342e-06,
+      "label": "b4_n1_mp128_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:27+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b4_n1_mp128_ps64_h64_d128_f32_fixed",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:38:26+00:00",
+      "impls": {
+        "deepgemm": 0.004043000000000001,
+        "tirx": 0.00408
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100893624,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 1.1336256124927502e-06,
+      "label": "b4_n1_mp128_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:38:40+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b4_n1_mp1_ps64_h64_d128_bf16_fixed",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:39:04+00:00",
+      "impls": {
+        "deepgemm": 0.0036019999999999997,
+        "tirx": 0.0036230000000000004
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100762568,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.5435825221631347e-06,
+      "label": "b4_n1_mp1_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:20+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b4_n1_mp1_ps64_h64_d128_f32_fixed",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:43:14+00:00",
+      "impls": {
+        "deepgemm": 0.003648,
+        "tirx": 0.0036650000000000003
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100764616,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 8.773159194674918e-07,
+      "label": "b4_n1_mp1_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:43:28+00:00",
+      "attempt": 2
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b4_n1_mp32_ps64_h64_d128_bf16_fixed",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:39:05+00:00",
+      "impls": {
+        "deepgemm": 0.004012,
+        "tirx": 0.0040620000000000005
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100777400,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.324860258418049e-06,
+      "label": "b4_n1_mp32_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:22+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b4_n1_mp32_ps64_h64_d128_f32_fixed",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:38:25+00:00",
+      "impls": {
+        "deepgemm": 0.00367,
+        "tirx": 0.003697
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100793784,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 8.538033809957213e-07,
+      "label": "b4_n1_mp32_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:38:42+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b4_n1_mp8_ps64_h64_d128_bf16_fixed",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:39:04+00:00",
+      "impls": {
+        "deepgemm": 0.003997,
+        "tirx": 0.004063
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100764728,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.0733016039553576e-06,
+      "label": "b4_n1_mp8_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:21+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b4_n1_mp8_ps64_h64_d128_f32_fixed",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:38:25+00:00",
+      "impls": {
+        "deepgemm": 0.003933,
+        "tirx": 0.003942
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100768824,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 1.0909833150218873e-06,
+      "label": "b4_n1_mp8_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:38:38+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b8_n1_mp128_ps64_h64_d128_bf16_fixed",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:39:19+00:00",
+      "impls": {
+        "deepgemm": 0.003971000000000001,
+        "tirx": 0.004
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100929480,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.2092357723213496e-06,
+      "label": "b8_n1_mp128_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:40+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b8_n1_mp128_ps64_h64_d128_f32_fixed",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:43:14+00:00",
+      "impls": {
+        "deepgemm": 0.004453,
+        "tirx": 0.004479
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 101060552,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 1.1126551446860589e-06,
+      "label": "b8_n1_mp128_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:43:31+00:00",
+      "attempt": 2
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b8_n1_mp1_ps64_h64_d128_bf16_fixed",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:39:12+00:00",
+      "impls": {
+        "deepgemm": 0.003698,
+        "tirx": 0.0037300000000000002
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100798440,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.092681822829512e-06,
+      "label": "b8_n1_mp1_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:28+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b8_n1_mp1_ps64_h64_d128_f32_fixed",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:38:26+00:00",
+      "impls": {
+        "deepgemm": 0.003614,
+        "tirx": 0.003633
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100802536,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 9.509875487090369e-07,
+      "label": "b8_n1_mp1_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:38:42+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b8_n1_mp32_ps64_h64_d128_bf16_fixed",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:39:12+00:00",
+      "impls": {
+        "deepgemm": 0.0036200000000000004,
+        "tirx": 0.0036290000000000003
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100828104,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.4469179542574437e-06,
+      "label": "b8_n1_mp32_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:32+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b8_n1_mp32_ps64_h64_d128_f32_fixed",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:38:34+00:00",
+      "impls": {
+        "deepgemm": 0.003862,
+        "tirx": 0.003871
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100860872,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 9.87694416698659e-07,
+      "label": "b8_n1_mp32_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:38:53+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b8_n1_mp8_ps64_h64_d128_bf16_fixed",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:39:12+00:00",
+      "impls": {
+        "deepgemm": 0.004001,
+        "tirx": 0.004027
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100802760,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 2.5366361581236063e-06,
+      "label": "b8_n1_mp8_ps64_h64_d128_bf16_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:31+00:00",
+      "attempt": 1
+    },
+    {
+      "kernel": "deepgemm_sm100_fp8_paged_mqa_logits",
+      "config": "b8_n1_mp8_ps64_h64_d128_f32_fixed",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:38:53+00:00",
+      "impls": {
+        "deepgemm": 0.003957,
+        "tirx": 0.003979
+      },
+      "errors": {},
+      "timer": "proton",
+      "benchmark_protocol": {
+        "num_groups": 4,
+        "input_bytes": 100810952,
+        "l2_bytes": 134217728,
+        "l2_eviction_factor": 3,
+        "flush_l2": false,
+        "warmup": 100,
+        "repeat": 30,
+        "cooldown_s": 1.0,
+        "order": [
+          "tirx",
+          "deepgemm"
+        ]
+      },
+      "max_diff": 1.0076985925699944e-06,
+      "label": "b8_n1_mp8_ps64_h64_d128_f32_fixed",
+      "status": "ok",
+      "finished_at": "2026-06-08T18:39:12+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s1024_h32kv16",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:33:30+00:00",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:39:41+00:00",
       "impls": {
-        "flashattn_sm100": 0.020232,
-        "flashinfer": 0.026194,
-        "tir": 0.021047999999999997
+        "flashattn_sm100": 0.020432,
+        "flashinfer": 0.026088999999999998,
+        "tir": 0.020938
       },
       "errors": {},
       "timer": "proton",
@@ -2074,18 +3344,18 @@
       },
       "label": "s1024_h32kv16",
       "status": "ok",
-      "finished_at": "2026-06-02T15:34:06+00:00",
+      "finished_at": "2026-06-08T18:40:14+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s1024_h32kv16_causal",
-      "gpu": "6",
-      "started_at": "2026-06-02T15:33:38+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:48:12+00:00",
       "impls": {
-        "flashattn_sm100": 0.01989,
-        "flashinfer": 0.0261,
-        "tir": 0.020797
+        "flashattn_sm100": 0.01979,
+        "flashinfer": 0.025974,
+        "tir": 0.020513000000000003
       },
       "errors": {},
       "timer": "proton",
@@ -2106,18 +3376,56 @@
       },
       "label": "s1024_h32kv16_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:34:14+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:48:46+00:00",
+      "attempt": 1,
+      "restabilized": {
+        "reps": 5,
+        "source_run_ids": [
+          "20260608T192658Z",
+          "20260608T192815Z",
+          "20260608T192919Z",
+          "20260608T193014Z",
+          "20260608T193110Z"
+        ],
+        "old_impls": {
+          "flashattn_sm100": 0.019984000000000002,
+          "flashinfer": 0.026268999999999997,
+          "tir": 0.021117999999999998
+        },
+        "samples": {
+          "flashattn_sm100": [
+            0.019806,
+            0.01979,
+            0.019776000000000002,
+            0.019842,
+            0.019745000000000002
+          ],
+          "flashinfer": [
+            0.025974,
+            0.025997,
+            0.026038000000000002,
+            0.025963999999999997,
+            0.025969000000000002
+          ],
+          "tir": [
+            0.020541,
+            0.020479,
+            0.020549,
+            0.020502,
+            0.020513000000000003
+          ]
+        }
+      }
     },
     {
       "kernel": "flash_attention4",
       "config": "s1024_h32kv32",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:37:22+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:39:41+00:00",
       "impls": {
-        "flashattn_sm100": 0.020578,
-        "flashinfer": 0.02622,
-        "tir": 0.021263
+        "flashattn_sm100": 0.020602000000000002,
+        "flashinfer": 0.026076000000000002,
+        "tir": 0.021226
       },
       "errors": {},
       "timer": "proton",
@@ -2138,18 +3446,18 @@
       },
       "label": "s1024_h32kv32",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:55+00:00",
-      "attempt": 2
+      "finished_at": "2026-06-08T18:40:18+00:00",
+      "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s1024_h32kv32_causal",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:33:56+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:39:45+00:00",
       "impls": {
-        "flashattn_sm100": 0.020722,
-        "flashinfer": 0.026183,
-        "tir": 0.022492
+        "flashattn_sm100": 0.020542,
+        "flashinfer": 0.026178999999999997,
+        "tir": 0.022273
       },
       "errors": {},
       "timer": "proton",
@@ -2170,18 +3478,18 @@
       },
       "label": "s1024_h32kv32_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:34:39+00:00",
+      "finished_at": "2026-06-08T18:40:21+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s1024_h32kv4",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:33:20+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:39:28+00:00",
       "impls": {
-        "flashattn_sm100": 0.020073,
-        "flashinfer": 0.025952000000000003,
-        "tir": 0.020793
+        "flashattn_sm100": 0.020195,
+        "flashinfer": 0.025998999999999998,
+        "tir": 0.020792
       },
       "errors": {},
       "timer": "proton",
@@ -2202,18 +3510,18 @@
       },
       "label": "s1024_h32kv4",
       "status": "ok",
-      "finished_at": "2026-06-02T15:33:56+00:00",
+      "finished_at": "2026-06-08T18:40:00+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s1024_h32kv4_causal",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:33:21+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:39:32+00:00",
       "impls": {
-        "flashattn_sm100": 0.01952,
-        "flashinfer": 0.02605,
-        "tir": 0.01975
+        "flashattn_sm100": 0.019594,
+        "flashinfer": 0.025920000000000002,
+        "tir": 0.019678
       },
       "errors": {},
       "timer": "proton",
@@ -2234,26 +3542,18 @@
       },
       "label": "s1024_h32kv4_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:34:00+00:00",
-      "attempt": 1,
-      "restabilized": {
-        "reps": 5,
-        "old_impls": {
-          "flashattn_sm100": 0.01957,
-          "flashinfer": 0.026084,
-          "tir": 0.02025
-        }
-      }
+      "finished_at": "2026-06-08T18:40:07+00:00",
+      "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s1024_h32kv8",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:33:29+00:00",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:39:32+00:00",
       "impls": {
-        "flashattn_sm100": 0.020192,
-        "flashinfer": 0.0261,
-        "tir": 0.020919
+        "flashattn_sm100": 0.020394,
+        "flashinfer": 0.026206,
+        "tir": 0.020975
       },
       "errors": {},
       "timer": "proton",
@@ -2274,18 +3574,18 @@
       },
       "label": "s1024_h32kv8",
       "status": "ok",
-      "finished_at": "2026-06-02T15:34:06+00:00",
+      "finished_at": "2026-06-08T18:40:06+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s1024_h32kv8_causal",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:33:30+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:39:40+00:00",
       "impls": {
-        "flashattn_sm100": 0.019693000000000002,
-        "flashinfer": 0.02606,
-        "tir": 0.020005
+        "flashattn_sm100": 0.019715,
+        "flashinfer": 0.026039000000000003,
+        "tir": 0.020054
       },
       "errors": {},
       "timer": "proton",
@@ -2306,18 +3606,56 @@
       },
       "label": "s1024_h32kv8_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:34:05+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:40:11+00:00",
+      "attempt": 1,
+      "restabilized": {
+        "reps": 5,
+        "source_run_ids": [
+          "20260608T192658Z",
+          "20260608T192815Z",
+          "20260608T192919Z",
+          "20260608T193014Z",
+          "20260608T193110Z"
+        ],
+        "old_impls": {
+          "flashattn_sm100": 0.019603000000000002,
+          "flashinfer": 0.026103,
+          "tir": 0.020238
+        },
+        "samples": {
+          "flashattn_sm100": [
+            0.019525,
+            0.019509000000000002,
+            0.019796,
+            0.019715,
+            0.019771999999999998
+          ],
+          "flashinfer": [
+            0.025963,
+            0.025918,
+            0.026043,
+            0.026055000000000002,
+            0.026039000000000003
+          ],
+          "tir": [
+            0.019657,
+            0.019715,
+            0.020054,
+            0.020104,
+            0.020109000000000002
+          ]
+        }
+      }
     },
     {
       "kernel": "flash_attention4",
       "config": "s2048_h32kv16",
-      "gpu": "6",
-      "started_at": "2026-06-02T15:34:14+00:00",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:43:17+00:00",
       "impls": {
-        "flashattn_sm100": 0.059665,
-        "flashinfer": 0.078444,
-        "tir": 0.061289
+        "flashattn_sm100": 0.059416,
+        "flashinfer": 0.077508,
+        "tir": 0.06126
       },
       "errors": {},
       "timer": "proton",
@@ -2338,18 +3676,18 @@
       },
       "label": "s2048_h32kv16",
       "status": "ok",
-      "finished_at": "2026-06-02T15:34:50+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:43:52+00:00",
+      "attempt": 2
     },
     {
       "kernel": "flash_attention4",
       "config": "s2048_h32kv16_causal",
-      "gpu": "6",
-      "started_at": "2026-06-02T15:36:53+00:00",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:40:15+00:00",
       "impls": {
-        "flashattn_sm100": 0.039538,
-        "flashinfer": 0.078432,
-        "tir": 0.038805
+        "flashattn_sm100": 0.039153,
+        "flashinfer": 0.07754000000000001,
+        "tir": 0.038278
       },
       "errors": {},
       "timer": "proton",
@@ -2370,18 +3708,18 @@
       },
       "label": "s2048_h32kv16_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:33+00:00",
+      "finished_at": "2026-06-08T18:40:46+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s2048_h32kv32",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:34:33+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:40:17+00:00",
       "impls": {
-        "flashattn_sm100": 0.060632,
-        "flashinfer": 0.077804,
-        "tir": 0.062512
+        "flashattn_sm100": 0.061020000000000005,
+        "flashinfer": 0.07783799999999999,
+        "tir": 0.062925
       },
       "errors": {},
       "timer": "proton",
@@ -2402,18 +3740,18 @@
       },
       "label": "s2048_h32kv32",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:13+00:00",
+      "finished_at": "2026-06-08T18:40:53+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s2048_h32kv32_causal",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:34:34+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:40:18+00:00",
       "impls": {
-        "flashattn_sm100": 0.040752000000000003,
-        "flashinfer": 0.079029,
-        "tir": 0.042951
+        "flashattn_sm100": 0.039987,
+        "flashinfer": 0.07739,
+        "tir": 0.04218
       },
       "errors": {},
       "timer": "proton",
@@ -2434,18 +3772,18 @@
       },
       "label": "s2048_h32kv32_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:15+00:00",
+      "finished_at": "2026-06-08T18:40:53+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s2048_h32kv4",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:34:01+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:39:47+00:00",
       "impls": {
-        "flashattn_sm100": 0.059472000000000004,
-        "flashinfer": 0.078696,
-        "tir": 0.061271
+        "flashattn_sm100": 0.058827,
+        "flashinfer": 0.077606,
+        "tir": 0.060769
       },
       "errors": {},
       "timer": "proton",
@@ -2466,18 +3804,18 @@
       },
       "label": "s2048_h32kv4",
       "status": "ok",
-      "finished_at": "2026-06-02T15:34:33+00:00",
+      "finished_at": "2026-06-08T18:40:17+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s2048_h32kv4_causal",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:34:06+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:40:00+00:00",
       "impls": {
-        "flashattn_sm100": 0.03863900000000001,
-        "flashinfer": 0.07751999999999999,
-        "tir": 0.037785
+        "flashattn_sm100": 0.039036,
+        "flashinfer": 0.078285,
+        "tir": 0.037894
       },
       "errors": {},
       "timer": "proton",
@@ -2498,18 +3836,18 @@
       },
       "label": "s2048_h32kv4_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:34:41+00:00",
+      "finished_at": "2026-06-08T18:40:31+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s2048_h32kv8",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:34:06+00:00",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:40:06+00:00",
       "impls": {
-        "flashattn_sm100": 0.059329,
-        "flashinfer": 0.077549,
-        "tir": 0.061485
+        "flashattn_sm100": 0.059828000000000006,
+        "flashinfer": 0.078679,
+        "tir": 0.061952
       },
       "errors": {},
       "timer": "proton",
@@ -2530,18 +3868,18 @@
       },
       "label": "s2048_h32kv8",
       "status": "ok",
-      "finished_at": "2026-06-02T15:34:43+00:00",
+      "finished_at": "2026-06-08T18:40:37+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s2048_h32kv8_causal",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:34:06+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:40:07+00:00",
       "impls": {
-        "flashattn_sm100": 0.038908000000000005,
-        "flashinfer": 0.077797,
-        "tir": 0.038156999999999996
+        "flashattn_sm100": 0.038704,
+        "flashinfer": 0.077432,
+        "tir": 0.037871
       },
       "errors": {},
       "timer": "proton",
@@ -2562,18 +3900,18 @@
       },
       "label": "s2048_h32kv8_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:34:43+00:00",
+      "finished_at": "2026-06-08T18:40:40+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s4096_h32kv16",
-      "gpu": "6",
-      "started_at": "2026-06-02T15:34:50+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:40:40+00:00",
       "impls": {
-        "flashattn_sm100": 0.20668899999999998,
-        "flashinfer": 0.27015300000000003,
-        "tir": 0.211885
+        "flashattn_sm100": 0.212447,
+        "flashinfer": 0.268822,
+        "tir": 0.21532300000000001
       },
       "errors": {},
       "timer": "proton",
@@ -2594,18 +3932,18 @@
       },
       "label": "s4096_h32kv16",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:27+00:00",
+      "finished_at": "2026-06-08T18:41:14+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s4096_h32kv16_causal",
       "gpu": "1",
-      "started_at": "2026-06-02T15:35:13+00:00",
+      "started_at": "2026-06-08T18:40:46+00:00",
       "impls": {
-        "flashattn_sm100": 0.11692400000000001,
-        "flashinfer": 0.269241,
-        "tir": 0.115205
+        "flashattn_sm100": 0.116485,
+        "flashinfer": 0.26855599999999996,
+        "tir": 0.11470999999999999
       },
       "errors": {},
       "timer": "proton",
@@ -2626,18 +3964,18 @@
       },
       "label": "s4096_h32kv16_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:52+00:00",
+      "finished_at": "2026-06-08T18:41:23+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s4096_h32kv32",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:35:13+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:40:53+00:00",
       "impls": {
-        "flashattn_sm100": 0.21462799999999999,
-        "flashinfer": 0.27062400000000003,
-        "tir": 0.21852000000000002
+        "flashattn_sm100": 0.211956,
+        "flashinfer": 0.269777,
+        "tir": 0.216013
       },
       "errors": {},
       "timer": "proton",
@@ -2658,18 +3996,18 @@
       },
       "label": "s4096_h32kv32",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:52+00:00",
+      "finished_at": "2026-06-08T18:41:30+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s4096_h32kv32_causal",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:35:15+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:40:54+00:00",
       "impls": {
-        "flashattn_sm100": 0.11941500000000001,
-        "flashinfer": 0.273336,
-        "tir": 0.125705
+        "flashattn_sm100": 0.117258,
+        "flashinfer": 0.267284,
+        "tir": 0.123231
       },
       "errors": {},
       "timer": "proton",
@@ -2690,18 +4028,18 @@
       },
       "label": "s4096_h32kv32_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:54+00:00",
+      "finished_at": "2026-06-08T18:41:31+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s4096_h32kv4",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:34:39+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:40:22+00:00",
       "impls": {
-        "flashattn_sm100": 0.20641,
-        "flashinfer": 0.267849,
-        "tir": 0.21044800000000002
+        "flashattn_sm100": 0.201368,
+        "flashinfer": 0.265383,
+        "tir": 0.20607499999999998
       },
       "errors": {},
       "timer": "proton",
@@ -2722,18 +4060,18 @@
       },
       "label": "s4096_h32kv4",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:13+00:00",
+      "finished_at": "2026-06-08T18:40:53+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s4096_h32kv4_causal",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:34:43+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:40:32+00:00",
       "impls": {
-        "flashattn_sm100": 0.11376000000000001,
-        "flashinfer": 0.268527,
-        "tir": 0.11300199999999999
+        "flashattn_sm100": 0.114167,
+        "flashinfer": 0.2689,
+        "tir": 0.11375700000000001
       },
       "errors": {},
       "timer": "proton",
@@ -2754,18 +4092,18 @@
       },
       "label": "s4096_h32kv4_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:20+00:00",
+      "finished_at": "2026-06-08T18:41:03+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s4096_h32kv8",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:34:43+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:40:35+00:00",
       "impls": {
-        "flashattn_sm100": 0.204294,
-        "flashinfer": 0.26751600000000003,
-        "tir": 0.208129
+        "flashattn_sm100": 0.206814,
+        "flashinfer": 0.268172,
+        "tir": 0.211039
       },
       "errors": {},
       "timer": "proton",
@@ -2786,18 +4124,18 @@
       },
       "label": "s4096_h32kv8",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:18+00:00",
+      "finished_at": "2026-06-08T18:41:05+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s4096_h32kv8_causal",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:34:44+00:00",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:40:37+00:00",
       "impls": {
-        "flashattn_sm100": 0.116033,
-        "flashinfer": 0.26771,
-        "tir": 0.11435
+        "flashattn_sm100": 0.11603100000000001,
+        "flashinfer": 0.270555,
+        "tir": 0.114979
       },
       "errors": {},
       "timer": "proton",
@@ -2818,18 +4156,18 @@
       },
       "label": "s4096_h32kv8_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:21+00:00",
+      "finished_at": "2026-06-08T18:41:11+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s8192_h32kv16",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:35:52+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:41:14+00:00",
       "impls": {
-        "flashattn_sm100": 0.738641,
-        "flashinfer": 0.9142899999999999,
-        "tir": 0.750983
+        "flashattn_sm100": 0.734893,
+        "flashinfer": 0.901166,
+        "tir": 0.748582
       },
       "errors": {},
       "timer": "proton",
@@ -2850,18 +4188,18 @@
       },
       "label": "s8192_h32kv16",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:36+00:00",
+      "finished_at": "2026-06-08T18:41:52+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s8192_h32kv16_causal",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:37:22+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:43:28+00:00",
       "impls": {
-        "flashattn_sm100": 0.410962,
-        "flashinfer": 0.905398,
-        "tir": 0.411919
+        "flashattn_sm100": 0.402003,
+        "flashinfer": 0.8958250000000001,
+        "tir": 0.40509
       },
       "errors": {},
       "timer": "proton",
@@ -2882,18 +4220,18 @@
       },
       "label": "s8192_h32kv16_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:38:01+00:00",
+      "finished_at": "2026-06-08T18:44:06+00:00",
       "attempt": 2
     },
     {
       "kernel": "flash_attention4",
       "config": "s8192_h32kv32",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:35:53+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:41:27+00:00",
       "impls": {
-        "flashattn_sm100": 0.7582300000000001,
-        "flashinfer": 0.9293130000000001,
-        "tir": 0.767119
+        "flashattn_sm100": 0.744257,
+        "flashinfer": 0.906161,
+        "tir": 0.752797
       },
       "errors": {},
       "timer": "proton",
@@ -2914,18 +4252,18 @@
       },
       "label": "s8192_h32kv32",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:37+00:00",
+      "finished_at": "2026-06-08T18:42:03+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s8192_h32kv32_causal",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:35:54+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:41:30+00:00",
       "impls": {
-        "flashattn_sm100": 0.41679700000000003,
-        "flashinfer": 0.9126280000000001,
-        "tir": 0.43375400000000003
+        "flashattn_sm100": 0.413267,
+        "flashinfer": 0.913785,
+        "tir": 0.431057
       },
       "errors": {},
       "timer": "proton",
@@ -2946,18 +4284,18 @@
       },
       "label": "s8192_h32kv32_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:36+00:00",
+      "finished_at": "2026-06-08T18:42:11+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s8192_h32kv4",
       "gpu": "2",
-      "started_at": "2026-06-02T15:35:19+00:00",
+      "started_at": "2026-06-08T18:40:54+00:00",
       "impls": {
-        "flashattn_sm100": 0.7328680000000001,
-        "flashinfer": 0.89975,
-        "tir": 0.7584400000000001
+        "flashattn_sm100": 0.729289,
+        "flashinfer": 0.892952,
+        "tir": 0.751602
       },
       "errors": {},
       "timer": "proton",
@@ -2978,18 +4316,18 @@
       },
       "label": "s8192_h32kv4",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:54+00:00",
+      "finished_at": "2026-06-08T18:41:27+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s8192_h32kv4_causal",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:35:21+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:41:04+00:00",
       "impls": {
-        "flashattn_sm100": 0.40209100000000003,
-        "flashinfer": 0.899761,
-        "tir": 0.401866
+        "flashattn_sm100": 0.39502499999999996,
+        "flashinfer": 0.890636,
+        "tir": 0.398094
       },
       "errors": {},
       "timer": "proton",
@@ -3010,18 +4348,18 @@
       },
       "label": "s8192_h32kv4_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:58+00:00",
+      "finished_at": "2026-06-08T18:41:37+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s8192_h32kv8",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:35:21+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:41:06+00:00",
       "impls": {
-        "flashattn_sm100": 0.7354539999999999,
-        "flashinfer": 0.9105650000000001,
-        "tir": 0.751529
+        "flashattn_sm100": 0.738792,
+        "flashinfer": 0.915145,
+        "tir": 0.756038
       },
       "errors": {},
       "timer": "proton",
@@ -3042,18 +4380,18 @@
       },
       "label": "s8192_h32kv8",
       "status": "ok",
-      "finished_at": "2026-06-02T15:35:59+00:00",
+      "finished_at": "2026-06-08T18:41:40+00:00",
       "attempt": 1
     },
     {
       "kernel": "flash_attention4",
       "config": "s8192_h32kv8_causal",
-      "gpu": "6",
-      "started_at": "2026-06-02T15:35:27+00:00",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:41:11+00:00",
       "impls": {
-        "flashattn_sm100": 0.401258,
-        "flashinfer": 0.897189,
-        "tir": 0.401278
+        "flashattn_sm100": 0.401781,
+        "flashinfer": 0.9021420000000001,
+        "tir": 0.402345
       },
       "errors": {},
       "timer": "proton",
@@ -3074,19 +4412,19 @@
       },
       "label": "s8192_h32kv8_causal",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:07+00:00",
+      "finished_at": "2026-06-08T18:41:44+00:00",
       "attempt": 1
     },
     {
       "kernel": "fp16_bf16_gemm",
       "config": "bf16_1024x1024x1024",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:36:22+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:41:52+00:00",
       "impls": {
-        "deepgemm-bf16": 0.0076820000000000005,
-        "deepgemm-cublaslt": 0.005466,
-        "tir": 0.016494,
-        "torch-cublas": 0.005853
+        "deepgemm-bf16": 0.007805,
+        "deepgemm-cublaslt": 0.005517,
+        "tir": 0.016478000000000003,
+        "torch-cublas": 0.005471
       },
       "errors": {},
       "timer": "proton",
@@ -3108,19 +4446,19 @@
       },
       "label": "bf16_1024x1024x1024",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:47+00:00",
+      "finished_at": "2026-06-08T18:42:13+00:00",
       "attempt": 1
     },
     {
       "kernel": "fp16_bf16_gemm",
       "config": "bf16_16384x16384x16384",
       "gpu": "1",
-      "started_at": "2026-06-02T15:36:37+00:00",
+      "started_at": "2026-06-08T18:42:02+00:00",
       "impls": {
-        "deepgemm-bf16": 6.625319,
-        "deepgemm-cublaslt": 5.893617,
-        "tir": 5.99873,
-        "torch-cublas": 5.810309
+        "deepgemm-bf16": 7.336754,
+        "deepgemm-cublaslt": 5.780169,
+        "tir": 5.983055,
+        "torch-cublas": 5.813868
       },
       "errors": {},
       "timer": "proton",
@@ -3142,19 +4480,28 @@
       },
       "label": "bf16_16384x16384x16384",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:07+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:42:27+00:00",
+      "attempt": 1,
+      "restabilized": {
+        "reps": 5,
+        "old_impls": {
+          "deepgemm-bf16": 6.742403,
+          "deepgemm-cublaslt": 5.681245,
+          "tir": 6.106037000000001,
+          "torch-cublas": 5.774122
+        }
+      }
     },
     {
       "kernel": "fp16_bf16_gemm",
       "config": "bf16_2048x2048x2048",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:36:22+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:41:52+00:00",
       "impls": {
-        "deepgemm-bf16": 0.01862,
-        "deepgemm-cublaslt": 0.01836,
-        "tir": 0.02757,
-        "torch-cublas": 0.01835
+        "deepgemm-bf16": 0.018818,
+        "deepgemm-cublaslt": 0.018261,
+        "tir": 0.027273,
+        "torch-cublas": 0.01823
       },
       "errors": {},
       "timer": "proton",
@@ -3176,19 +4523,19 @@
       },
       "label": "bf16_2048x2048x2048",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:48+00:00",
+      "finished_at": "2026-06-08T18:42:15+00:00",
       "attempt": 1
     },
     {
       "kernel": "fp16_bf16_gemm",
       "config": "bf16_4096x4096x4096",
       "gpu": "6",
-      "started_at": "2026-06-02T15:36:28+00:00",
+      "started_at": "2026-06-08T18:41:56+00:00",
       "impls": {
-        "deepgemm-bf16": 0.090682,
-        "deepgemm-cublaslt": 0.09195300000000001,
-        "tir": 0.090723,
-        "torch-cublas": 0.091907
+        "deepgemm-bf16": 0.089911,
+        "deepgemm-cublaslt": 0.09145600000000001,
+        "tir": 0.090827,
+        "torch-cublas": 0.091652
       },
       "errors": {},
       "timer": "proton",
@@ -3210,19 +4557,19 @@
       },
       "label": "bf16_4096x4096x4096",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:52+00:00",
+      "finished_at": "2026-06-08T18:42:18+00:00",
       "attempt": 1
     },
     {
       "kernel": "fp16_bf16_gemm",
       "config": "bf16_8192x8192x8192",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:36:36+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:41:57+00:00",
       "impls": {
-        "deepgemm-bf16": 0.702079,
-        "deepgemm-cublaslt": 0.687137,
-        "tir": 0.6651900000000001,
-        "torch-cublas": 0.6886190000000001
+        "deepgemm-bf16": 0.706563,
+        "deepgemm-cublaslt": 0.697467,
+        "tir": 0.670485,
+        "torch-cublas": 0.697663
       },
       "errors": {},
       "timer": "proton",
@@ -3244,18 +4591,18 @@
       },
       "label": "bf16_8192x8192x8192",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:59+00:00",
+      "finished_at": "2026-06-08T18:42:20+00:00",
       "attempt": 1
     },
     {
       "kernel": "fp16_bf16_gemm",
       "config": "fp16_1024x1024x1024",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:35:56+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:41:31+00:00",
       "impls": {
-        "deepgemm-cublaslt": 0.005524,
-        "tir": 0.016602000000000002,
-        "torch-cublas": 0.005539
+        "deepgemm-cublaslt": 0.005477,
+        "tir": 0.016477000000000002,
+        "torch-cublas": 0.005517
       },
       "errors": {},
       "timer": "proton",
@@ -3276,18 +4623,18 @@
       },
       "label": "fp16_1024x1024x1024",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:17+00:00",
+      "finished_at": "2026-06-08T18:41:51+00:00",
       "attempt": 1
     },
     {
       "kernel": "fp16_bf16_gemm",
       "config": "fp16_16384x16384x16384",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:36:17+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:48:15+00:00",
       "impls": {
-        "deepgemm-cublaslt": 6.1177095,
-        "tir": 6.4432694999999995,
-        "torch-cublas": 6.0903315
+        "deepgemm-cublaslt": 6.071109000000001,
+        "tir": 6.356097,
+        "torch-cublas": 5.999543
       },
       "errors": {},
       "timer": "proton",
@@ -3308,26 +4655,18 @@
       },
       "label": "fp16_16384x16384x16384",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:39+00:00",
-      "attempt": 1,
-      "restabilized": {
-        "reps": 5,
-        "old_impls": {
-          "deepgemm-cublaslt": 5.86392,
-          "tir": 6.0543819999999995,
-          "torch-cublas": 5.866413
-        }
-      }
+      "finished_at": "2026-06-08T18:48:37+00:00",
+      "attempt": 1
     },
     {
       "kernel": "fp16_bf16_gemm",
       "config": "fp16_2048x2048x2048",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:35:59+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:41:37+00:00",
       "impls": {
-        "deepgemm-cublaslt": 0.018474,
-        "tir": 0.027597000000000003,
-        "torch-cublas": 0.018493
+        "deepgemm-cublaslt": 0.018699,
+        "tir": 0.027745000000000002,
+        "torch-cublas": 0.01872
       },
       "errors": {},
       "timer": "proton",
@@ -3348,18 +4687,18 @@
       },
       "label": "fp16_2048x2048x2048",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:22+00:00",
+      "finished_at": "2026-06-08T18:41:56+00:00",
       "attempt": 1
     },
     {
       "kernel": "fp16_bf16_gemm",
       "config": "fp16_4096x4096x4096",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:36:01+00:00",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:45:08+00:00",
       "impls": {
-        "deepgemm-cublaslt": 0.09701900000000001,
-        "tir": 0.095436,
-        "torch-cublas": 0.09692100000000001
+        "deepgemm-cublaslt": 0.09561,
+        "tir": 0.094075,
+        "torch-cublas": 0.09556100000000001
       },
       "errors": {},
       "timer": "proton",
@@ -3380,18 +4719,18 @@
       },
       "label": "fp16_4096x4096x4096",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:22+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:45:27+00:00",
+      "attempt": 5
     },
     {
       "kernel": "fp16_bf16_gemm",
       "config": "fp16_8192x8192x8192",
-      "gpu": "6",
-      "started_at": "2026-06-02T15:36:07+00:00",
+      "gpu": "7",
+      "started_at": "2026-06-08T18:41:48+00:00",
       "impls": {
-        "deepgemm-cublaslt": 0.714003,
-        "tir": 0.684774,
-        "torch-cublas": 0.713824
+        "deepgemm-cublaslt": 0.716423,
+        "tir": 0.686481,
+        "torch-cublas": 0.7105
       },
       "errors": {},
       "timer": "proton",
@@ -3412,17 +4751,17 @@
       },
       "label": "fp16_8192x8192x8192",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:28+00:00",
+      "finished_at": "2026-06-08T18:42:05+00:00",
       "attempt": 1
     },
     {
       "kernel": "fp8_blockwise_gemm",
       "config": "deepgemm_m4096_n2112_k7168",
       "gpu": "7",
-      "started_at": "2026-06-02T15:36:40+00:00",
+      "started_at": "2026-06-08T18:42:06+00:00",
       "impls": {
-        "deepgemm": 0.05025,
-        "tir": 0.048856000000000004
+        "deepgemm": 0.050019,
+        "tir": 0.048909
       },
       "errors": {},
       "timer": "proton",
@@ -3443,17 +4782,17 @@
       "kernel_fair": true,
       "label": "deepgemm_m4096_n2112_k7168",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:04+00:00",
+      "finished_at": "2026-06-08T18:42:28+00:00",
       "attempt": 1
     },
     {
       "kernel": "fp8_blockwise_gemm",
       "config": "deepgemm_m4096_n24576_k1536",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:36:48+00:00",
+      "gpu": "0",
+      "started_at": "2026-06-08T18:42:15+00:00",
       "impls": {
-        "deepgemm": 0.116971,
-        "tir": 0.115563
+        "deepgemm": 0.115971,
+        "tir": 0.11477899999999999
       },
       "errors": {},
       "timer": "proton",
@@ -3474,17 +4813,17 @@
       "kernel_fair": true,
       "label": "deepgemm_m4096_n24576_k1536",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:10+00:00",
+      "finished_at": "2026-06-08T18:42:36+00:00",
       "attempt": 1
     },
     {
       "kernel": "fp8_blockwise_gemm",
       "config": "deepgemm_m4096_n32768_k512",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:37:27+00:00",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:45:08+00:00",
       "impls": {
-        "deepgemm": 0.075646,
-        "tir": 0.07182
+        "deepgemm": 0.07573099999999999,
+        "tir": 0.071991
       },
       "errors": {},
       "timer": "proton",
@@ -3505,17 +4844,17 @@
       "kernel_fair": true,
       "label": "deepgemm_m4096_n32768_k512",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:44+00:00",
-      "attempt": 2
+      "finished_at": "2026-06-08T18:45:26+00:00",
+      "attempt": 5
     },
     {
       "kernel": "fp8_blockwise_gemm",
       "config": "deepgemm_m4096_n4096_k7168",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:36:53+00:00",
+      "gpu": "4",
+      "started_at": "2026-06-08T18:45:09+00:00",
       "impls": {
-        "deepgemm": 0.084743,
-        "tir": 0.084035
+        "deepgemm": 0.084198,
+        "tir": 0.083547
       },
       "errors": {},
       "timer": "proton",
@@ -3536,17 +4875,17 @@
       "kernel_fair": true,
       "label": "deepgemm_m4096_n4096_k7168",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:18+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:45:28+00:00",
+      "attempt": 5
     },
     {
       "kernel": "fp8_blockwise_gemm",
       "config": "deepgemm_m4096_n576_k7168",
-      "gpu": "1",
-      "started_at": "2026-06-02T15:37:26+00:00",
+      "gpu": "5",
+      "started_at": "2026-06-08T18:42:11+00:00",
       "impls": {
-        "deepgemm": 0.019426,
-        "tir": 0.018688
+        "deepgemm": 0.019437000000000003,
+        "tir": 0.018603
       },
       "errors": {},
       "timer": "proton",
@@ -3567,17 +4906,17 @@
       "kernel_fair": true,
       "label": "deepgemm_m4096_n576_k7168",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:44+00:00",
-      "attempt": 2
+      "finished_at": "2026-06-08T18:42:35+00:00",
+      "attempt": 1
     },
     {
       "kernel": "fp8_blockwise_gemm",
       "config": "deepgemm_m4096_n7168_k16384",
-      "gpu": "0",
-      "started_at": "2026-06-02T15:36:49+00:00",
+      "gpu": "6",
+      "started_at": "2026-06-08T18:42:19+00:00",
       "impls": {
-        "deepgemm": 0.324077,
-        "tir": 0.32843
+        "deepgemm": 0.32319200000000003,
+        "tir": 0.323346
       },
       "errors": {},
       "timer": "proton",
@@ -3598,17 +4937,17 @@
       "kernel_fair": true,
       "label": "deepgemm_m4096_n7168_k16384",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:12+00:00",
+      "finished_at": "2026-06-08T18:42:39+00:00",
       "attempt": 1
     },
     {
       "kernel": "fp8_blockwise_gemm",
       "config": "deepgemm_m4096_n7168_k2048",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:36:59+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:45:08+00:00",
       "impls": {
-        "deepgemm": 0.045386,
-        "tir": 0.044371
+        "deepgemm": 0.044591,
+        "tir": 0.043575
       },
       "errors": {},
       "timer": "proton",
@@ -3629,17 +4968,17 @@
       "kernel_fair": true,
       "label": "deepgemm_m4096_n7168_k2048",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:22+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:45:26+00:00",
+      "attempt": 5
     },
     {
       "kernel": "fp8_blockwise_gemm",
       "config": "smoke_1024x1024x1024",
-      "gpu": "3",
-      "started_at": "2026-06-02T15:36:37+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:42:04+00:00",
       "impls": {
-        "deepgemm": 0.006474000000000001,
-        "tir": 0.0056760000000000005
+        "deepgemm": 0.006831,
+        "tir": 0.005883
       },
       "errors": {},
       "timer": "proton",
@@ -3660,24 +4999,17 @@
       "kernel_fair": true,
       "label": "smoke_1024x1024x1024",
       "status": "ok",
-      "finished_at": "2026-06-02T15:36:59+00:00",
-      "attempt": 1,
-      "restabilized": {
-        "reps": 5,
-        "old_impls": {
-          "deepgemm": 0.006455,
-          "tir": 0.005693
-        }
-      }
+      "finished_at": "2026-06-08T18:42:23+00:00",
+      "attempt": 1
     },
     {
       "kernel": "fp8_blockwise_gemm",
       "config": "stress_m8192_n7168_k4096",
-      "gpu": "2",
-      "started_at": "2026-06-02T15:37:00+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:45:07+00:00",
       "impls": {
-        "deepgemm": 0.162032,
-        "tir": 0.162778
+        "deepgemm": 0.162889,
+        "tir": 0.162418
       },
       "errors": {},
       "timer": "proton",
@@ -3698,17 +5030,17 @@
       "kernel_fair": true,
       "label": "stress_m8192_n7168_k4096",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:22+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:45:27+00:00",
+      "attempt": 5
     },
     {
       "kernel": "nvfp4_gemm",
       "config": "1024x1024x1024",
-      "gpu": "7",
-      "started_at": "2026-06-02T15:37:07+00:00",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:44:11+00:00",
       "impls": {
-        "flashinfer": 0.005111,
-        "tir": 0.006567
+        "flashinfer": 0.005239,
+        "tir": 0.006697
       },
       "errors": {},
       "timer": "proton",
@@ -3728,17 +5060,17 @@
       },
       "label": "1024x1024x1024",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:26+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:44:29+00:00",
+      "attempt": 3
     },
     {
       "kernel": "nvfp4_gemm",
       "config": "16384x16384x16384",
-      "gpu": "5",
-      "started_at": "2026-06-02T15:37:18+00:00",
+      "gpu": "3",
+      "started_at": "2026-06-08T18:44:30+00:00",
       "impls": {
-        "flashinfer": 1.546882,
-        "tir": 1.4315419999999999
+        "flashinfer": 1.5839290000000001,
+        "tir": 1.43733
       },
       "errors": {},
       "timer": "proton",
@@ -3758,17 +5090,17 @@
       },
       "label": "16384x16384x16384",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:39+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:44:52+00:00",
+      "attempt": 3
     },
     {
       "kernel": "nvfp4_gemm",
       "config": "2048x2048x2048",
       "gpu": "1",
-      "started_at": "2026-06-02T15:37:07+00:00",
+      "started_at": "2026-06-08T18:44:49+00:00",
       "impls": {
-        "flashinfer": 0.008338,
-        "tir": 0.008777
+        "flashinfer": 0.008425,
+        "tir": 0.008808999999999999
       },
       "errors": {},
       "timer": "proton",
@@ -3788,17 +5120,17 @@
       },
       "label": "2048x2048x2048",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:24+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:45:08+00:00",
+      "attempt": 4
     },
     {
       "kernel": "nvfp4_gemm",
       "config": "4096x4096x4096",
-      "gpu": "4",
-      "started_at": "2026-06-02T15:37:12+00:00",
+      "gpu": "1",
+      "started_at": "2026-06-08T18:44:30+00:00",
       "impls": {
-        "flashinfer": 0.031988,
-        "tir": 0.030305000000000002
+        "flashinfer": 0.031934000000000004,
+        "tir": 0.030303
       },
       "errors": {},
       "timer": "proton",
@@ -3818,17 +5150,17 @@
       },
       "label": "4096x4096x4096",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:31+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:44:48+00:00",
+      "attempt": 3
     },
     {
       "kernel": "nvfp4_gemm",
       "config": "8192x8192x8192",
-      "gpu": "0",
-      "started_at": "2026-06-02T15:37:12+00:00",
+      "gpu": "2",
+      "started_at": "2026-06-08T18:44:30+00:00",
       "impls": {
-        "flashinfer": 0.174352,
-        "tir": 0.18565
+        "flashinfer": 0.17581200000000002,
+        "tir": 0.18696600000000002
       },
       "errors": {},
       "timer": "proton",
@@ -3848,8 +5180,8 @@
       },
       "label": "8192x8192x8192",
       "status": "ok",
-      "finished_at": "2026-06-02T15:37:30+00:00",
-      "attempt": 1
+      "finished_at": "2026-06-08T18:44:48+00:00",
+      "attempt": 3
     }
   ]
 }

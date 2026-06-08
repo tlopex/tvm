@@ -37,6 +37,7 @@ import sys
 from pathlib import Path
 
 OUR_IMPLS = {"tir", "tirx"}
+DEFAULT_RATIO_THRESHOLD = 1.0
 
 
 def index(payload: dict) -> dict[tuple[str, str], dict[str, float]]:
@@ -62,10 +63,12 @@ def pick_ref(base_impls: dict[str, float]) -> str | None:
 def build_report(
     baseline_path: Path | str,
     current: dict | Path | str,
+    *,
+    threshold_pct: float = DEFAULT_RATIO_THRESHOLD,
 ) -> tuple[str, int]:
     """Build the markdown report. `current` may be a loaded dict or a path.
 
-    Returns (markdown, n_regressions_below_-5%) for run.py's exit code.
+    Returns (markdown, n_regressions_below_threshold) for run.py's exit code.
     """
     base_payload = json.loads(Path(baseline_path).read_text())
     if isinstance(current, (str, Path)):
@@ -133,8 +136,8 @@ def build_report(
     def w(line: str = "") -> None:
         out.write(line + "\n")
 
-    n_regressions = sum(1 for r in rows if r[5] <= -5.0)
-    n_improvements = sum(1 for r in rows if r[5] >= 5.0)
+    n_regressions = sum(1 for r in rows if r[5] <= -threshold_pct)
+    n_improvements = sum(1 for r in rows if r[5] >= threshold_pct)
 
     w("# tir-bench ratio diff")
     w()
@@ -144,7 +147,7 @@ def build_report(
       "fixed across runs). Higher ratio = ours is faster. Sorted by ratio Δ "
       "from improved → regressed.")
     w(f"- Summary: {len(rows)} comparable workloads; "
-      f"{n_improvements} > +5%, {n_regressions} < -5%"
+      f"{n_improvements} > +{threshold_pct:g}%, {n_regressions} < -{threshold_pct:g}%"
       + (f"; {len(not_comparable)} not comparable in current run (see below)"
          if not_comparable else "")
       + ". ⚠ = reference impl itself drifted >20% (less trustworthy).")
@@ -187,11 +190,14 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("baseline", nargs="?", default=".claude/commands/tir-bench/baseline.json")
     ap.add_argument("current", nargs="?", default=".tir-bench/latest.json")
+    ap.add_argument("--threshold", type=float, default=DEFAULT_RATIO_THRESHOLD,
+                    help="Ratio regression threshold in percent "
+                         f"(default {DEFAULT_RATIO_THRESHOLD:g})")
     ap.add_argument("--output", "-o", type=Path, default=None,
                     help="Write report path (default: .tir-bench/reports/<current_ts>-ratio.md)")
     args = ap.parse_args()
 
-    report, _ = build_report(args.baseline, args.current)
+    report, _ = build_report(args.baseline, args.current, threshold_pct=args.threshold)
     print(report)
 
     if args.output is not None:

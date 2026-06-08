@@ -39,6 +39,7 @@ import yaml
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_WORKLOADS = SCRIPT_DIR / "workloads.yaml"
 DEFAULT_BASELINE = SCRIPT_DIR / "baseline.json"  # pinned reference; user `cp <new>.json baseline.json` to promote
+DEFAULT_REGRESSION_THRESHOLD = 1.0
 POLL_INTERVAL = 5.0       # seconds between GPU re-checks when none is free
 MONITOR_INTERVAL = 0.5    # seconds between nvidia-smi polls during a workload
 MAX_INTERFERED_RETRIES = 5  # workloads that hit INTERFERED get requeued up to this many times
@@ -1158,8 +1159,9 @@ def main() -> None:
                     help="Where to store runs/, logs/, reports/, latest.json")
     ap.add_argument("--baseline", type=Path, default=None,
                     help=f"Baseline run JSON to diff against (default: {DEFAULT_BASELINE})")
-    ap.add_argument("--threshold", type=float, default=5.0,
-                    help="Regression threshold in percent slowdown")
+    ap.add_argument("--threshold", type=float, default=DEFAULT_REGRESSION_THRESHOLD,
+                    help="Regression threshold in percent slowdown "
+                         f"(default {DEFAULT_REGRESSION_THRESHOLD:g})")
     ap.add_argument("--filter", type=str, default=None,
                     help="Only keep workloads whose kernel contains this substring")
     # NOTE: there is intentionally no --gpus flag. GPU selection is automatic
@@ -1181,9 +1183,10 @@ def main() -> None:
                          "monitor requeues if a neighbor crosses it mid-run. "
                          "Cards merely holding resident VRAM at lower util are "
                          f"shared (default {DEFAULT_UTIL_THRESHOLD:g})")
-    ap.add_argument("--restable-threshold", type=float, default=2.0,
+    ap.add_argument("--restable-threshold", type=float, default=DEFAULT_REGRESSION_THRESHOLD,
                     help="After the main sweep, re-bench any workload whose "
-                         "|ratio Δ vs baseline| exceeds this %% (default 2.0). "
+                         "|ratio Δ vs baseline| exceeds this %% "
+                         f"(default {DEFAULT_REGRESSION_THRESHOLD:g}). "
                          "Set --restable-reps=0 to disable.")
     ap.add_argument("--restable-reps", type=int, default=5,
                     help="How many additional reps to bench each drifted "
@@ -1375,7 +1378,7 @@ def main() -> None:
     try:
         sys.path.insert(0, str(SCRIPT_DIR))
         from ratio_diff import build_report as _build_ratio_report  # noqa: E402
-        ratio_md, _ = _build_ratio_report(baseline, current)
+        ratio_md, _ = _build_ratio_report(baseline, current, threshold_pct=args.threshold)
         ratio_path = reports_dir / f"{current['timestamp']}-ratio.md"
         ratio_path.write_text(ratio_md)
         print(f"[tir-bench] wrote {ratio_path}\n")
@@ -1440,7 +1443,7 @@ def main() -> None:
     print(f"[tir-bench] wrote {stable_path}")
 
     try:
-        ratio_md, n_regress = _build_ratio_report(baseline, current)
+        ratio_md, n_regress = _build_ratio_report(baseline, current, threshold_pct=args.threshold)
         ratio_path = reports_dir / f"{current['timestamp']}-stable-ratio.md"
         ratio_path.write_text(ratio_md)
         print(f"[tir-bench] wrote {ratio_path}\n")
