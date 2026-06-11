@@ -162,6 +162,30 @@ def save_json(node) -> str:
     return to_json_graph_str(node, {"tvm_version": __version__})
 
 
+def _format_access_path(path):
+    """Render an FFI AccessPath in a concise diagnostic form."""
+
+    rendered = ["<root>"]
+    for step in path.to_steps():
+        kind = step.kind
+        key = step.key
+
+        if kind in (0, 3):
+            rendered.append(f".{key}")
+        elif kind in (1, 4):
+            rendered.append(f"[{key}]")
+        elif kind in (2, 5):
+            key_text = repr(key) if isinstance(key, str) else str(key)
+            rendered.append(f"[{key_text}]")
+        else:
+            rendered.append(f".<unknown:{kind}:{key}>")
+
+        if kind in (3, 4, 5):
+            rendered.append(" (missing)")
+
+    return "".join(rendered)
+
+
 def assert_structural_equal(lhs, rhs, map_free_vars=False):
     """Assert lhs and rhs are structurally equal to each other.
 
@@ -196,9 +220,9 @@ def assert_structural_equal(lhs, rhs, map_free_vars=False):
         lhs_script = _script(lhs, PrinterConfig(syntax_sugar=False, path_to_underline=[lhs_path]))
         rhs_script = _script(rhs, PrinterConfig(syntax_sugar=False, path_to_underline=[rhs_path]))
         raise ValueError(
-            f"StructuralEqual check failed, caused by lhs at {lhs_path}:\n"
+            f"StructuralEqual check failed, caused by lhs at {_format_access_path(lhs_path)}:\n"
             f"{lhs_script}\n"
-            f"and rhs at {rhs_path}:\n"
+            f"and rhs at {_format_access_path(rhs_path)}:\n"
             f"{rhs_script}"
         )
 

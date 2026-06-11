@@ -20,4 +20,6 @@ set -e
 set -u
 set -o pipefail
 
-uv pip install cuda-python==12.8.0
+# Keep cuda-python's cuda-bindings constraint aligned with the PyTorch wheel
+# installed by ubuntu_install_onnx.sh.  torch==2.10.0 pins cuda-bindings==12.9.4.
+uv pip install cuda-python==12.9.4

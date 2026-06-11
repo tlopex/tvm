@@ -21,6 +21,7 @@ from tvm_ffi.access_path import AccessPath
 
 import tvm
 from tvm.ir import assert_structural_equal
+from tvm.ir.base import _format_access_path
 from tvm.script import ir as I
 from tvm.script import tirx as T
 
@@ -30,9 +31,9 @@ def _error_message(exception):
 
 
 def _expected_result(func1, func2, objpath1, objpath2):
-    return f"""StructuralEqual check failed, caused by lhs at {objpath1}:
+    return f"""StructuralEqual check failed, caused by lhs at {_format_access_path(objpath1)}:
 {func1.script(path_to_underline=[objpath1], syntax_sugar=False)}
-and rhs at {objpath2}:
+and rhs at {_format_access_path(objpath2)}:
 {func2.script(path_to_underline=[objpath2], syntax_sugar=False)}"""
 
 

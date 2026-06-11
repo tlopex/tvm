@@ -1,7 +1,7 @@
 # ruff: noqa: E402
 import pytest
 
-pytest.importorskip("tensorflow", reason="tensorflow not available")
+tf = pytest.importorskip("tensorflow", reason="tensorflow not available")
 
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -28,8 +28,16 @@ import os
 import flatbuffers
 import numpy as np
 import pytest
-import tensorflow as tf
 import tflite.Model
+
+# These tests exercise TFLite frontend conversion and CPU execution.  Keep
+# TensorFlow from selecting GPU kernels, which can be unavailable for newer GPUs
+# than the installed TensorFlow wheel supports.
+try:
+    tf.config.set_visible_devices([], "GPU")
+except RuntimeError:
+    pass
+
 from tensorflow.keras import applications as keras_app
 
 import tvm
