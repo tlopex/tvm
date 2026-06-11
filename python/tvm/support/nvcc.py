@@ -199,11 +199,22 @@ def _compile_cuda_nvcc(
 
     if options:
         if isinstance(options, str):
-            cmd += [options]
+            user_options = [options]
         elif isinstance(options, list):
-            cmd += options
+            user_options = list(options)
         else:
             raise ValueError("options must be str or list of str")
+    else:
+        user_options = []
+
+    # TVM's generated CUDA code uses C++17 features (e.g. `if constexpr`,
+    # `std::is_same_v`).  nvcc inherits the host compiler's default dialect,
+    # which can be older than C++17 (e.g. gcc <= 10 defaults to gnu++14), so
+    # request C++17 explicitly unless the caller picked a dialect.
+    if not any("-std" in opt for opt in user_options):
+        cmd += ["-std=c++17"]
+
+    cmd += user_options
 
     cmd += ["-o", file_target]
     if not use_nvshmem:
