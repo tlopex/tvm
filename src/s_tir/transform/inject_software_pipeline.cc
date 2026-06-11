@@ -103,6 +103,17 @@ class PipelineOpaqueAccessRewriter {
         pipeline_loop_(pipeline_loop),
         fragment_info_(fragment_info) {}
 
+  // Device intrinsics are registered under both a flat name (the builtin Op)
+  // and a canonical dotted name (emitted by TVMScript and the tensor
+  // intrinsics), so compare against both.
+  static bool IsOp(const Call& call, const Op& compat_op, const char* canonical_name) {
+    if (call->op.same_as(compat_op)) {
+      return true;
+    }
+    const auto* op_node = call->op.as<OpNode>();
+    return op_node != nullptr && op_node->name == canonical_name;
+  }
+
   PrimExpr Rewrite(const Call& call) {
     // Intrinsic calls should be handled explicitly here as they are opaque accesses to
     // buffer.
@@ -136,9 +147,13 @@ class PipelineOpaqueAccessRewriter {
       return Call(call->dtype, call->op, new_args, call->attrs, call->span);
     } else if (call->op.same_as(access_ptr)) {
       return RewriteBufferAccess(call, {1});
-    } else if (call->op.same_as(ptx_mma)) {
+    } else if (call->op.same_as(ptx_mma) ||
+               IsOp(call, builtin::ptx_mma_legacy(), "tirx.ptx.mma_legacy")) {
+      // The legacy form keeps the (multiplicand, index) pairs of ptx_mma.
       return RewriteBufferAccess(call, {6, 8, 10});
-    } else if (call->op.same_as(ptx_ldmatrix)) {
+    } else if (call->op.same_as(ptx_ldmatrix) ||
+               IsOp(call, builtin::ptx_ldmatrix_legacy(), "tirx.ptx.ldmatrix_legacy")) {
+      // (local_ptr, local_offset) of the legacy form match ptx_ldmatrix.
       return RewriteBufferAccess(call, {3});
     }
     return call;

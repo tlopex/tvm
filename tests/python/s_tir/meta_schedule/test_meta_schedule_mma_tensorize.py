@@ -85,12 +85,15 @@ def test_run_target(mod=None, tgt_str=None, in_dtype="float16", out_dtype="float
 
     f = lib["main"]
     f(a, b, c)
+    # Copy the result back before any torch CUDA call. This synchronizes with the
+    # TVM kernel, so a failure it causes is reported here instead of surfacing as
+    # an unrelated CUDA error inside the torch reference computation below.
+    c_f = torch.tensor(c.numpy()).to(tgt_str)
 
     c_th = torch.matmul(torch.tensor(a_np).to(tgt_str), torch.tensor(b_np).to(tgt_str)).to(
         torch.float32 if out_dtype == "float32" else torch.float16
     )
-    c_f = torch.tensor(c.numpy()).to(tgt_str)
-    torch.allclose(c_th, c_f, rtol=0.05, atol=0.05)
+    assert torch.allclose(c_th, c_f, rtol=0.05, atol=0.05)
 
 
 @tvm.testing.requires_gpu
