@@ -149,6 +149,15 @@ workloads:
   - {kernel: flash_attention4, config: s8192_h32kv16_causal, warmup: 10, repeat: 30}
   - {kernel: flash_attention4, config: s8192_h32kv32, warmup: 10, repeat: 30}
   - {kernel: flash_attention4, config: s8192_h32kv32_causal, warmup: 10, repeat: 30}
+  # -- sparse_flashmla_prefill_head64_phase1
+  - {kernel: sparse_flashmla_prefill_head64_phase1, config: bench_dqk512_hq64_s4096_kv8192_topk512}
+  - {kernel: sparse_flashmla_prefill_head64_phase1, config: bench_dqk512_hq64_s4096_kv32768_topk512}
+  - {kernel: sparse_flashmla_prefill_head64_phase1, config: bench_dqk512_hq64_s4096_kv49152_topk512}
+  - {kernel: sparse_flashmla_prefill_head64_phase1, config: bench_dqk512_hq64_s4096_kv65536_topk512}
+  - {kernel: sparse_flashmla_prefill_head64_phase1, config: bench_dqk576_hq64_s4096_kv8192_topk512}
+  - {kernel: sparse_flashmla_prefill_head64_phase1, config: bench_dqk576_hq64_s4096_kv32768_topk512}
+  - {kernel: sparse_flashmla_prefill_head64_phase1, config: bench_dqk576_hq64_s4096_kv49152_topk512}
+  - {kernel: sparse_flashmla_prefill_head64_phase1, config: bench_dqk576_hq64_s4096_kv65536_topk512}
   # ── fp16_bf16_gemm
   - {kernel: fp16_bf16_gemm, config: fp16_1024x1024x1024}
   - {kernel: fp16_bf16_gemm, config: fp16_2048x2048x2048}
