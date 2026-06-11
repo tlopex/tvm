@@ -78,6 +78,10 @@ class DRef(Object):
 class DPackedFunc(DRef):
     """A PackedFunc in a Disco session."""
 
+    # Opt out of the default `__slots__ = ()` of tvm_ffi Object subclasses to
+    # allow Python-side instance attributes (the associated `session`).
+    __slots__ = ("__dict__",)
+
     def __init__(self, dref: DRef, session: "Session") -> None:
         self.__move_handle_from__(dref)
         self.session = session
@@ -88,6 +92,8 @@ class DPackedFunc(DRef):
 
 class DModule(DRef):
     """A Module in a Disco session."""
+
+    __slots__ = ("__dict__",)
 
     def __init__(self, dref: DRef, session: "Session") -> None:
         self.__move_handle_from__(dref)
@@ -102,6 +108,10 @@ class DModule(DRef):
 class Session(Object):
     """A Disco interactive session. It allows users to interact with the Disco command queue with
     various PackedFunc calling convention."""
+
+    # Opt out of the default `__slots__ = ()` of tvm_ffi Object subclasses, as
+    # the session caches method lookups in dynamic instance attributes.
+    __slots__ = ("__dict__",)
 
     def _get_cached_method(self, name: str) -> Callable:
         if "_cache" not in self.__dict__:
