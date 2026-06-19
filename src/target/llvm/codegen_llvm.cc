@@ -1613,13 +1613,13 @@ llvm::Value* CodeGenLLVM::VisitExpr_(const ModNode* op) {
 llvm::Value* CodeGenLLVM::VisitExpr_(const MinNode* op) {
   llvm::Value* a = MakeValue(op->a);
   llvm::Value* b = MakeValue(op->b);
-  return builder_->CreateSelect(CreateLT(op->a.dtype(), a, b), a, b);
+  return builder_->CreateSelect(CreateGT(op->a.dtype(), a, b), b, a);
 }
 
 llvm::Value* CodeGenLLVM::VisitExpr_(const MaxNode* op) {
   llvm::Value* a = MakeValue(op->a);
   llvm::Value* b = MakeValue(op->b);
-  return builder_->CreateSelect(CreateGT(op->a.dtype(), a, b), a, b);
+  return builder_->CreateSelect(CreateLT(op->a.dtype(), a, b), b, a);
 }
 
 llvm::Value* CodeGenLLVM::VisitExpr_(const EQNode* op) {
