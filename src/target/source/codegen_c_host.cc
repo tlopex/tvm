@@ -344,10 +344,18 @@ void CodeGenCHost::VisitStmt_(const AssertStmtNode* op) {  // NOLINT(*)
 }
 
 void CodeGenCHost::VisitExpr_(const MinNode* op, std::ostream& os) {  // NOLINT(*)
+  if (IsFloatMinMaxType(op->dtype)) {
+    PrintFloatMinMaxExpr(op->a, op->b, false, os);
+    return;
+  }
   PrintTernaryCondExpr(op, "<", os);
 }
 
 void CodeGenCHost::VisitExpr_(const MaxNode* op, std::ostream& os) {  // NOLINT(*)
+  if (IsFloatMinMaxType(op->dtype)) {
+    PrintFloatMinMaxExpr(op->a, op->b, true, os);
+    return;
+  }
   PrintTernaryCondExpr(op, ">", os);
 }
 

@@ -37,6 +37,15 @@
 namespace tvm {
 namespace codegen {
 
+namespace {
+
+bool IsFloatMinMaxType(DataType dtype) {
+  DataType element_dtype = dtype.element_of();
+  return element_dtype.is_float() || element_dtype.is_bfloat16();
+}
+
+}  // namespace
+
 CodeGenSPIRV::CodeGenSPIRV(Target target) : spirv_support_(target) {}
 
 runtime::SPIRVShader CodeGenSPIRV::BuildFunction(const PrimFunc& f, const std::string& name) {
@@ -232,12 +241,18 @@ spirv::Value CodeGenSPIRV::VisitExpr_(const ModNode* op) {
 spirv::Value CodeGenSPIRV::VisitExpr_(const MinNode* op) {
   spirv::Value a = MakeValue(op->a);
   spirv::Value b = MakeValue(op->b);
+  if (IsFloatMinMaxType(op->dtype)) {
+    return builder_->Select(builder_->LT(a, b), a, builder_->Select(builder_->EQ(a, a), b, a));
+  }
   return builder_->Select(builder_->LT(a, b), a, b);
 }
 
 spirv::Value CodeGenSPIRV::VisitExpr_(const MaxNode* op) {
   spirv::Value a = MakeValue(op->a);
   spirv::Value b = MakeValue(op->b);
+  if (IsFloatMinMaxType(op->dtype)) {
+    return builder_->Select(builder_->GT(a, b), a, builder_->Select(builder_->EQ(a, a), b, a));
+  }
   return builder_->Select(builder_->GT(a, b), a, b);
 }
 

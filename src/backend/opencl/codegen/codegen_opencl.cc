@@ -595,10 +595,18 @@ inline void PrintBinaryExpr(const T* op, const char* opstr, std::ostream& os, Co
 }
 
 void CodeGenOpenCL::VisitExpr_(const MinNode* op, std::ostream& os) {
+  if (IsFloatMinMaxType(op->dtype)) {
+    PrintFloatMinMaxExpr(op->a, op->b, false, os);
+    return;
+  }
   PrintBinaryExpr(op, "min", os, this);
 }
 
 void CodeGenOpenCL::VisitExpr_(const MaxNode* op, std::ostream& os) {
+  if (IsFloatMinMaxType(op->dtype)) {
+    PrintFloatMinMaxExpr(op->a, op->b, true, os);
+    return;
+  }
   PrintBinaryExpr(op, "max", os, this);
 }
 

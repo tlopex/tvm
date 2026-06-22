@@ -227,5 +227,27 @@ def test_subroutine_call():
     )
 
 
+def test_float_min_max_uses_nan_propagating_ternary():
+    @I.ir_module(s_tir=True)
+    class Module:
+        @T.prim_func(s_tir=True)
+        def main(A: T.Buffer((1,), "float32"), B: T.Buffer((4,), "float32")):
+            T.func_attr({"tirx.noalias": True})
+            B[0] = T.max(A[0], T.float32(0))
+            B[1] = T.min(A[0], T.float32(0))
+            B[2] = T.max(T.float32(0), A[0])
+            B[3] = T.min(T.float32(0), A[0])
+
+    built = tvm.tirx.build(Module, target="c")
+    source = built.inspect_source()
+
+    assert "max(" not in source
+    assert "min(" not in source
+    assert "?" in source
+    assert "==" in source
+    assert "<" in source
+    assert ">" in source
+
+
 if __name__ == "__main__":
     tvm.testing.main()

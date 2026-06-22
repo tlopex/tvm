@@ -588,9 +588,17 @@ void CodeGenC::VisitExpr_(const ModNode* op, std::ostream& os) {  // NOLINT(*)
   }
 }
 void CodeGenC::VisitExpr_(const MinNode* op, std::ostream& os) {  // NOLINT(*)
+  if (IsFloatMinMaxType(op->dtype)) {
+    PrintFloatMinMaxExpr(op->a, op->b, false, os);
+    return;
+  }
   PrintBinaryExpr(op, "min", os, this);
 }
 void CodeGenC::VisitExpr_(const MaxNode* op, std::ostream& os) {  // NOLINT(*)
+  if (IsFloatMinMaxType(op->dtype)) {
+    PrintFloatMinMaxExpr(op->a, op->b, true, os);
+    return;
+  }
   PrintBinaryExpr(op, "max", os, this);
 }
 void CodeGenC::VisitExpr_(const EQNode* op, std::ostream& os) {  // NOLINT(*)
@@ -830,6 +838,45 @@ void CodeGenC::PrintVecBinaryOp(const std::string& op, DataType t, PrimExpr lhs,
     this->PrintExpr(rhs, os);
     os << ")";
   }
+}
+
+bool CodeGenC::IsFloatMinMaxType(DataType dtype) {
+  DataType element_dtype = dtype.element_of();
+  return element_dtype.is_float() || element_dtype.is_bfloat16();
+}
+
+void CodeGenC::PrintFloatMinMaxExpr(const PrimExpr& lhs, const PrimExpr& rhs, bool is_max,
+                                    std::ostream& os) {
+  DataType dtype = lhs.dtype();
+  const char* compare = is_max ? ">" : "<";
+
+  int ssa_scope = BeginScope();
+  std::string lhs_id = SSAGetID(PrintExpr(lhs), lhs.dtype());
+  std::string rhs_id = SSAGetID(PrintExpr(rhs), rhs.dtype());
+
+  if (dtype.is_scalar()) {
+    os << "((" << lhs_id << ") " << compare << " (" << rhs_id << ") ? (" << lhs_id << ") : (("
+       << lhs_id << ") == (" << lhs_id << ") ? (" << rhs_id << ") : (" << lhs_id << ")))";
+  } else {
+    std::string sret = name_supply_->FreshName("_");
+    this->PrintIndent();
+    this->PrintType(dtype, stream);
+    stream << ' ' << sret << ";\n";
+    for (int i = 0, lanes = dtype.lanes(); i < lanes; ++i) {
+      std::ostringstream lhs_elem;
+      PrintVecElemLoad(lhs_id, lhs.dtype(), i, lhs_elem);
+      std::ostringstream rhs_elem;
+      PrintVecElemLoad(rhs_id, rhs.dtype(), i, rhs_elem);
+      std::ostringstream value;
+      value << "((" << lhs_elem.str() << ") " << compare << " (" << rhs_elem.str() << ") ? ("
+            << lhs_elem.str() << ") : ((" << lhs_elem.str() << ") == (" << lhs_elem.str() << ") ? ("
+            << rhs_elem.str() << ") : (" << lhs_elem.str() << ")))";
+      PrintVecElemStore(sret, dtype, i, value.str());
+    }
+    os << sret;
+  }
+
+  EndScope(ssa_scope);
 }
 
 void CodeGenC::VisitStmt_(const DeclBufferNode* op) {

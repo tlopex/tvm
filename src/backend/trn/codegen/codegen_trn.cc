@@ -601,6 +601,14 @@ void CodeGenTrainium::VisitExpr_(const FloorModNode* op, std::ostream& os) {
   os << PrintExpr(op->a) << " % " << PrintExpr(op->b);
 }
 
+void CodeGenTrainium::VisitExpr_(const MinNode* op, std::ostream& os) {
+  os << "min(" << PrintExpr(op->a) << ", " << PrintExpr(op->b) << ")";
+}
+
+void CodeGenTrainium::VisitExpr_(const MaxNode* op, std::ostream& os) {
+  os << "max(" << PrintExpr(op->a) << ", " << PrintExpr(op->b) << ")";
+}
+
 void CodeGenTrainium::VisitStmt_(const DeclBufferNode* op) {
   if (op->buffer.scope() == "trn.psum" || op->buffer.scope() == "trn.sbuf") {
     return;

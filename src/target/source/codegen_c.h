@@ -230,6 +230,10 @@ class CodeGenC : public ExprFunctor<void(const PrimExpr&, std::ostream&)>,
   virtual void PrintVecElemLoadExpr(DataType t, int i, const std::string& value, std::ostream& os);
   // Print restrict keyword for a given Var if applicable
   virtual void PrintRestrict(const Var& v, std::ostream& os);
+  // Print floating-point min/max using ordered comparisons plus one lhs NaN check.
+  void PrintFloatMinMaxExpr(const PrimExpr& lhs, const PrimExpr& rhs, bool is_max,
+                            std::ostream& os);
+  static bool IsFloatMinMaxType(DataType dtype);
 
   virtual void SetConstantsByteAlignment(int64_t constants_byte_alignment) {
     constants_byte_alignment_ = constants_byte_alignment;

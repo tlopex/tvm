@@ -99,6 +99,15 @@
 namespace tvm {
 namespace codegen {
 
+namespace {
+
+bool IsFloatMinMaxType(DataType dtype) {
+  DataType element_dtype = dtype.element_of();
+  return element_dtype.is_float() || element_dtype.is_bfloat16();
+}
+
+}  // namespace
+
 // CodeGenLLVM has members of type std::unique_ptr<T>. These members will be
 // instantiated in the constructor, which will requre that the type T is
 // complete at that point. Put the constructor (and destructor) here, since
@@ -1613,12 +1622,20 @@ llvm::Value* CodeGenLLVM::VisitExpr_(const ModNode* op) {
 llvm::Value* CodeGenLLVM::VisitExpr_(const MinNode* op) {
   llvm::Value* a = MakeValue(op->a);
   llvm::Value* b = MakeValue(op->b);
+  if (IsFloatMinMaxType(op->dtype)) {
+    return builder_->CreateSelect(CreateLT(op->a.dtype(), a, b), a,
+                                  builder_->CreateSelect(builder_->CreateFCmpOEQ(a, a), b, a));
+  }
   return builder_->CreateSelect(CreateLT(op->a.dtype(), a, b), a, b);
 }
 
 llvm::Value* CodeGenLLVM::VisitExpr_(const MaxNode* op) {
   llvm::Value* a = MakeValue(op->a);
   llvm::Value* b = MakeValue(op->b);
+  if (IsFloatMinMaxType(op->dtype)) {
+    return builder_->CreateSelect(CreateGT(op->a.dtype(), a, b), a,
+                                  builder_->CreateSelect(builder_->CreateFCmpOEQ(a, a), b, a));
+  }
   return builder_->CreateSelect(CreateGT(op->a.dtype(), a, b), a, b);
 }
 
