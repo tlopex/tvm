@@ -31,6 +31,7 @@ apt-get update && apt-install-and-clear -y --no-install-recommends \
     gdb \
     git \
     gnupg \
+    gpg-agent \
     graphviz \
     libcurl4-openssl-dev \
     libopenblas-dev \
@@ -42,6 +43,24 @@ apt-get update && apt-install-and-clear -y --no-install-recommends \
     ninja-build \
     parallel \
     pkg-config \
+    software-properties-common \
     sudo \
     unzip \
-    wget \
+    wget
+
+# Use a newer GCC/libstdc++ toolchain for C++20 builds.  Ubuntu 22.04's
+# default GCC 11 can compile with -std=gnu++20, but its libstdc++ is missing
+# C++20 symbols needed by native dependencies such as z3-static.
+add-apt-repository -y ppa:ubuntu-toolchain-r/test
+
+apt-get update && apt-install-and-clear -y --no-install-recommends \
+    gcc-13 \
+    g++-13
+
+update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 130
+update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 130
+update-alternatives --install /usr/bin/cc cc /usr/bin/gcc 130
+update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++ 130
+
+gcc --version
+g++ --version
