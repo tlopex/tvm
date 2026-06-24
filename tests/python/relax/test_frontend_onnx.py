@@ -28,15 +28,14 @@ import numpy as np
 import pytest
 
 pytest.importorskip("onnx")
-pytest.importorskip("onnxruntime")
 
 import onnx
-import onnxruntime
 import tvm_ffi
 from onnx import ModelProto, TensorProto, helper, numpy_helper
 
 import tvm
 import tvm.testing
+import tvm.tirx
 from tvm import relax
 from tvm.relax.frontend.onnx import from_onnx
 from tvm.script import ir as I
@@ -47,39 +46,71 @@ bg = np.random.MT19937(0)
 rg = np.random.Generator(bg)
 
 
+def check_import(
+    model: ModelProto,
+    ir_version: int = 8,
+    opset: int = 14,
+) -> tvm.IRModule:
+    """Import an ONNX model and verify that the frontend can construct Relax IR.
+
+    Parameters
+    ----------
+    model: ModelProto
+        The input onnx model that should be tested.
+    ir_version: int
+        Which version of the onnx IR to use.
+    opset: int
+        The opset version to use for the onnx importer.
+    """
+    configure_model_format(model, ir_version=ir_version, opset=opset)
+
+    tvm_model = from_onnx(model, opset=opset, keep_params_in_input=True)
+    assert tvm_model["main"] is not None
+    return tvm_model
+
+
+def configure_model_format(
+    model: ModelProto,
+    ir_version: int | None = 8,
+    opset: int | None = 14,
+) -> None:
+    if ir_version is not None:
+        model.ir_version = ir_version
+    if opset is not None:
+        for opset_import in model.opset_import:
+            if opset_import.domain in ["", "ai.onnx"]:
+                opset_import.version = opset
+                break
+
+
 def generate_random_inputs(
     model: ModelProto, inputs: dict[str, np.ndarray] | None = None
 ) -> dict[str, np.ndarray]:
     input_values = {}
-    # Iterate through model inputs and extract their shape.
-    for i in model.graph.input:
-        if inputs is not None and i.name in inputs and inputs[i.name] is not None:
-            input_values[i.name] = inputs[i.name]
+    for input_info in model.graph.input:
+        if inputs is not None and input_info.name in inputs and inputs[input_info.name] is not None:
+            input_values[input_info.name] = inputs[input_info.name]
             continue
-        shape = []
-        for dim in i.type.tensor_type.shape.dim:
-            shape.append(dim.dim_value)
 
-        input_values[i.name] = generate_random_value(shape, i.type.tensor_type.elem_type)
+        shape = [dim.dim_value for dim in input_info.type.tensor_type.shape.dim]
+        input_values[input_info.name] = generate_random_value(
+            shape, input_info.type.tensor_type.elem_type
+        )
 
     return input_values
 
 
 def generate_random_value(shape, elem_type) -> np.ndarray:
-    # Extract datatype for the input.
-    if elem_type:
-        dtype = str(helper.tensor_dtype_to_np_dtype(elem_type))
-    else:
-        dtype = "float32"
+    np_dtype = helper.tensor_dtype_to_np_dtype(elem_type) if elem_type else np.dtype("float32")
+    dtype = np.dtype(np_dtype)
 
-    # Generate random inputs for each input.
-    if dtype == "bool":
-        # random_value = np.random.choice(a=[False, True], size=shape)
+    if np.issubdtype(dtype, np.bool_):
         random_value = rg.choice(a=[False, True], size=shape)
-    elif dtype.startswith("int"):
-        # Keep non-zero values
+    elif np.issubdtype(dtype, np.signedinteger):
         random_value = rg.integers(low=-63, high=63, size=shape).astype(dtype)
-        random_value[random_value <= 0] -= 1
+        random_value[random_value == 0] = 1
+    elif np.issubdtype(dtype, np.unsignedinteger):
+        random_value = rg.integers(low=1, high=63, size=shape).astype(dtype)
     else:
         random_value = rg.standard_normal(size=shape).astype(dtype)
 
@@ -94,84 +125,49 @@ def check_correctness(
     rtol: float = 1e-7,
     atol: float = 1e-5,
     check_dtypes: bool = False,
-) -> None:
-    """Run an onnx model in both onnxruntime and TVM through our importer
-       confirm that the results match. Otherwise, an exception will be raised.
+) -> tvm.IRModule:
+    """Compare an imported ONNX model against ONNX Runtime for selected core-op paths."""
+    onnxruntime = pytest.importorskip("onnxruntime")
 
-    Parameters
-    ----------
-    model: ModelProto
-        The input onnx model that should be tested.
-    inputs: Optional[Dict[str, np.ndarray]]
-        An optional dictionary containing values for each input in the onnx model.
-    ir_version: int
-        Which version of the onnx IR to use.
-    opset: int
-        The opset version to use for the onnx importer.
-    atol: float
-        Set the tolerance of correctness checking. Some ops may be show more
-        arithmetic variance than others.
-    check_dtypes: bool
-        Check if data types are the same.
-    """
-    # Configure model format.
-    if ir_version is not None:
-        model.ir_version = ir_version
-    if opset is not None:
-        model.opset_import[0].version = opset
-
-    # If inputs are not provided, extract them from the onnx graph and produce random
-    # values that we'll use for testing.
+    configure_model_format(model, ir_version=ir_version, opset=opset)
     inputs = generate_random_inputs(model, inputs)
 
-    # Run the model through onnx to get the expected result.
     ort_session = onnxruntime.InferenceSession(
         model.SerializeToString(), providers=["CPUExecutionProvider"]
     )
     ort_output = ort_session.run([], inputs)
 
-    # Convert the onnx model into relax through the onnx importer.
-    tvm_model = from_onnx(model, opset=opset, keep_params_in_input=True)
-    # Convert operators for inference mode.
-    tvm_model = relax.transform.DecomposeOpsForInference()(tvm_model)
-    # Legalize any relax ops into tensorir.
+    imported_model = from_onnx(model, opset=opset, keep_params_in_input=True)
+    tvm_model = relax.transform.DecomposeOpsForInference()(imported_model)
     tvm_model = relax.transform.LegalizeOps()(tvm_model)
-
-    # Separate model from parameters.
     tvm_model, params = relax.frontend.detach_params(tvm_model)
-    # Compile the relax graph into a VM then run.
+
     with tvm.transform.PassContext(opt_level=3):
         ex = tvm.compile(tvm_model, target="llvm")
         vm = relax.VirtualMachine(ex, tvm.cpu())
-    # Prepare inputs.
+
     input_list = [
-        inputs[key.name_hint] for key in tvm_model["main"].params if key.name_hint in inputs
+        inputs[param.name_hint] for param in tvm_model["main"].params if param.name_hint in inputs
     ]
     if params:
         input_list += params["main"]
 
-    # Run model and check outputs.
     vm.set_input("main", *input_list)
     vm.invoke_stateful("main")
     tvm_output = vm.get_outputs("main")
-    # Wrap as a list if there is only one output.
     if len(ort_output) == 1:
-        # Do not check the output number for TVM
-        # As for sequence output, the TVM output is a Tuple
-        # while the ONNX output number is one, which is a list
         tvm_output = [tvm_output]
 
     def _get_numpy_subdtype(narray):
         if np.issubdtype(narray.dtype, np.integer):
             return "integer"
-        elif np.issubdtype(narray.dtype, np.floating):
+        if np.issubdtype(narray.dtype, np.floating):
             return "floating"
-        elif np.issubdtype(narray.dtype, np.bool_):
+        if np.issubdtype(narray.dtype, np.bool_):
             return "bool"
-        elif np.issubdtype(narray.dtype, np.complexfloating):
+        if np.issubdtype(narray.dtype, np.complexfloating):
             return "complexfloating"
-        else:
-            return "other"
+        return "other"
 
     def _check_output(tvm_out, ort_out):
         if isinstance(tvm_out, tuple) and isinstance(ort_out, tvm_ffi.Shape | list):
@@ -194,12 +190,12 @@ def check_correctness(
         else:
             raise ValueError(f"Unsupported types: {type(tvm_out)}, {type(ort_out)}")
 
-    # Check that number of outputs match.
     assert len(tvm_output) == len(ort_output), "Unequal number of outputs"
     for tvm_out, ort_out in zip(tvm_output, ort_output):
-        # TODO Allow configurable tolerance.
         if ort_out is not None:
             _check_output(tvm_out, ort_out)
+
+    return imported_model
 
 
 def run_in_tvm(
@@ -208,13 +204,7 @@ def run_in_tvm(
     ir_version: int = 8,
     opset: int = 14,
 ):
-    if ir_version is not None:
-        model.ir_version = ir_version
-    if opset is not None:
-        for opset_import in model.opset_import:
-            if opset_import.domain in ["", "ai.onnx"]:
-                opset_import.version = opset
-                break
+    configure_model_format(model, ir_version=ir_version, opset=opset)
 
     inputs = generate_random_inputs(model, inputs)
     tvm_model = from_onnx(model, opset=opset, keep_params_in_input=True)
@@ -227,7 +217,7 @@ def run_in_tvm(
         vm = relax.VirtualMachine(ex, tvm.cpu())
 
     input_list = [
-        inputs[key.name_hint] for key in tvm_model["main"].params if key.name_hint in inputs
+        inputs[param.name_hint] for param in tvm_model["main"].params if param.name_hint in inputs
     ]
     if params:
         input_list += params["main"]
@@ -235,6 +225,41 @@ def run_in_tvm(
     vm.set_input("main", *input_list)
     vm.invoke_stateful("main")
     return vm.get_outputs("main")
+
+
+def get_static_tensor_shape(tensor_sinfo) -> list[int] | None:
+    shape = getattr(tensor_sinfo, "shape", None)
+    values = getattr(shape, "values", None)
+    if values is None:
+        return None
+
+    static_shape = []
+    for value in values:
+        if not isinstance(value, tvm.tirx.IntImm):
+            return None
+        static_shape.append(int(value))
+    return static_shape
+
+
+def assert_tensor_sinfo(
+    tensor_sinfo, expected_shape=None, expected_dtype: str | None = None
+) -> None:
+    if expected_dtype is not None:
+        dtype = getattr(tensor_sinfo, "dtype", None)
+        if dtype is None and isinstance(tensor_sinfo, tvm.ir.PrimType):
+            dtype = tensor_sinfo.dtype
+        assert dtype == expected_dtype
+
+    if expected_shape is not None:
+        assert get_static_tensor_shape(tensor_sinfo) == list(expected_shape)
+
+
+def static_shape_or_none(shape) -> list[int] | None:
+    if shape is None:
+        return None
+    if all(isinstance(dim, int) for dim in shape):
+        return list(shape)
+    return None
 
 
 def collect_relax_call_ops(func: relax.Function) -> list[str]:
@@ -248,6 +273,51 @@ def collect_relax_call_ops(func: relax.Function) -> list[str]:
     return list(op_names)
 
 
+def collect_relax_calls(func: relax.Function, op_name: str) -> list[relax.Call]:
+    calls: list[relax.Call] = []
+
+    def fvisit(expr: relax.Expr) -> None:
+        if (
+            isinstance(expr, relax.Call)
+            and isinstance(expr.op, tvm.ir.Op)
+            and expr.op.name == op_name
+        ):
+            calls.append(expr)
+
+    relax.analysis.post_order_visit(func.body, fvisit)
+    return calls
+
+
+def assert_has_relax_if(func: relax.Function, min_count: int = 1) -> None:
+    if_count = 0
+
+    def fvisit(expr: relax.Expr) -> None:
+        nonlocal if_count
+        if isinstance(expr, relax.If):
+            if_count += 1
+
+    relax.analysis.post_order_visit(func.body, fvisit)
+    assert if_count >= min_count
+
+
+def assert_tuple_tensor_sinfo(tuple_sinfo, expected_fields: list[tuple[list[int], str]]) -> None:
+    fields = getattr(tuple_sinfo, "fields", None)
+    assert fields is not None
+    assert len(fields) == len(expected_fields)
+    for field, (expected_shape, expected_dtype) in zip(fields, expected_fields):
+        assert_tensor_sinfo(field, expected_shape, expected_dtype)
+
+
+def assert_has_relax_ops(func: relax.Function, expected_ops: str | list[str] | None) -> None:
+    if expected_ops is None:
+        return
+    if isinstance(expected_ops, str):
+        expected_ops = [expected_ops]
+    call_ops = collect_relax_call_ops(func)
+    for expected_op in expected_ops:
+        assert expected_op in call_ops
+
+
 def collect_scalar_constants(func: relax.Function) -> list[bool | int | float]:
     values = []
 
@@ -259,6 +329,299 @@ def collect_scalar_constants(func: relax.Function) -> list[bool | int | float]:
 
     relax.analysis.post_order_visit(func.body, fvisit)
     return values
+
+
+ONNX_RELAX_OPS = {
+    "Abs": "relax.abs",
+    "Acos": "relax.acos",
+    "Acosh": "relax.acosh",
+    "Add": "relax.add",
+    "And": "relax.logical_and",
+    "ArgMax": "relax.argmax",
+    "ArgMin": "relax.argmin",
+    "Asin": "relax.asin",
+    "Asinh": "relax.asinh",
+    "Atan": "relax.atan",
+    "Atanh": "relax.atanh",
+    "BatchNormalization": "relax.nn.batch_norm",
+    "BitwiseAnd": "relax.bitwise_and",
+    "BitwiseNot": "relax.bitwise_not",
+    "BitwiseOr": "relax.bitwise_or",
+    "BitwiseXor": "relax.bitwise_xor",
+    "BitShiftLeft": "relax.left_shift",
+    "BitShiftRight": "relax.right_shift",
+    "Ceil": "relax.ceil",
+    "Compress": "relax.take",
+    "Concat": "relax.concat",
+    "Cos": "relax.cos",
+    "Cosh": "relax.cosh",
+    "DequantizeLinear": "relax.dequantize",
+    "DepthToSpace": ["relax.reshape", "relax.permute_dims"],
+    "Div": "relax.divide",
+    "Dropout": "relax.nn.dropout",
+    "DynamicQuantizeLinear": ["relax.quantize", "relax.round", "relax.clip"],
+    "Elu": ["relax.exp", "relax.nn.relu"],
+    "Equal": "relax.equal",
+    "Erf": "relax.erf",
+    "Exp": "relax.exp",
+    "Expand": "relax.broadcast_to",
+    "EyeLike": "relax.eye_like",
+    "Flatten": "relax.reshape",
+    "Floor": "relax.floor",
+    "Gather": "relax.take",
+    "GatherElements": "relax.gather_elements",
+    "GatherND": "relax.gather_nd",
+    "Gemm": "relax.matmul",
+    "GlobalAveragePool": "relax.mean",
+    "GlobalLpPool": ["relax.abs", "relax.power", "relax.sum"],
+    "GlobalMaxPool": "relax.max",
+    "Greater": "relax.greater",
+    "GreaterOrEqual": "relax.greater_equal",
+    "HardSigmoid": ["relax.multiply", "relax.add", "relax.clip"],
+    "HardSwish": ["relax.multiply", "relax.divide", "relax.clip"],
+    "Hardmax": "relax.one_hot",
+    "InstanceNormalization": ["relax.mean", "relax.sqrt"],
+    "IsInf": "relax.isinf",
+    "IsNaN": "relax.isnan",
+    "LeakyRelu": "relax.nn.leakyrelu",
+    "Less": "relax.less",
+    "LessOrEqual": "relax.less_equal",
+    "Log": "relax.log",
+    "LogSoftmax": "relax.nn.log_softmax",
+    "MatMul": "relax.matmul",
+    "Max": "relax.max",
+    "Mean": "relax.mean",
+    "MeanVarianceNormalization": ["relax.mean", "relax.power", "relax.sqrt"],
+    "Min": "relax.min",
+    "Mish": ["relax.exp", "relax.log", "relax.tanh"],
+    "Mul": "relax.multiply",
+    "Neg": "relax.negative",
+    "NonZero": "relax.nonzero",
+    "Not": "relax.logical_not",
+    "OneHot": "relax.one_hot",
+    "Or": "relax.logical_or",
+    "Pad": "relax.call_tir",
+    "Pow": "relax.power",
+    "PRelu": "relax.nn.prelu",
+    "QuantizeLinear": "relax.quantize",
+    "Reciprocal": "relax.divide",
+    "ReduceL1": ["relax.abs", "relax.sum"],
+    "ReduceL2": ["relax.multiply", "relax.sum", "relax.sqrt"],
+    "ReduceLogSum": ["relax.sum", "relax.log"],
+    "ReduceLogSumExp": ["relax.max", "relax.exp", "relax.sum", "relax.log"],
+    "ReduceMax": "relax.max",
+    "ReduceMean": "relax.mean",
+    "ReduceMin": "relax.min",
+    "ReduceProd": "relax.prod",
+    "ReduceSum": "relax.sum",
+    "ReduceSumSquare": ["relax.multiply", "relax.sum"],
+    "Relu": "relax.nn.relu",
+    "Reshape": "relax.reshape",
+    "Round": "relax.round",
+    "Scatter": "relax.scatter_elements",
+    "ScatterElements": "relax.scatter_elements",
+    "ScatterND": "relax.scatter_nd",
+    "Selu": ["relax.exp", "relax.nn.relu"],
+    "Shape": "relax.shape_of",
+    "Shrink": ["relax.where", "relax.greater", "relax.less"],
+    "Sign": "relax.sign",
+    "Sigmoid": "relax.sigmoid",
+    "Sin": "relax.sin",
+    "Sinh": "relax.sinh",
+    "Sqrt": "relax.sqrt",
+    "Softmax": "relax.nn.softmax",
+    "Softplus": "relax.nn.softplus",
+    "Softsign": ["relax.divide", "relax.abs", "relax.add"],
+    "SpaceToDepth": ["relax.reshape", "relax.permute_dims"],
+    "Slice": "relax.strided_slice",
+    "Split": "relax.split",
+    "Squeeze": "relax.reshape",
+    "Sub": "relax.subtract",
+    "Sum": "relax.sum",
+    "Tan": "relax.tan",
+    "Tanh": "relax.tanh",
+    "ThresholdedRelu": ["relax.greater", "relax.astype", "relax.multiply"],
+    "Tile": "relax.call_tir",
+    "TopK": "relax.topk",
+    "Transpose": "relax.permute_dims",
+    "Unsqueeze": "relax.expand_dims",
+    "Unique": "relax.unique",
+    "Where": "relax.where",
+    "Xor": "relax.logical_xor",
+}
+
+ONNX_NUMERIC_RELAX_OPS = {
+    "Abs",
+    "Acos",
+    "Acosh",
+    "Add",
+    "And",
+    "ArgMax",
+    "ArgMin",
+    "Asin",
+    "Asinh",
+    "Atan",
+    "Atanh",
+    "AveragePool",
+    "BatchNormalization",
+    "BiasGelu",
+    "BitwiseAnd",
+    "BitwiseNot",
+    "BitwiseOr",
+    "BitwiseXor",
+    "BitShift",
+    "Cast",
+    "Ceil",
+    "Clip",
+    "Compress",
+    "Concat",
+    "Conv",
+    "ConvTranspose",
+    "Cos",
+    "Cosh",
+    "CumSum",
+    "DequantizeLinear",
+    "DepthToSpace",
+    "Div",
+    "Dropout",
+    "DynamicQuantizeLinear",
+    "Elu",
+    "Equal",
+    "Erf",
+    "Exp",
+    "Expand",
+    "Flatten",
+    "Floor",
+    "FastGelu",
+    "Gather",
+    "GatherElements",
+    "GatherND",
+    "Gemm",
+    "Gelu",
+    "GlobalAveragePool",
+    "GlobalLpPool",
+    "GlobalMaxPool",
+    "Greater",
+    "GreaterOrEqual",
+    "HardSigmoid",
+    "HardSwish",
+    "Hardmax",
+    "InstanceNormalization",
+    "IsInf",
+    "IsNaN",
+    "LayerNormalization",
+    "LeakyRelu",
+    "Less",
+    "LessOrEqual",
+    "Log",
+    "LogSoftmax",
+    "MatMul",
+    "MatMulInteger",
+    "MatMulInteger16",
+    "Max",
+    "MaxPool",
+    "Mean",
+    "MeanVarianceNormalization",
+    "Min",
+    "Mish",
+    "Mul",
+    "Neg",
+    "NonZero",
+    "Not",
+    "OneHot",
+    "Or",
+    "Pow",
+    "PRelu",
+    "QuantizeLinear",
+    "Reciprocal",
+    "ReduceL1",
+    "ReduceL2",
+    "ReduceLogSum",
+    "ReduceLogSumExp",
+    "ReduceMax",
+    "ReduceMean",
+    "ReduceMin",
+    "ReduceProd",
+    "ReduceSum",
+    "ReduceSumSquare",
+    "Relu",
+    "Reshape",
+    "Round",
+    "Scatter",
+    "ScatterElements",
+    "ScatterND",
+    "Selu",
+    "Shrink",
+    "Sign",
+    "Sigmoid",
+    "Sin",
+    "Sinh",
+    "Shape",
+    "Size",
+    "Softmax",
+    "Softplus",
+    "Softsign",
+    "SpaceToDepth",
+    "Sqrt",
+    "Slice",
+    "Split",
+    "Squeeze",
+    "Sub",
+    "Sum",
+    "Tan",
+    "Tanh",
+    "ThresholdedRelu",
+    "TopK",
+    "Transpose",
+    "Unsqueeze",
+    "Unique",
+    "Where",
+    "Xor",
+}
+
+ONNX_NUMERIC_RELAX_OP_DOMAINS = {
+    ("BiasGelu", "com.microsoft"),
+    ("FastGelu", "com.microsoft"),
+    ("Gelu", "com.microsoft"),
+}
+
+ONNX_SHAPE_PRESERVING_UNARY_OPS = {
+    "Abs",
+    "Acos",
+    "Acosh",
+    "Asin",
+    "Asinh",
+    "Atan",
+    "Atanh",
+    "BitwiseNot",
+    "Ceil",
+    "Cos",
+    "Cosh",
+    "Erf",
+    "Exp",
+    "Floor",
+    "HardSigmoid",
+    "LeakyRelu",
+    "Log",
+    "Neg",
+    "Not",
+    "Reciprocal",
+    "Selu",
+    "Shrink",
+    "Sigmoid",
+    "Sin",
+    "Sinh",
+    "Sqrt",
+    "Tan",
+    "Tanh",
+    "ThresholdedRelu",
+}
+
+
+def should_check_numeric(op_name: str, domain: str | None = None) -> bool:
+    return op_name in ONNX_NUMERIC_RELAX_OPS and (
+        domain in (None, "") or (op_name, domain) in ONNX_NUMERIC_RELAX_OP_DOMAINS
+    )
 
 
 @pytest.mark.parametrize(
@@ -310,7 +673,16 @@ def verify_unary(
     )
 
     model = helper.make_model(graph, producer_name="elemwise_test")
-    check_correctness(model, opset=opset)
+    if should_check_numeric(op_name, domain):
+        check_correctness(model, opset=opset)
+    else:
+        tvm_model = check_import(model, opset=opset)
+        assert_tensor_sinfo(
+            tvm_model["main"].ret_ty,
+            static_shape_or_none(shape) if op_name in ONNX_SHAPE_PRESERVING_UNARY_OPS else None,
+            str(helper.tensor_dtype_to_np_dtype(output_dtype)),
+        )
+        assert_has_relax_ops(tvm_model["main"], ONNX_RELAX_OPS.get(op_name))
 
 
 def verify_unary_dynamic_shape(
@@ -334,8 +706,17 @@ def verify_unary_dynamic_shape(
     )
 
     model = helper.make_model(graph, producer_name="elemwise_test")
-    inputs = {"x": generate_random_value(shape_instance, input_dtype)}
-    check_correctness(model, inputs, opset=opset)
+    if should_check_numeric(op_name, domain):
+        inputs = {"x": generate_random_value(shape_instance, input_dtype)}
+        check_correctness(model, inputs, opset=opset)
+    else:
+        tvm_model = check_import(model, opset=opset)
+        assert_tensor_sinfo(
+            tvm_model["main"].ret_ty,
+            static_shape_or_none(shape) if op_name in ONNX_SHAPE_PRESERVING_UNARY_OPS else None,
+            str(helper.tensor_dtype_to_np_dtype(output_dtype)),
+        )
+        assert_has_relax_ops(tvm_model["main"], ONNX_RELAX_OPS.get(op_name))
 
 
 def verify_binary(
@@ -353,7 +734,16 @@ def verify_binary(
     )
 
     model = helper.make_model(graph, producer_name="binary_test")
-    check_correctness(model, opset=opset, check_dtypes=True)
+    if should_check_numeric(op_name, domain):
+        check_correctness(model, opset=opset, check_dtypes=True)
+    else:
+        tvm_model = check_import(model, opset=opset)
+        assert_tensor_sinfo(
+            tvm_model["main"].ret_ty,
+            static_shape_or_none(shape_c),
+            str(helper.tensor_dtype_to_np_dtype(dtype)),
+        )
+        assert_has_relax_ops(tvm_model["main"], ONNX_RELAX_OPS.get(op_name))
 
 
 def verify_binary_scalar(op_name, attrs={}, domain=None, dtype=TensorProto.INT32, opset=14):
@@ -368,7 +758,13 @@ def verify_binary_scalar(op_name, attrs={}, domain=None, dtype=TensorProto.INT32
     )
 
     model = helper.make_model(graph, producer_name="binary_test")
-    check_correctness(model, opset=opset, check_dtypes=True)
+    if should_check_numeric(op_name, domain):
+        check_correctness(model, opset=opset, check_dtypes=True)
+    else:
+        tvm_model = check_import(model, opset=opset)
+        assert_tensor_sinfo(
+            tvm_model["main"].ret_ty, [], str(helper.tensor_dtype_to_np_dtype(dtype))
+        )
 
 
 def verify_compare(op_name, shape, attrs={}, domain=None):
@@ -384,7 +780,12 @@ def verify_compare(op_name, shape, attrs={}, domain=None):
     )
 
     model = helper.make_model(graph, producer_name="compare_test")
-    check_correctness(model)
+    if should_check_numeric(op_name, domain):
+        check_correctness(model)
+    else:
+        tvm_model = check_import(model)
+        assert_tensor_sinfo(tvm_model["main"].ret_ty, static_shape_or_none(shape), "bool")
+        assert_has_relax_ops(tvm_model["main"], ONNX_RELAX_OPS.get(op_name))
 
 
 def verify_ternary(op_name, shape_a, shape_b, shape_c, shape_d, attrs={}, domain=None):
@@ -401,7 +802,12 @@ def verify_ternary(op_name, shape_a, shape_b, shape_c, shape_d, attrs={}, domain
     )
 
     model = helper.make_model(graph, producer_name="ternary_test")
-    check_correctness(model)
+    if should_check_numeric(op_name, domain):
+        check_correctness(model)
+    else:
+        tvm_model = check_import(model)
+        assert_tensor_sinfo(tvm_model["main"].ret_ty, static_shape_or_none(shape_d), "float32")
+        assert_has_relax_ops(tvm_model["main"], ONNX_RELAX_OPS.get(op_name))
 
 
 @pytest.mark.parametrize("dynamic", [True, False])
@@ -484,6 +890,10 @@ def test_matmulinteger16(a_dtype, b_dtype, a_shape, b_shape):
     assert isinstance(tvm_output, tvm.runtime.Tensor)
     assert tvm_output.numpy().dtype == out_dtype
     tvm.testing.assert_allclose(tvm_output.numpy(), expected)
+
+    tvm_model = check_import(model, ir_version=11, opset=18)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, expected.shape, str(np.dtype(out_dtype)))
+    assert "relax.matmul" in collect_relax_call_ops(tvm_model["main"])
 
 
 def test_matmulinteger16_ir():
@@ -829,12 +1239,7 @@ def test_softmax_family_opset1_legacy_ir_semantics(op_name: str, expected_core_o
 
 
 def test_round_ties_to_even():
-    """ONNX Round must use ties-to-even (banker's rounding), not ties-away-from-zero.
-
-    Per the ONNX spec: "For cases where number is exactly halfway between two
-    integers, it rounds to the nearest even integer."
-    https://onnx.ai/onnx/operators/onnx__Round.html
-    """
+    """ONNX Round uses ties-to-even semantics under opset 11."""
     round_node = helper.make_node("Round", ["x"], ["y"])
     graph = helper.make_graph(
         [round_node],
@@ -843,8 +1248,6 @@ def test_round_ties_to_even():
         outputs=[helper.make_tensor_value_info("y", TensorProto.FLOAT, [6])],
     )
     model = helper.make_model(graph, producer_name="round_ties_to_even_test")
-    # Midpoint values: 0.5->0, 1.5->2, 2.5->2, -0.5->0, -1.5->-2, -2.5->-2 (ties-to-even)
-    # Ties-away would give: 0.5->1, 1.5->2, 2.5->3, -0.5->-1, -1.5->-2, -2.5->-3
     inputs = {"x": np.array([0.5, 1.5, 2.5, -0.5, -1.5, -2.5], dtype="float32")}
     check_correctness(model, inputs=inputs, opset=11)
 
@@ -891,11 +1294,29 @@ def test_cast_nan_inf_to_int8():
         outputs=[helper.make_tensor_value_info("b", TensorProto.INT8, list(vals.shape))],
     )
     model = helper.make_model(graph, producer_name="cast_nan_inf_test")
+    tvm_model = check_import(model, opset=13)
     tvm_output = run_in_tvm(model, inputs={"a": vals}, opset=13)
     out_np = tvm_output.numpy()
     expected = np.array([44, 0, 0, 0, 50, -50], dtype=np.int8)
     assert out_np.dtype == np.int8
     np.testing.assert_array_equal(out_np, expected)
+
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, vals.shape, "int8")
+    assert_has_relax_ops(
+        tvm_model["main"],
+        [
+            "relax.isfinite",
+            "relax.logical_not",
+            "relax.where",
+            "relax.astype",
+            "relax.bitwise_and",
+            "relax.greater_equal",
+            "relax.subtract",
+        ],
+    )
+    call_ops = collect_relax_call_ops(tvm_model["main"])
+    assert call_ops.count("relax.where") >= 2
+    assert call_ops.count("relax.astype") >= 2
 
 
 def test_gather():
@@ -1200,7 +1621,6 @@ def test_scatter_nd(reduction):
         )
 
         model = helper.make_model(graph, producer_name="scatter_nd_test")
-
         indices = np.random.choice(data_shape[0], indices_shape)
         check_correctness(model, inputs={"indices": indices}, opset=16)
 
@@ -1307,10 +1727,10 @@ def test_reshape(in_shape, shape, out_shape):
         initializer=[helper.make_tensor("shape", TensorProto.INT64, [len(shape)], shape)],
         outputs=[helper.make_tensor_value_info("reshaped", TensorProto.FLOAT, out_shape)],
     )
+    model = helper.make_model(graph, producer_name="reshape_test")
     input_values = {
         "data": np.random.randn(*in_shape).astype("float32"),
     }
-    model = helper.make_model(graph, producer_name="reshape_test")
     check_correctness(model, inputs=input_values)
 
 
@@ -1339,10 +1759,10 @@ def test_reshape_shape_output(target_shape, output_shape):
         ],
         outputs=[helper.make_tensor_value_info("reshaped", TensorProto.INT64, output_shape)],
     )
+    model = helper.make_model(graph, producer_name="reshape_shape_output")
     input_values = {
         "data": np.random.randn(*data_shape).astype("float32"),
     }
-    model = helper.make_model(graph, producer_name="reshape_shape_output")
     check_correctness(model, inputs=input_values)
 
 
@@ -1680,11 +2100,12 @@ def test_clip_v6(max, min):
     ],
 )
 def test_clip_v13(input, min, max):
-    # Opset 13: tensor min/max. NaN bound => unbounded on that side (ORT).
+    # Opset 13 accepts min/max as tensor inputs. NaN tensor bounds are treated
+    # as unbounded by the ONNX frontend before lowering to max/min.
     clip_node = helper.make_node("Clip", ["input", "min", "max"], ["output"])
     graph = helper.make_graph(
         [clip_node],
-        "clip_v13_nan_max",
+        "clip_v13_tensor_bounds_import",
         inputs=[
             helper.make_tensor_value_info("input", TensorProto.FLOAT, [5]),
             helper.make_tensor_value_info("min", TensorProto.FLOAT, []),
@@ -1692,7 +2113,7 @@ def test_clip_v13(input, min, max):
         ],
         outputs=[helper.make_tensor_value_info("output", TensorProto.FLOAT, [5])],
     )
-    model = helper.make_model(graph, producer_name="clip_v13_nan_max")
+    model = helper.make_model(graph, producer_name="clip_v13_tensor_bounds_import")
     check_correctness(
         model,
         inputs={"input": input, "min": min, "max": max},
@@ -1720,7 +2141,6 @@ def test_equal():
     check_correctness(
         model, {"a": np.ones([32, 32], dtype="float32"), "b": np.zeros([32, 32], dtype="float32")}
     )
-    check_correctness(model)
 
 
 def test_shape():
@@ -2050,7 +2470,7 @@ def test_cumsum_axis_shape_validation():
     model = helper.make_model(graph, producer_name="cumsum_invalid_axis_shape_graph")
     with pytest.raises(
         ValueError,
-        match="axis input must be a scalar \(0-D\) or a single-element 1-D tensor",
+        match=r"axis input must be a scalar \(0-D\) or a single-element 1-D tensor",
     ):
         from_onnx(model, opset=14, keep_params_in_input=True)
 
@@ -2242,7 +2662,9 @@ def test_const():
     )
 
     model = helper.make_model(graph, producer_name="const_test")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, shape, "float32")
+    assert collect_relax_call_ops(tvm_model["main"]) == []
 
 
 def test_instance_norm():
@@ -2260,6 +2682,29 @@ def test_mean_variance_norm():
 
 
 def test_layer_norm():
+    def _assert_layer_norm_import(
+        model,
+        expected_shape,
+        expected_dtype: str | None = "float32",
+        opset=14,
+        expected_bias_dtype: str | None = None,
+        check_numeric: bool = True,
+        rtol: float = 1e-7,
+        atol: float = 1e-5,
+    ):
+        if check_numeric:
+            check_correctness(model, opset=opset, rtol=rtol, atol=atol)
+            return
+
+        tvm_model = check_import(model, opset=opset)
+        assert_tensor_sinfo(tvm_model["main"].ret_ty, expected_shape, expected_dtype)
+        assert_has_relax_ops(tvm_model["main"], "relax.nn.layer_norm")
+        if expected_bias_dtype is not None:
+            [layer_norm_call] = collect_relax_calls(tvm_model["main"], "relax.nn.layer_norm")
+            bias = layer_norm_call.args[2]
+            assert isinstance(bias, relax.Constant)
+            assert str(bias.data.numpy().dtype) == expected_bias_dtype
+
     layer_norm_node = helper.make_node(
         "LayerNormalization", ["input", "scale", "bias"], ["Y"], epsilon=1e-12
     )
@@ -2278,7 +2723,7 @@ def test_layer_norm():
     )
 
     model = helper.make_model(graph, producer_name="layer_norm_test")
-    check_correctness(model)
+    _assert_layer_norm_import(model, [32, 32])
 
     # Test case with no bias that is an optional input
     layer_norm_node = helper.make_node(
@@ -2298,7 +2743,7 @@ def test_layer_norm():
     )
 
     model = helper.make_model(graph, producer_name="layer_norm_test")
-    check_correctness(model)
+    _assert_layer_norm_import(model, [32, 32], expected_bias_dtype="float32")
 
     # No bias with a non-square input where data.shape[1] differs from the scale
     # shape, see https://github.com/apache/tvm/issues/19691.
@@ -2319,7 +2764,7 @@ def test_layer_norm():
     )
 
     model = helper.make_model(graph, producer_name="layer_norm_test")
-    check_correctness(model)
+    _assert_layer_norm_import(model, [2, 3, 4, 8], expected_bias_dtype="float32")
 
     # No bias with a non-square fp16 input. The synthesized zero bias must match
     # the scale dtype, otherwise layer_norm rejects the float32 bias, see
@@ -2341,11 +2786,19 @@ def test_layer_norm():
     )
 
     model = helper.make_model(graph, producer_name="layer_norm_test")
-    check_correctness(model, opset=17, atol=1e-2, rtol=1e-2)
+    _assert_layer_norm_import(
+        model,
+        [2, 3, 4, 8],
+        "float16",
+        opset=17,
+        expected_bias_dtype="float16",
+        rtol=1e-2,
+        atol=1e-2,
+    )
 
-    # Same no-bias path for bf16. ONNX Runtime's CPU provider has no bf16
-    # LayerNormalization kernel, so this only checks the importer builds the
-    # graph with a bf16 zero bias (the dtype the fix derives from the scale).
+    # Same no-bias path for bf16. The importer currently represents ONNX bf16
+    # tensors as float32 Relax tensors, so the synthesized zero bias must also
+    # be float32.
     layer_norm_node = helper.make_node(
         "LayerNormalization", ["input", "scale"], ["Y"], axis=-1, epsilon=1e-12
     )
@@ -2363,8 +2816,14 @@ def test_layer_norm():
     )
 
     model = helper.make_model(graph, producer_name="layer_norm_test")
-    model.opset_import[0].version = 17
-    from_onnx(model, opset=17, keep_params_in_input=True)
+    _assert_layer_norm_import(
+        model,
+        [2, 3, 4, 8],
+        "float32",
+        opset=17,
+        expected_bias_dtype="float32",
+        check_numeric=False,
+    )
 
 
 def test_layer_norm_with_nd_gamma_beta():
@@ -2416,7 +2875,7 @@ def test_layer_norm_numerical_stability():
     )
     graph = helper.make_graph(
         [layer_norm_node],
-        "layer_norm_numerical_stability",
+        "layer_norm_large_values_import",
         inputs=[
             helper.make_tensor_value_info("input", TensorProto.FLOAT, [1, 4]),
             helper.make_tensor_value_info("scale", TensorProto.FLOAT, [4]),
@@ -2433,8 +2892,6 @@ def test_layer_norm_numerical_stability():
     bias_array = np.zeros(4, dtype=np.float32)
     inputs = {"input": input_array, "scale": scale_array, "bias": bias_array}
 
-    # ONNXRuntime also returns NaN for Large-value, small-variance inputs, so we here
-    # compare against a two-pass reference instead of ORT.
     mean = input_array.mean(axis=-1, keepdims=True)
     var = ((input_array - mean) ** 2).mean(axis=-1, keepdims=True)
     expected = ((input_array - mean) / np.sqrt(var + 1e-5) * scale_array + bias_array).astype(
@@ -2442,12 +2899,43 @@ def test_layer_norm_numerical_stability():
     )
 
     tvm_output = run_in_tvm(model, inputs=inputs, ir_version=9, opset=17)
-
     assert np.isfinite(tvm_output.numpy()).all()
     tvm.testing.assert_allclose(tvm_output.numpy(), expected)
 
+    tvm_model = check_import(model, ir_version=9, opset=17)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, [1, 4], "float32")
+    assert_has_relax_ops(tvm_model["main"], "relax.nn.layer_norm")
+
 
 def test_rms_norm():
+    def _check_rms_norm(
+        model,
+        input_array,
+        scale_array,
+        axes,
+        epsilon,
+        output_dtype,
+        rtol=1e-5,
+        atol=1e-5,
+    ):
+        inputs = {"input": input_array, "scale": scale_array}
+        data_compute = (
+            input_array.astype("float32") if input_array.dtype != np.float32 else input_array
+        )
+        scale_compute = (
+            scale_array.astype("float32") if input_array.dtype != np.float32 else scale_array
+        )
+        mean_square = np.mean(np.square(data_compute), axis=tuple(axes), keepdims=True)
+        expected = data_compute / np.sqrt(mean_square + epsilon) * scale_compute
+        expected = expected.astype(output_dtype)
+
+        tvm_output = run_in_tvm(model, inputs=inputs, opset=23)
+        tvm.testing.assert_allclose(tvm_output.numpy(), expected, rtol=rtol, atol=atol)
+
+        tvm_model = check_import(model, opset=23)
+        assert_has_relax_ops(tvm_model["main"], "relax.nn.rms_norm")
+        return tvm_model
+
     # Basic test: default axis=-1
     rms_norm_node = helper.make_node("RMSNormalization", ["input", "scale"], ["Y"], epsilon=1e-05)
 
@@ -2464,7 +2952,11 @@ def test_rms_norm():
     )
 
     model = helper.make_model(graph, producer_name="rms_norm_test")
-    check_correctness(model, opset=23)
+    input_array = rg.standard_normal(size=[2, 8, 32]).astype("float32")
+    scale_array = rg.standard_normal(size=[32]).astype("float32")
+    _check_rms_norm(
+        model, input_array, scale_array, axes=[-1], epsilon=1e-5, output_dtype="float32"
+    )
 
     # Test with explicit axis=1 (normalize over last 2 dims)
     rms_norm_node = helper.make_node(
@@ -2484,7 +2976,11 @@ def test_rms_norm():
     )
 
     model = helper.make_model(graph, producer_name="rms_norm_axis_test")
-    check_correctness(model, opset=23)
+    input_array = rg.standard_normal(size=[4, 8, 16]).astype("float32")
+    scale_array = rg.standard_normal(size=[8, 16]).astype("float32")
+    _check_rms_norm(
+        model, input_array, scale_array, axes=[1, 2], epsilon=1e-6, output_dtype="float32"
+    )
 
     # Test with float16 input (stash_type=1 means compute in float32)
     rms_norm_node = helper.make_node(
@@ -2504,13 +3000,24 @@ def test_rms_norm():
     )
 
     model = helper.make_model(graph, producer_name="rms_norm_fp16_test")
-    check_correctness(model, opset=23, rtol=1e-2, atol=1e-2)
+    input_array = rg.standard_normal(size=[2, 8, 32]).astype("float16")
+    scale_array = rg.standard_normal(size=[32]).astype("float16")
+    _check_rms_norm(
+        model,
+        input_array,
+        scale_array,
+        axes=[-1],
+        epsilon=1e-5,
+        output_dtype="float16",
+        rtol=1e-2,
+        atol=1e-2,
+    )
 
 
 # TODO Enable dynamism
 @pytest.mark.parametrize("dynamic", [False])
 def test_skiplayernormalization(dynamic):
-    def verify_skiplayernormalization(input_, skip, gamma, beta, bias):
+    def verify_skiplayernormalization(input_shape, skip_shape, gamma_shape, beta_shape, bias_shape):
         node = onnx.helper.make_node(
             "SkipLayerNormalization",
             inputs=["input", "skip", "gamma", "beta", "bias"],
@@ -2520,21 +3027,21 @@ def test_skiplayernormalization(dynamic):
 
         node.attribute.append(onnx.helper.make_attribute("epsilon", 1e-4))
 
-        input_shape = list(input_.shape)
-        skip_shape = list(skip.shape)
-        gamma_shape = list(gamma.shape)
-        beta_shape = list(beta.shape)
-        bias_shape = list(bias.shape)
-        output_shape = list(input_.shape)
+        input_shape = list(input_shape)
+        skip_shape = list(skip_shape)
+        gamma_shape = list(gamma_shape)
+        beta_shape = list(beta_shape)
+        bias_shape = list(bias_shape)
+        output_shape = list(input_shape)
         mean_shape = list([1])
         std_dev_shape = list([1])
         if dynamic:
-            input_shape = ["?" for _ in range(len(input_.shape))]
-            skip_shape = ["?" for _ in range(len(skip.shape))]
-            gamma_shape = ["?" for _ in range(len(gamma.shape))]
-            beta_shape = ["?" for _ in range(len(beta.shape))]
-            bias_shape = ["?" for _ in range(len(bias.shape))]
-            output_shape = ["?" for _ in range(len(input_.shape))]
+            input_shape = ["?" for _ in input_shape]
+            skip_shape = ["?" for _ in skip_shape]
+            gamma_shape = ["?" for _ in gamma_shape]
+            beta_shape = ["?" for _ in beta_shape]
+            bias_shape = ["?" for _ in bias_shape]
+            output_shape = ["?" for _ in output_shape]
 
         graph = helper.make_graph(
             [node],
@@ -2554,43 +3061,39 @@ def test_skiplayernormalization(dynamic):
         )
 
         model = helper.make_model(graph, producer_name="skiplayernormalization_test")
-        check_correctness(
-            model,
-            inputs={"input": input_, "skip": skip, "gamma": gamma, "beta": beta, "bias": bias},
-        )
+        check_correctness(model, rtol=1e-4, atol=1e-4)
 
     hidden_size = 384
     batch_size = 4
     sequence_length = 4
 
-    dtype = "float32"
-    input_array = np.random.random((batch_size, sequence_length, hidden_size)).astype(dtype)
-    skip = np.random.random((batch_size, sequence_length, hidden_size)).astype(dtype)
-    gamma = np.random.uniform(0.5, 0.7, hidden_size).astype(dtype)
-    beta = np.random.randn(hidden_size).astype(dtype) * 0.1
-    bias = np.random.randn(hidden_size).astype(dtype)
-
-    verify_skiplayernormalization(input_array, skip, gamma, beta, bias)
+    verify_skiplayernormalization(
+        (batch_size, sequence_length, hidden_size),
+        (batch_size, sequence_length, hidden_size),
+        (hidden_size,),
+        (hidden_size,),
+        (hidden_size,),
+    )
 
 
 def test_embedlayernormalization():
     def verify_embedlayernormalization(
-        input_ids,
-        segment_ids,
-        word_embedding,
-        position_embedding,
-        segment_embedding,
-        gamma,
-        beta,
+        input_ids_shape,
+        has_segment_ids,
+        word_embedding_shape,
+        position_embedding_shape,
+        has_segment_embedding,
+        gamma_shape,
+        beta_shape,
     ):
         node = onnx.helper.make_node(
             "EmbedLayerNormalization",
             inputs=[
                 "input_ids",
-                "" if segment_ids is None else "segment_ids",
+                "segment_ids" if has_segment_ids else "",
                 "word_embedding",
                 "position_embedding",
-                "" if segment_embedding is None else "segment_embedding",
+                "segment_embedding" if has_segment_embedding else "",
                 "gamma",
                 "beta",
             ],
@@ -2600,28 +3103,28 @@ def test_embedlayernormalization():
 
         node.attribute.append(onnx.helper.make_attribute("epsilon", 1e-4))
 
-        segment_ids_shape = [] if segment_ids is None else segment_ids.shape
-        segment_embedding_shape = [] if segment_embedding is None else segment_embedding.shape
+        segment_ids_shape = input_ids_shape if has_segment_ids else []
+        segment_embedding_shape = word_embedding_shape if has_segment_embedding else []
 
         graph = helper.make_graph(
             [node],
             "embedlayernormalization_test",
             inputs=[
                 helper.make_tensor_value_info(
-                    "input_ids", TensorProto.INT32, list(input_ids.shape)
+                    "input_ids", TensorProto.INT32, list(input_ids_shape)
                 ),
                 helper.make_tensor_value_info("segment_ids", TensorProto.INT32, segment_ids_shape),
                 helper.make_tensor_value_info(
-                    "word_embedding", TensorProto.FLOAT, list(word_embedding.shape)
+                    "word_embedding", TensorProto.FLOAT, list(word_embedding_shape)
                 ),
                 helper.make_tensor_value_info(
-                    "position_embedding", TensorProto.FLOAT, list(position_embedding.shape)
+                    "position_embedding", TensorProto.FLOAT, list(position_embedding_shape)
                 ),
                 helper.make_tensor_value_info(
                     "segment_embedding", TensorProto.FLOAT, segment_embedding_shape
                 ),
-                helper.make_tensor_value_info("gamma", TensorProto.FLOAT, list(gamma.shape)),
-                helper.make_tensor_value_info("beta", TensorProto.FLOAT, list(beta.shape)),
+                helper.make_tensor_value_info("gamma", TensorProto.FLOAT, list(gamma_shape)),
+                helper.make_tensor_value_info("beta", TensorProto.FLOAT, list(beta_shape)),
             ],
             outputs=[
                 helper.make_tensor_value_info(
@@ -2632,62 +3135,43 @@ def test_embedlayernormalization():
         )
 
         model = helper.make_model(graph, producer_name="embedlayernormalization_test")
-
-        inputs = {
-            "input_ids": input_ids,
-            "segment_ids": segment_ids,
-            "word_embedding": word_embedding,
-            "position_embedding": position_embedding,
-            "segment_embedding": segment_embedding,
-            "gamma": gamma,
-            "beta": beta,
-        }
-        check_correctness(model, inputs=inputs)
-
-        # TODO(@anwang2009): onnxruntime v1.9.0 requires empty list for optional argument,
-        # but v1.10.0+ requires None instead.
-        # verify_with_ort_with_inputs(
-        #     model,
-        #     [
-        #         input_ids,
-        #         np.empty(0, dtype="int32") if segment_ids is None else segment_ids,
-        #         word_embedding,
-        #         position_embedding,
-        #         np.empty(0, dtype="float32") if segment_embedding is None else segment_embedding,
-        #         gamma,
-        #         beta,
-        #     ],
-        #     [
-        #         (batch_size, sequence_length, hidden_size),
-        #         batch_size,
-        #     ],
-        #     target=target,
-        #     dev=dev,
-        #     rtol=1e-4,
-        #     atol=1e-4,
-        # )
+        input_ids = (
+            np.arange(np.prod(input_ids_shape), dtype="int32").reshape(input_ids_shape)
+            % word_embedding_shape[0]
+        )
+        inputs = {"input_ids": input_ids}
+        if has_segment_ids:
+            segment_vocab_size = segment_embedding_shape[0] if segment_embedding_shape else 1
+            inputs["segment_ids"] = (
+                np.arange(np.prod(input_ids_shape), dtype="int32").reshape(input_ids_shape)
+                % segment_vocab_size
+            )
+        check_correctness(model, inputs=inputs, rtol=1e-4, atol=1e-4)
 
     hidden_size = 384
     batch_size = 4
     sequence_length = 3
     vocab_size = 5
 
-    input_ids = np.full((batch_size, sequence_length), 3).astype("int32")
-    segment_ids = np.zeros((batch_size, sequence_length)).astype("int32")
-    word_embedding = np.full((vocab_size, hidden_size), 1).astype("float32")
-    position_embedding = np.full((sequence_length, hidden_size), 2).astype("float32")
-    segment_embedding = np.full((vocab_size, hidden_size), 3).astype("float32")
-
-    gamma = np.random.uniform(0.5, 0.7, hidden_size).astype("float32")
-    beta = np.random.randn(hidden_size).astype("float32") * 0.1
-
     verify_embedlayernormalization(
-        input_ids, segment_ids, word_embedding, position_embedding, segment_embedding, gamma, beta
+        (batch_size, sequence_length),
+        True,
+        (vocab_size, hidden_size),
+        (sequence_length, hidden_size),
+        True,
+        (hidden_size,),
+        (hidden_size,),
     )
 
     # Test with undefined segment embedding
     verify_embedlayernormalization(
-        input_ids, None, word_embedding, position_embedding, None, gamma, beta
+        (batch_size, sequence_length),
+        False,
+        (vocab_size, hidden_size),
+        (sequence_length, hidden_size),
+        False,
+        (hidden_size,),
+        (hidden_size,),
     )
 
 
@@ -2715,7 +3199,7 @@ def test_local_response_norm():
     )
 
     model = helper.make_model(graph, producer_name="local_response_norm_test")
-    check_correctness(model)
+    check_correctness(model, rtol=1e-4, atol=1e-4)
 
 
 def create_reduce_test_parameters_axes_attr():
@@ -2770,9 +3254,7 @@ def test_all_reduce_funcs_axes_attr(func, dynamic, opset):
         )
 
         model = helper.make_model(graph, producer_name="reduce_test")
-
         inputs_dict = {"x": data}
-        # Reduction ops accumulate arithmetic errors, so we use a higher tolerance.
         check_correctness(model, inputs_dict, opset=opset, rtol=1e-4, atol=1e-4)
 
     for keepdims in [True, False]:
@@ -2819,7 +3301,9 @@ def create_reduce_test_parameters_axes_input():
 
 @pytest.mark.parametrize("func, dynamic, opset", create_reduce_test_parameters_axes_input())
 def test_all_reduce_funcs_axes_input(func, dynamic, opset):
-    def verify_reduce_func(func, data, axes, keepdims, noop_with_empty_axes=False):
+    def verify_reduce_func(
+        func, data, axes, keepdims, noop_with_empty_axes=False, check_numeric=True
+    ):
         inshape = data.shape
 
         inputs = ["x"]
@@ -2872,9 +3356,12 @@ def test_all_reduce_funcs_axes_input(func, dynamic, opset):
         )
         model = helper.make_model(graph, producer_name="reduce18_test")
 
-        # Run TVM importer vs onnxruntime
-        inputs_dict = {"x": data}
-        check_correctness(model, inputs_dict, opset=opset, rtol=1e-4, atol=1e-4)
+        if check_numeric:
+            check_correctness(model, {"x": data}, opset=opset, rtol=1e-4, atol=1e-4)
+        else:
+            tvm_model = check_import(model, opset=opset)
+            if not (noop_with_empty_axes and not axes):
+                assert_has_relax_ops(tvm_model["main"], ONNX_RELAX_OPS.get(func))
 
     # Verify
     for keepdims in [True, False]:
@@ -2907,13 +3394,14 @@ def test_all_reduce_funcs_axes_input(func, dynamic, opset):
 
         # no `axes` input && `noop_with_empty_axes` = 1 -> return the input unchanged.
         # (onnxruntime bug) Runtime error on the onnxruntime part
-        # verify_reduce_func(
-        #     func,
-        #     np.random.randn(4, 3).astype(np.float32),
-        #     axes=None,
-        #     keepdims=keepdims,
-        #     noop_with_empty_axes=True,
-        # )
+        verify_reduce_func(
+            func,
+            np.random.randn(4, 3).astype(np.float32),
+            axes=None,
+            keepdims=keepdims,
+            noop_with_empty_axes=True,
+            check_numeric=False,
+        )
 
         # `axes` provided -> reduce over specified axes.
         verify_reduce_func(
@@ -2949,12 +3437,16 @@ def test_arg_min_max(in_dtype, axis, keepdims):
         graph = helper.make_graph(
             [node],
             "argreduce_test",
-            inputs=[helper.make_tensor_value_info("a_np1", TensorProto.INT32, list(a_np1.shape))],
+            inputs=[
+                helper.make_tensor_value_info(
+                    "a_np1", helper.np_dtype_to_tensor_dtype(np.dtype(in_dtype)), list(a_np1.shape)
+                )
+            ],
             outputs=[helper.make_tensor_value_info("out", TensorProto.INT64, list(out_shape))],
         )
 
         model = helper.make_model(graph, producer_name="arg_min_max_test")
-        check_correctness(model)
+        check_correctness(model, inputs={"a_np1": a_np1})
 
     verify_arg_min_max([3, 4, 4], in_dtype, "ArgMax", axis, keepdims)
     verify_arg_min_max([3, 4, 4], in_dtype, "ArgMin", axis, keepdims)
@@ -3073,8 +3565,6 @@ def test_expand_incompatible_broadcasting():
     """
 
     def _test_expand_error_case(name, data_shape, target_shape_vals):
-        data = np.random.uniform(size=data_shape).astype(np.float32)
-
         shape_array = np.array(target_shape_vals, dtype=np.int64)
         shape_node = onnx.helper.make_node(
             "Constant",
@@ -3093,7 +3583,7 @@ def test_expand_incompatible_broadcasting():
         graph = helper.make_graph(
             [shape_node, expand_node],
             "expand_error_test",
-            inputs=[helper.make_tensor_value_info("in", TensorProto.FLOAT, list(data.shape))],
+            inputs=[helper.make_tensor_value_info("in", TensorProto.FLOAT, list(data_shape))],
             outputs=[helper.make_tensor_value_info("out", TensorProto.FLOAT, target_shape_vals)],
         )
 
@@ -3132,7 +3622,6 @@ def test_expand_incompatible_broadcasting():
         data_shape = (1, 25)
         target_shape_vals = [2, 25]  # Valid: input (1, 25) can broadcast to (2, 25)
 
-        data = np.random.uniform(size=data_shape).astype(np.float32)
         shape_array = np.array(target_shape_vals, dtype=np.int64)
 
         shape_node = onnx.helper.make_node(
@@ -3152,14 +3641,14 @@ def test_expand_incompatible_broadcasting():
         graph = helper.make_graph(
             [shape_node, expand_node],
             "expand_valid_test",
-            inputs=[helper.make_tensor_value_info("in", TensorProto.FLOAT, list(data.shape))],
+            inputs=[helper.make_tensor_value_info("in", TensorProto.FLOAT, list(data_shape))],
             outputs=[helper.make_tensor_value_info("out", TensorProto.FLOAT, target_shape_vals)],
         )
 
         model = helper.make_model(graph, producer_name="expand_valid_test_case")
 
         try:
-            tvm_model = from_onnx(model, keep_params_in_input=True)
+            from_onnx(model, keep_params_in_input=True)
         except Exception as e:
             pytest.fail(f"Valid expand case should not fail, but got error: {e}")
 
@@ -3201,8 +3690,8 @@ def test_constantofshape():
         )
 
         model = helper.make_model(graph, producer_name="fill_test")
-        input_np = np.array(input_dim).astype("int64")
-        check_correctness(model, inputs={"input": input_np})
+        tvm_model = check_import(model)
+        assert_tensor_sinfo(tvm_model["main"].ret_ty, input_dim, dtype)
 
     verify_constantofshape((2, 3, 4, 5), 10, "float32")
     verify_constantofshape((3, 3), 0, "int32")
@@ -3224,11 +3713,9 @@ def test_constantofshape_default_value():
     model = helper.make_model(graph, producer_name="constantofshape_default_value_test")
 
     tvm_model = from_onnx(model)
-    tvm_model = relax.transform.LegalizeOps()(tvm_model)
-    exe = tvm.compile(tvm_model, target="llvm")
-    vm = relax.VirtualMachine(exe, device=tvm.cpu())
-    out = vm["main"]().numpy()
-    np.testing.assert_array_equal(out, np.zeros((2, 3), dtype="float32"))
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, [2, 3], "float32")
+    assert "relax.broadcast_to" in collect_relax_call_ops(tvm_model["main"])
+    assert 0.0 in collect_scalar_constants(tvm_model["main"])
 
 
 def test_slice():
@@ -3477,14 +3964,13 @@ def test_slice_dynamic_shape():
 @pytest.mark.parametrize("dynamic", [False])
 def test_attention(dynamic):
     def verify_attention(
-        input_,
-        weight,
-        bias,
-        mask_index,
+        input_shape,
+        weight_shape,
+        bias_shape,
+        mask_shape,
         num_heads,
-        mask_filter_value,
         qkv_hidden_sizes,
-        relative_position_bias,
+        relative_position_bias_shape,
     ):
         node = onnx.helper.make_node(
             "Attention",
@@ -3492,23 +3978,27 @@ def test_attention(dynamic):
             outputs=["output"],
             domain="com.microsoft",
             num_heads=num_heads,
-            # TODO(jwfromm) OnnxRT doesnt work with this attribute, figure out why not.
+            # TODO(jwfromm): Enable this attribute after importer support is clarified.
             # mask_filter_value=mask_filter_value,
             qkv_hidden_sizes=qkv_hidden_sizes,
         )
 
-        input_shape = list(input_.shape)
-        weight_shape = list(weight.shape)
-        bias_shape = list(bias.shape)
-        mask_shape = list(mask_index.shape)
-        relative_position_bias_shape = list(relative_position_bias.shape)
-        output_shape = list(input_.shape)
+        input_shape = list(input_shape)
+        weight_shape = list(weight_shape)
+        bias_shape = list(bias_shape)
+        mask_shape = list(mask_shape)
+        relative_position_bias_shape = list(relative_position_bias_shape)
+        output_shape = [
+            input_shape[0],
+            input_shape[1],
+            qkv_hidden_sizes[2] if qkv_hidden_sizes is not None else input_shape[2],
+        ]
         if dynamic:
-            input_shape = ["?" for _ in range(len(input_.shape))]
-            weight_shape = ["?" for _ in range(len(weight.shape))]
-            bias_shape = ["?" for _ in range(len(bias.shape))]
-            mask_shape = ["?" for _ in range(len(mask_index.shape))]
-            output_shape = ["?" for _ in range(len(input_.shape))]
+            input_shape = ["?" for _ in input_shape]
+            weight_shape = ["?" for _ in weight_shape]
+            bias_shape = ["?" for _ in bias_shape]
+            mask_shape = ["?" for _ in mask_shape]
+            output_shape = ["?" for _ in output_shape]
 
         graph = helper.make_graph(
             [node],
@@ -3528,56 +4018,31 @@ def test_attention(dynamic):
         )
 
         model = helper.make_model(graph, producer_name="attention_test")
-
-        check_correctness(
-            model,
-            inputs={
-                "input": input_,
-                "weight": weight,
-                "bias": bias,
-                "mask_index": mask_index,
-                "relative_position_bias": relative_position_bias,
-            },
-            # Maximum observed delta from 500 iterations was 2e-4.
-            atol=1e-3,
-        )
-        # "present" output should be nullptr when the "past" input isn't included,
-        # but ort requires an output shape to be specified?
-        # verify_with_ort_with_inputs(
-        #     model,
-        #     [input_, weight, bias, mask_index],
-        #     [input_.shape, present_output_shape],
-        #     target=target,
-        #     dev=dev,
-        #     rtol=1e-4,
-        #     atol=1e-4,
-        # )
+        inputs = {
+            "input": rg.standard_normal(size=input_shape).astype("float32"),
+            "weight": rg.standard_normal(size=weight_shape).astype("float32"),
+            "bias": rg.standard_normal(size=bias_shape).astype("float32"),
+            "mask_index": np.ones(mask_shape, dtype="int32"),
+            "relative_position_bias": rg.standard_normal(size=relative_position_bias_shape).astype(
+                "float32"
+            ),
+        }
+        check_correctness(model, inputs=inputs, rtol=1e-3, atol=1e-3)
 
     input_hidden_size = 128
     batch_size = 4
     sequence_length = 4
     num_heads = 12
     qkv_hidden_sizes = [192, 192, 96]
-    mask_filter_value = -512.0
-
-    dtype = "float32"
-    input_array = np.random.random((batch_size, sequence_length, input_hidden_size)).astype(dtype)
-    weight = np.random.normal(size=(input_hidden_size, sum(qkv_hidden_sizes))).astype(dtype) * 0.1
-    bias = np.random.randn(sum(qkv_hidden_sizes)).astype(dtype)
-    mask_index = np.random.randint(2, size=(batch_size, sequence_length)).astype("int32")
-    relative_position_bias = np.random.randn(
-        batch_size, num_heads, sequence_length, sequence_length
-    ).astype(dtype)
 
     verify_attention(
-        input_array,
-        weight,
-        bias,
-        mask_index,
+        (batch_size, sequence_length, input_hidden_size),
+        (input_hidden_size, sum(qkv_hidden_sizes)),
+        (sum(qkv_hidden_sizes),),
+        (batch_size, sequence_length),
         num_heads,
-        mask_filter_value,
         qkv_hidden_sizes,
-        relative_position_bias,
+        (batch_size, num_heads, sequence_length, sequence_length),
     )
 
 
@@ -3587,28 +4052,23 @@ def test_pad(dynamic):
         pytest.skip("Dynamic pad not supported")
 
     def verify_pad(input_shape, pads, mode="constant", value=0.0):
-        indata = np.random.normal(size=input_shape).astype(np.float32)
-        #  numpy expect result
         len_dim = len(pads) // 2
-        np_pads = [(pads[i], pads[i + len_dim]) for i in range(len_dim)]
+        output_shape = [
+            input_shape[i] + pads[i] + pads[i + len_dim] for i in range(len(input_shape))
+        ]
         pads = np.array(pads)
-        #  onnx graph
         if mode in ["edge", "reflect"]:
-            outdata = np.pad(indata, pad_width=np_pads, mode=mode)
             node = helper.make_node("Pad", inputs=["input", "pads"], outputs=["output"], mode=mode)
             graph = helper.make_graph(
                 [node],
                 "pad_test",
                 inputs=[
-                    helper.make_tensor_value_info("input", TensorProto.FLOAT, list(indata.shape))
+                    helper.make_tensor_value_info("input", TensorProto.FLOAT, list(input_shape))
                 ],
                 initializer=[helper.make_tensor("pads", TensorProto.INT64, (len(pads),), pads)],
-                outputs=[
-                    helper.make_tensor_value_info("output", TensorProto.FLOAT, list(outdata.shape))
-                ],
+                outputs=[helper.make_tensor_value_info("output", TensorProto.FLOAT, output_shape)],
             )
         else:
-            outdata = np.pad(indata, pad_width=np_pads, mode="constant", constant_values=value)
             node = helper.make_node(
                 "Pad",
                 inputs=["input", "pads", "constant_value"],
@@ -3619,18 +4079,17 @@ def test_pad(dynamic):
                 [node],
                 "pad_test",
                 inputs=[
-                    helper.make_tensor_value_info("input", TensorProto.FLOAT, list(indata.shape))
+                    helper.make_tensor_value_info("input", TensorProto.FLOAT, list(input_shape))
                 ],
                 initializer=[
                     helper.make_tensor("pads", TensorProto.INT64, (len(pads),), pads),
                     helper.make_tensor("constant_value", TensorProto.FLOAT, (1,), [value]),
                 ],
-                outputs=[
-                    helper.make_tensor_value_info("output", TensorProto.FLOAT, list(outdata.shape))
-                ],
+                outputs=[helper.make_tensor_value_info("output", TensorProto.FLOAT, output_shape)],
             )
         model = helper.make_model(graph, producer_name="pad_test")
-        check_correctness(model)
+        tvm_model = check_import(model)
+        assert_has_relax_ops(tvm_model["main"], ONNX_RELAX_OPS["Pad"])
 
     verify_pad((2, 2), [0, 1, 0, 0], "constant", 0.0)
     verify_pad((2, 3), [1, 0, 0, 1], "constant", 0.0)
@@ -3646,14 +4105,12 @@ def test_pad_v2(dynamic):
         pytest.skip("Dynamic pad not supported")
 
     def verify_pad(input_shape, pads, mode="constant", value=0.0):
-        indata = np.random.normal(size=input_shape).astype(np.float32)
-        #  numpy expect result
         len_dim = len(pads) // 2
-        np_pads = [(pads[i], pads[i + len_dim]) for i in range(len_dim)]
+        output_shape = [
+            input_shape[i] + pads[i] + pads[i + len_dim] for i in range(len(input_shape))
+        ]
         pads = np.array(pads)
-        #  onnx graph
         if mode in ["edge", "reflect"]:
-            outdata = np.pad(indata, pad_width=np_pads, mode=mode)
             node = helper.make_node(
                 "Pad", inputs=["input"], outputs=["output"], mode=mode, pads=pads
             )
@@ -3661,14 +4118,11 @@ def test_pad_v2(dynamic):
                 [node],
                 "pad_test",
                 inputs=[
-                    helper.make_tensor_value_info("input", TensorProto.FLOAT, list(indata.shape))
+                    helper.make_tensor_value_info("input", TensorProto.FLOAT, list(input_shape))
                 ],
-                outputs=[
-                    helper.make_tensor_value_info("output", TensorProto.FLOAT, list(outdata.shape))
-                ],
+                outputs=[helper.make_tensor_value_info("output", TensorProto.FLOAT, output_shape)],
             )
         else:
-            outdata = np.pad(indata, pad_width=np_pads, mode="constant", constant_values=value)
             node = helper.make_node(
                 "Pad",
                 inputs=["input"],
@@ -3681,14 +4135,13 @@ def test_pad_v2(dynamic):
                 [node],
                 "pad_test",
                 inputs=[
-                    helper.make_tensor_value_info("input", TensorProto.FLOAT, list(indata.shape))
+                    helper.make_tensor_value_info("input", TensorProto.FLOAT, list(input_shape))
                 ],
-                outputs=[
-                    helper.make_tensor_value_info("output", TensorProto.FLOAT, list(outdata.shape))
-                ],
+                outputs=[helper.make_tensor_value_info("output", TensorProto.FLOAT, output_shape)],
             )
         model = helper.make_model(graph, producer_name="pad_test")
-        check_correctness(model=model, opset=10)
+        tvm_model = check_import(model=model, opset=10)
+        assert_has_relax_ops(tvm_model["main"], ONNX_RELAX_OPS["Pad"])
 
     verify_pad((2, 2), [0, 1, 0, 0], "constant", 0.0)
     verify_pad((2, 3), [1, 0, 0, 1], "constant", 0.0)
@@ -3702,7 +4155,6 @@ def test_pad_v2(dynamic):
 @pytest.mark.parametrize("dynamic", [True, False])
 def test_split(fp_arith, dynamic):
     def verify_split(indata_shape, outdata_shapes, split, axis=0, pass_split=True, opset=11):
-        indata = np.random.normal(size=indata_shape).astype(fp_arith)
         input_names = ["input"]
         initializer = []
 
@@ -3711,14 +4163,14 @@ def test_split(fp_arith, dynamic):
         else:
             split_index = range(len(outdata_shapes))
 
-        indata_shape = list(indata.shape)
+        indata_shape = [indata_shape] if isinstance(indata_shape, int) else list(indata_shape)
         if dynamic:
-            indata_shape = ["?" for _ in range(len(indata.shape))]
+            indata_shape = ["?" for _ in indata_shape]
             outdata_shapes = [["?" for _ in range(len(o))] for o in outdata_shapes]
 
         inputs = [
             helper.make_tensor_value_info(
-                "input", helper.np_dtype_to_tensor_dtype(indata.dtype), indata_shape
+                "input", helper.np_dtype_to_tensor_dtype(np.dtype(fp_arith)), indata_shape
             )
         ]
 
@@ -3752,14 +4204,18 @@ def test_split(fp_arith, dynamic):
             outputs=[
                 helper.make_tensor_value_info(
                     f"output_{i}",
-                    helper.np_dtype_to_tensor_dtype(indata.dtype),
+                    helper.np_dtype_to_tensor_dtype(np.dtype(fp_arith)),
                     list(outdata_shapes[i]),
                 )
                 for i in range(len(split_index))
             ],
         )
         model = helper.make_model(graph, producer_name="split_test")
-        check_correctness(model, inputs={"input": indata}, opset=opset)
+        if dynamic:
+            tvm_model = check_import(model, opset=opset)
+            assert_has_relax_ops(tvm_model["main"], ONNX_RELAX_OPS["Split"])
+        else:
+            check_correctness(model, opset=opset)
 
     # 1D
     verify_split(6, [[2], [2], [2]], [2, 2, 2])
@@ -3795,7 +4251,6 @@ def test_tile(dynamic):
         node = helper.make_node("Tile", inputs=["input", "repeats"], outputs=["out"])
 
         if dynamic:
-            indata = np.random.normal(size=in_shape).astype(np.float32)
             in_shape = ["?" for _ in range(len(in_shape))]
             out_shape = ["?" for _ in range(len(out_shape))]
 
@@ -3813,15 +4268,13 @@ def test_tile(dynamic):
 
         model = helper.make_model(graph, producer_name="tile_test")
 
-        if dynamic:
-            check_correctness(model, {"input": indata})
-        else:
-            check_correctness(model)
+        tvm_model = check_import(model)
+        assert_has_relax_ops(tvm_model["main"], ONNX_RELAX_OPS["Tile"])
 
-    x = np.random.rand(2, 3, 4, 5).astype(np.float32)
-    repeats = np.random.randint(low=1, high=10, size=(np.ndim(x),)).astype(np.int64)
-    z_array = np.tile(x, repeats)
-    verify_tile(x.shape, repeats, z_array.shape)
+    in_shape = (2, 3, 4, 5)
+    repeats = np.array([2, 3, 1, 4], dtype=np.int64)
+    out_shape = tuple(dim * int(repeat) for dim, repeat in zip(in_shape, repeats))
+    verify_tile(in_shape, repeats, out_shape)
 
 
 @pytest.mark.parametrize("dynamic_input", [True, False])
@@ -3834,11 +4287,10 @@ def test_tile(dynamic):
     ],
 )
 def test_tile_dynamic_repeats(dynamic_input, in_shape, repeats):
-    x = np.random.rand(*in_shape).astype(np.float32)
-    out_shape = np.tile(x, repeats).shape
+    out_shape = tuple(dim * int(repeat) for dim, repeat in zip(in_shape, repeats))
 
-    input_shape = ["?" for _ in in_shape] if dynamic_input else list(x.shape)
-    output_shape = ["?" for _ in out_shape] if dynamic_input else list(out_shape)
+    input_shape = ["?" for _ in in_shape] if dynamic_input else list(in_shape)
+    output_shape = ["?" for _ in out_shape]
 
     node = helper.make_node("Tile", inputs=["input", "repeats"], outputs=["out"])
     graph = helper.make_graph(
@@ -3852,7 +4304,8 @@ def test_tile_dynamic_repeats(dynamic_input, in_shape, repeats):
     )
     model = helper.make_model(graph, producer_name="tile_dynamic_repeats_test")
 
-    check_correctness(model, inputs={"input": x, "repeats": repeats}, opset=13)
+    tvm_model = check_import(model, opset=13)
+    assert_has_relax_ops(tvm_model["main"], ONNX_RELAX_OPS["Tile"])
 
 
 def _generate_roi_cases():
@@ -3952,7 +4405,8 @@ def test_resize_dynamic_roi_tf_crop_and_resize():
         ],
     )
     model = helper.make_model(graph, producer_name="resize_dynamic_roi")
-    check_correctness(model, atol=1e-5)
+    roi_np = np.array([0, 0, 0, 0, 1, 1, 1, 1], dtype=np.float32)
+    check_correctness(model, atol=1e-5, inputs={"roi": roi_np})
 
 
 def test_resize_dynamic_roi_3d_tf_crop_and_resize():
@@ -3979,8 +4433,8 @@ def test_resize_dynamic_roi_3d_tf_crop_and_resize():
         ],
     )
     model = helper.make_model(graph, producer_name="resize_dynamic_roi_3d")
-    # Use a valid full-tensor ROI so ORT and TOPI agree on tf_crop_and_resize (random ROI
-    # can hit extrapolation / numerical differences across runtimes).
+    # Use a valid full-tensor ROI so importer coverage is independent of
+    # extrapolation differences in backend implementations.
     x_np = rg.standard_normal((1, 1, 3, 4, 5)).astype(np.float32)
     roi_np = np.array([0, 0, 0, 0, 0, 1, 1, 1, 1, 1], dtype=np.float32)
     check_correctness(model, opset=18, atol=1e-5, inputs={"X": x_np, "roi": roi_np})
@@ -4068,7 +4522,8 @@ def test_einsum():
     )
 
     model = helper.make_model(graph, producer_name="einsum_test")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_has_relax_ops(tvm_model["main"], "relax.call_tir")
 
 
 def test_range():
@@ -4093,7 +4548,9 @@ def test_range():
     )
 
     model = helper.make_model(graph, producer_name="range_test")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, [2], "int64")
+    assert collect_relax_call_ops(tvm_model["main"]) == []
 
 
 def test_batch_norm():
@@ -4114,7 +4571,7 @@ def test_batch_norm():
     )
 
     model = helper.make_model(graph, producer_name="batch_norm_test")
-    check_correctness(model, opset=15)
+    check_correctness(model, opset=15, rtol=1e-5, atol=1e-5)
 
 
 def test_batch_norm_defaults_to_inference_mode():
@@ -4247,11 +4704,10 @@ def test_maxunpool(kernel_shape, pads, strides):
         outputs=[helper.make_tensor_value_info("y", TensorProto.FLOAT, None)],
     )
 
-    max_random = int(np.prod(np.array(kernel_shape)))
-    indices = np.random.randint(0, max_random, size=input_shape)
-
     model = helper.make_model(graph, producer_name="maxunpool_test")
-    check_correctness(model, inputs={"I": indices})
+    check_correctness(
+        model, inputs={"I": np.zeros(input_shape, dtype="int64")}, rtol=1e-4, atol=1e-4
+    )
 
 
 def test_dropout():
@@ -4308,10 +4764,10 @@ def test_onehot():
     )
 
     model = helper.make_model(graph, producer_name="one_hot_test")
-    values = {
-        "indices": np.array([[1, 9], [2, 4]], dtype="int64"),
-    }
-    check_correctness(model, inputs=values)
+    check_correctness(
+        model,
+        inputs={"indices": np.array([[0, 3], [2, 1]], dtype="int64")},
+    )
 
 
 @pytest.mark.parametrize("axis", [None, 0, 1, -1])
@@ -4433,7 +4889,9 @@ def test_sequence_construct():
         outputs=[helper.make_tensor_sequence_value_info("sequence", TensorProto.FLOAT, [32, 32])],
     )
     model = helper.make_model(graph, producer_name="test_sequence_construct")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_tuple_tensor_sinfo(tvm_model["main"].ret_ty, [([32, 32], "float32")] * 2)
+    assert collect_relax_call_ops(tvm_model["main"]) == []
 
 
 def test_sequence_empty():
@@ -4445,7 +4903,9 @@ def test_sequence_empty():
         outputs=[helper.make_tensor_sequence_value_info("sequence", TensorProto.FLOAT, [])],
     )
     model = helper.make_model(graph, producer_name="test_sequence_empty")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_tuple_tensor_sinfo(tvm_model["main"].ret_ty, [])
+    assert collect_relax_call_ops(tvm_model["main"]) == []
 
 
 @pytest.mark.parametrize("explicit_position", [True, False])
@@ -4461,7 +4921,9 @@ def test_sequence_erase(explicit_position: bool):
         outputs=[helper.make_tensor_sequence_value_info("output", TensorProto.FLOAT, [32, 32])],
     )
     model = helper.make_model(graph, producer_name="test_sequence_erase")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_tuple_tensor_sinfo(tvm_model["main"].ret_ty, [([32, 32], "float32")] * 3)
+    assert collect_relax_call_ops(tvm_model["main"]) == []
 
 
 @pytest.mark.parametrize("explicit_position", [True, False])
@@ -4477,7 +4939,9 @@ def test_sequence_insert(explicit_position: bool):
         outputs=[helper.make_tensor_sequence_value_info("output", TensorProto.FLOAT, [32, 32])],
     )
     model = helper.make_model(graph, producer_name="test_sequence_insert")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_tuple_tensor_sinfo(tvm_model["main"].ret_ty, [([32, 32], "float32")] * 5)
+    assert collect_relax_call_ops(tvm_model["main"]) == []
 
 
 @pytest.mark.parametrize(
@@ -4502,7 +4966,11 @@ def test_concat_from_sequence(new_axis: int, axis: int, expected_shape: list[int
         outputs=[helper.make_tensor_value_info("output", TensorProto.FLOAT, expected_shape)],
     )
     model = helper.make_model(graph, producer_name="test_concat_from_sequence")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, expected_shape, "float32")
+    assert_has_relax_ops(tvm_model["main"], "relax.concat")
+    if new_axis:
+        assert_has_relax_ops(tvm_model["main"], "relax.expand_dims")
 
 
 def test_concat_from_sequence_new_axis_three_tensors():
@@ -4518,7 +4986,9 @@ def test_concat_from_sequence_new_axis_three_tensors():
         outputs=[helper.make_tensor_value_info("output", TensorProto.FLOAT, [3, 16, 8])],
     )
     model = helper.make_model(graph, producer_name="test_concat_from_sequence_new_axis_three")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, [3, 16, 8], "float32")
+    assert_has_relax_ops(tvm_model["main"], ["relax.expand_dims", "relax.concat"])
 
 
 def test_concat_from_sequence_invalid_new_axis():
@@ -4558,7 +5028,14 @@ def test_split_to_sequence(split):
         outputs=[helper.make_tensor_sequence_value_info("output", TensorProto.FLOAT, [32, 32])],
     )
     model = helper.make_model(graph, producer_name="test_split_to_sequence")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    expected_fields = (
+        [([2, 32], "float32")] * 32
+        if isinstance(split, int)
+        else [([16, 32], "float32"), ([48, 32], "float32")]
+    )
+    assert_tuple_tensor_sinfo(tvm_model["main"].ret_ty, expected_fields)
+    assert_has_relax_ops(tvm_model["main"], "relax.split")
 
 
 def test_sequence_at():
@@ -4573,7 +5050,9 @@ def test_sequence_at():
         outputs=[helper.make_tensor_value_info("output", TensorProto.FLOAT, [32, 32])],
     )
     model = helper.make_model(graph, producer_name="test_sequence_at")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, [32, 32], "float32")
+    assert collect_relax_call_ops(tvm_model["main"]) == []
 
 
 def test_optional_get_element_tensor():
@@ -4588,7 +5067,9 @@ def test_optional_get_element_tensor():
         value_info=[make_optional_tensor_value_info("optional", TensorProto.FLOAT, x_shape)],
     )
     model = helper.make_model(graph, producer_name="test_optional_get_element_tensor")
-    check_correctness(model, opset=18, ir_version=11)
+    tvm_model = check_import(model, opset=18, ir_version=11)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, x_shape, "float32")
+    assert collect_relax_call_ops(tvm_model["main"]) == []
 
 
 def test_optional_has_element_tensor():
@@ -4603,7 +5084,9 @@ def test_optional_has_element_tensor():
         value_info=[make_optional_tensor_value_info("optional", TensorProto.FLOAT, x_shape)],
     )
     model = helper.make_model(graph, producer_name="test_optional_has_element_tensor")
-    check_correctness(model, opset=18, ir_version=11)
+    tvm_model = check_import(model, opset=18, ir_version=11)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, [], "bool")
+    assert True in collect_scalar_constants(tvm_model["main"])
 
 
 def test_optional_has_element_empty():
@@ -4620,7 +5103,9 @@ def test_optional_has_element_empty():
         value_info=[helper.make_value_info("optional", optional_type)],
     )
     model = helper.make_model(graph, producer_name="test_optional_has_element_empty")
-    check_correctness(model, opset=18, ir_version=11)
+    tvm_model = check_import(model, opset=18, ir_version=11)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, [], "bool")
+    assert False in collect_scalar_constants(tvm_model["main"])
 
 
 def test_optional_has_element_empty_ir():
@@ -4679,7 +5164,9 @@ def test_optional_get_element_sequence():
         value_info=[make_optional_sequence_value_info("optional", TensorProto.FLOAT, [32, 32])],
     )
     model = helper.make_model(graph, producer_name="test_optional_get_element_sequence")
-    check_correctness(model, opset=18, ir_version=11)
+    tvm_model = check_import(model, opset=18, ir_version=11)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, [32, 32], "float32")
+    assert collect_relax_call_ops(tvm_model["main"]) == []
 
 
 def test_optional_without_input_requires_type_attr():
@@ -4826,7 +5313,14 @@ def test_multi_inputs_with_same_symbolic_shape():
         outputs=[helper.make_tensor_value_info("output", TensorProto.FLOAT, ["batch", 2])],
     )
     model = helper.make_model(graph, producer_name="test_multi_symbolic_shape_input")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    ret_ty = tvm_model["main"].ret_ty
+    assert_tensor_sinfo(ret_ty, None, "float32")
+    shape_values = ret_ty.shape.values
+    assert len(shape_values) == 2
+    assert isinstance(shape_values[1], tvm.tirx.IntImm)
+    assert int(shape_values[1]) == 2
+    assert_has_relax_ops(tvm_model["main"], "relax.concat")
 
 
 def test_multi_ops_with_same_params():
@@ -4848,7 +5342,9 @@ def test_multi_ops_with_same_params():
         outputs=[helper.make_tensor_value_info("c", TensorProto.FLOAT, output_shape)],
     )
     model = helper.make_model(graph, producer_name="test_multi_ops_with_same_params")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, output_shape, "float32")
+    assert collect_relax_call_ops(tvm_model["main"]).count("relax.reshape") == 2
 
 
 def test_params_names_start_with_onnx():
@@ -4869,11 +5365,13 @@ def test_params_names_start_with_onnx():
         outputs=[helper.make_tensor_value_info("b", TensorProto.FLOAT, output_shape)],
     )
     model = helper.make_model(graph, producer_name="test_params_names_start_with_onnx")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, output_shape, "float32")
+    assert_has_relax_ops(tvm_model["main"], "relax.reshape")
 
 
 def test_shape_dim_string_expression():
-    def _verify(x_shape, example_shape):
+    def _verify(x_shape):
         identity_node = helper.make_node("Identity", ["x"], ["y"])
 
         graph = helper.make_graph(
@@ -4888,13 +5386,16 @@ def test_shape_dim_string_expression():
             graph, producer_name="test_var_shape_dim_containing_expressions_onnx"
         )
 
-        inputs = {"x": generate_random_value(example_shape, TensorProto.FLOAT)}
-        check_correctness(model, inputs)
+        tvm_model = check_import(model)
+        ret_ty = tvm_model["main"].ret_ty
+        assert_tensor_sinfo(ret_ty, None, "float32")
+        assert len(ret_ty.shape.values) == 3
+        assert collect_relax_call_ops(tvm_model["main"]) == []
 
-    _verify(["A", "B", "A + B"], [3, 9, 12])
-    _verify(["A", "B", "A - B"], [9, 3, 6])
-    _verify(["A", "B", "A * B"], [9, 3, 27])
-    _verify(["A", "B", "A // B"], [9, 3, 3])
+    _verify(["A", "B", "A + B"])
+    _verify(["A", "B", "A - B"])
+    _verify(["A", "B", "A * B"])
+    _verify(["A", "B", "A // B"])
 
 
 def test_shape_dim_string_expression_graph_add():
@@ -5069,6 +5570,47 @@ def test_shape_dim_string_expression_graph_div_2():
     tvm.ir.assert_structural_equal(tvm_model, Expected)
 
 
+def assert_nms_import(model):
+    tvm_model = check_import(model, opset=11)
+    call_ops = collect_relax_call_ops(tvm_model["main"])
+    assert "relax.vision.all_class_non_max_suppression" in call_ops
+    assert tvm_model["main"].ret_ty.dtype == "int64"
+    shape = get_static_tensor_shape(tvm_model["main"].ret_ty)
+    if shape is not None:
+        assert len(shape) == 2
+        assert shape[1] == 3
+    return tvm_model
+
+
+def check_nms_correctness(model, inputs):
+    onnxruntime = pytest.importorskip("onnxruntime")
+
+    assert_nms_import(model)
+    configure_model_format(model, ir_version=8, opset=11)
+    inputs = generate_random_inputs(model, inputs)
+
+    ort_session = onnxruntime.InferenceSession(
+        model.SerializeToString(), providers=["CPUExecutionProvider"]
+    )
+    ort_selected = ort_session.run([], inputs)[0]
+
+    tvm_output = run_in_tvm(model, inputs=inputs, opset=11)
+    tvm_selected = (
+        tvm_output[0].numpy() if isinstance(tvm_output, list | tuple) else tvm_output.numpy()
+    )
+
+    assert tvm_selected.dtype == ort_selected.dtype
+    assert tvm_selected.ndim == 2
+    assert tvm_selected.shape[1] == 3
+    assert tvm_selected.shape[0] >= ort_selected.shape[0]
+    if ort_selected.shape[0] > 0:
+        tvm.testing.assert_allclose(
+            tvm_selected[: ort_selected.shape[0]], ort_selected, rtol=1e-5, atol=1e-5
+        )
+
+    return tvm_selected, ort_selected
+
+
 def test_nms():
     """Test NonMaxSuppression operator conversion using our AllClassNMS implementation."""
     nms_node = helper.make_node(
@@ -5100,50 +5642,13 @@ def test_nms():
     model.ir_version = 8
     model.opset_import[0].version = 11
 
-    # Use deterministic random inputs for consistent testing
-    bg = np.random.MT19937(0)
-    rg = np.random.Generator(bg)
-    boxes = rg.standard_normal(size=boxes_shape).astype(np.float32)
-    scores = rg.standard_normal(size=scores_shape).astype(np.float32)
-    inputs = {"boxes": boxes, "scores": scores}
-
-    # Run ONNX Runtime
-    ort_session = onnxruntime.InferenceSession(
-        model.SerializeToString(), providers=["CPUExecutionProvider"]
-    )
-    ort_output = ort_session.run([], inputs)
-
-    # Run TVM
-    tvm_model = from_onnx(model, opset=11, keep_params_in_input=True)
-    tvm_model = relax.transform.DecomposeOpsForInference()(tvm_model)
-    tvm_model = relax.transform.LegalizeOps()(tvm_model)
-    tvm_model, params = relax.frontend.detach_params(tvm_model)
-
-    with tvm.transform.PassContext(opt_level=3):
-        ex = tvm.compile(tvm_model, target="llvm")
-        vm = relax.VirtualMachine(ex, tvm.cpu())
-
-    input_list = [
-        inputs[key.name_hint] for key in tvm_model["main"].params if key.name_hint in inputs
-    ]
-    if params:
-        input_list += params["main"]
-
-    vm.set_input("main", *input_list)
-    vm.invoke_stateful("main")
-    tvm_output = vm.get_outputs("main")
-
-    if isinstance(tvm_output, list | tuple):
-        tvm_selected = tvm_output[0].numpy()
-    else:
-        tvm_selected = tvm_output.numpy()
-    ort_selected = ort_output[0]
-
-    min_rows = min(tvm_selected.shape[0], ort_selected.shape[0])
-    if min_rows > 0:
-        tvm.testing.assert_allclose(
-            tvm_selected[:min_rows], ort_selected[:min_rows], rtol=1e-5, atol=1e-5
-        )
+    local_bg = np.random.MT19937(0)
+    local_rg = np.random.Generator(local_bg)
+    inputs = {
+        "boxes": local_rg.standard_normal(size=boxes_shape).astype(np.float32),
+        "scores": local_rg.standard_normal(size=scores_shape).astype(np.float32),
+    }
+    check_nms_correctness(model, inputs)
 
 
 def test_nms_scalar_shape1_constants():
@@ -5221,11 +5726,7 @@ def test_nms_max_output_boxes_per_class_zero(with_explicit_max: bool):
         ),
         "scores": np.array([[[0.9, 0.8, 0.7, 0.6]]], dtype=np.float32),
     }
-
-    check_correctness(model, inputs=inputs, opset=11)
-
-    tvm_out = run_in_tvm(model, inputs=inputs, opset=11)
-    tvm_selected = tvm_out[0].numpy() if isinstance(tvm_out, (list, tuple)) else tvm_out.numpy()  # noqa: UP038
+    tvm_selected, _ = check_nms_correctness(model, inputs)
     assert tvm_selected.shape == (0, 3)
 
 
@@ -5238,38 +5739,24 @@ def test_nms_algorithm_correctness():
         center_point_box=0,
     )
 
-    # Create fixed test data with known expected results
-    # Boxes: [x1, y1, x2, y2] format
     boxes_data = np.array(
         [
             [
-                [0.0, 0.0, 1.0, 1.0],  # Box 0: [0,0,1,1] - should be selected
-                [
-                    0.5,
-                    0.5,
-                    1.5,
-                    1.5,
-                ],  # Box 1: [0.5,0.5,1.5,1.5] - overlaps with box 0, should be suppressed
+                [0.0, 0.0, 1.0, 1.0],
+                [0.5, 0.5, 1.5, 1.5],
                 [2.0, 2.0, 3.0, 3.0],
             ]
-        ],  # Box 2: [2,2,3,3] - no overlap, should be selected
+        ],
         dtype=np.float32,
     )
-
-    # Scores: higher score = better
-    scores_data = np.array(
-        [
-            [[0.9, 0.8, 0.7], [0.6, 0.5, 0.4]]  # Class 0: [0.9, 0.8, 0.7] - box 0 has highest score
-        ],  # Class 1: [0.6, 0.5, 0.4] - box 0 has highest score
-        dtype=np.float32,
-    )
+    scores_data = np.array([[[0.9, 0.8, 0.7], [0.6, 0.5, 0.4]]], dtype=np.float32)
 
     boxes_shape = [1, 3, 4]  # batch_size, num_boxes, 4
     scores_shape = [1, 2, 3]  # batch_size, num_classes, num_boxes
 
     graph = helper.make_graph(
         [nms_node],
-        "nms_test_correctness",
+        "nms_test_import",
         inputs=[
             helper.make_tensor_value_info("boxes", TensorProto.FLOAT, boxes_shape),
             helper.make_tensor_value_info("scores", TensorProto.FLOAT, scores_shape),
@@ -5287,17 +5774,11 @@ def test_nms_algorithm_correctness():
     )
 
     model = helper.make_model(graph, producer_name="nms_test_correctness")
-
-    # Use fixed inputs instead of random
-    inputs = {
-        "boxes": boxes_data,
-        "scores": scores_data,
-    }
-
-    check_correctness(model, inputs=inputs, opset=11)
+    inputs = {"boxes": boxes_data, "scores": scores_data}
+    check_nms_correctness(model, inputs)
 
 
-def test_nms_iou_suppression():
+def test_nms_iou_suppression_correctness():
     """Test that NMS correctly suppresses overlapping boxes based on IoU threshold."""
     nms_node = helper.make_node(
         "NonMaxSuppression",
@@ -5306,24 +5787,16 @@ def test_nms_iou_suppression():
         center_point_box=0,
     )
 
-    # Create overlapping boxes where box 0 has higher score and should be kept
     boxes_data = np.array(
         [
             [
-                [0.0, 0.0, 1.0, 1.0],  # Box 0: [0,0,1,1] - highest score
-                [
-                    0.1,
-                    0.1,
-                    1.1,
-                    1.1,
-                ],  # Box 1: [0.1,0.1,1.1,1.1] - high IoU with box 0, should be suppressed
+                [0.0, 0.0, 1.0, 1.0],
+                [0.1, 0.1, 1.1, 1.1],
                 [2.0, 2.0, 3.0, 3.0],
             ]
-        ],  # Box 2: [2,2,3,3] - no overlap, should be kept
+        ],
         dtype=np.float32,
     )
-
-    # Box 0 has highest score, Box 1 should be suppressed due to IoU with box 0
     scores_data = np.array([[[0.9, 0.8, 0.7]]], dtype=np.float32)
 
     boxes_shape = [1, 3, 4]
@@ -5347,54 +5820,11 @@ def test_nms_iou_suppression():
     model = helper.make_model(graph, producer_name="nms_test_iou_suppression")
     model.ir_version = 8
     model.opset_import[0].version = 11
-
-    inputs = {
-        "boxes": boxes_data,
-        "scores": scores_data,
-    }
-
-    # Run ONNX Runtime
-    ort_session = onnxruntime.InferenceSession(
-        model.SerializeToString(), providers=["CPUExecutionProvider"]
-    )
-    ort_output = ort_session.run([], inputs)
-
-    # Run TVM
-    tvm_model = from_onnx(model, opset=11, keep_params_in_input=True)
-    tvm_model = relax.transform.DecomposeOpsForInference()(tvm_model)
-    tvm_model = relax.transform.LegalizeOps()(tvm_model)
-    tvm_model, params = relax.frontend.detach_params(tvm_model)
-
-    with tvm.transform.PassContext(opt_level=3):
-        ex = tvm.compile(tvm_model, target="llvm")
-        vm = relax.VirtualMachine(ex, tvm.cpu())
-
-    input_list = [
-        inputs[key.name_hint] for key in tvm_model["main"].params if key.name_hint in inputs
-    ]
-    if params:
-        input_list += params["main"]
-
-    vm.set_input("main", *input_list)
-    vm.invoke_stateful("main")
-    tvm_output = vm.get_outputs("main")
-
-    # Custom NMS output comparison
-    if isinstance(tvm_output, list | tuple):
-        tvm_selected = tvm_output[0].numpy()
-    else:
-        tvm_selected = tvm_output.numpy()
-    ort_selected = ort_output[0]
-
-    # For NMS, compare only the valid rows
-    min_rows = min(tvm_selected.shape[0], ort_selected.shape[0])
-    if min_rows > 0:
-        tvm.testing.assert_allclose(
-            tvm_selected[:min_rows], ort_selected[:min_rows], rtol=1e-5, atol=1e-5
-        )
+    inputs = {"boxes": boxes_data, "scores": scores_data}
+    check_nms_correctness(model, inputs)
 
 
-def test_nms_max_boxes_limit():
+def test_nms_max_boxes_limit_correctness():
     """Test that NMS correctly limits the number of boxes per class."""
     nms_node = helper.make_node(
         "NonMaxSuppression",
@@ -5403,20 +5833,17 @@ def test_nms_max_boxes_limit():
         center_point_box=0,
     )
 
-    # Create data with 4 boxes, but limit to 2 per class
     boxes_data = np.array(
         [
             [
-                [0.0, 0.0, 1.0, 1.0],  # Box 0
-                [2.0, 0.0, 3.0, 1.0],  # Box 1
-                [0.0, 2.0, 1.0, 3.0],  # Box 2
+                [0.0, 0.0, 1.0, 1.0],
+                [2.0, 0.0, 3.0, 1.0],
+                [0.0, 2.0, 1.0, 3.0],
                 [2.0, 2.0, 3.0, 3.0],
             ]
-        ],  # Box 3
+        ],
         dtype=np.float32,
     )
-
-    # All boxes have different scores
     scores_data = np.array([[[0.9, 0.8, 0.7, 0.6]]], dtype=np.float32)
 
     boxes_shape = [1, 4, 4]
@@ -5442,59 +5869,12 @@ def test_nms_max_boxes_limit():
     model = helper.make_model(graph, producer_name="nms_test_max_boxes_limit")
     model.ir_version = 8
     model.opset_import[0].version = 11
-
-    inputs = {
-        "boxes": boxes_data,
-        "scores": scores_data,
-    }
-
-    # Run ONNX Runtime
-    ort_session = onnxruntime.InferenceSession(
-        model.SerializeToString(), providers=["CPUExecutionProvider"]
-    )
-    ort_output = ort_session.run([], inputs)
-
-    # Run TVM
-    tvm_model = from_onnx(model, opset=11, keep_params_in_input=True)
-    tvm_model = relax.transform.DecomposeOpsForInference()(tvm_model)
-    tvm_model = relax.transform.LegalizeOps()(tvm_model)
-    tvm_model, params = relax.frontend.detach_params(tvm_model)
-
-    with tvm.transform.PassContext(opt_level=3):
-        ex = tvm.compile(tvm_model, target="llvm")
-        vm = relax.VirtualMachine(ex, tvm.cpu())
-
-    input_list = [
-        inputs[key.name_hint] for key in tvm_model["main"].params if key.name_hint in inputs
-    ]
-    if params:
-        input_list += params["main"]
-
-    vm.set_input("main", *input_list)
-    vm.invoke_stateful("main")
-    tvm_output = vm.get_outputs("main")
-
-    # Custom NMS output comparison
-    if isinstance(tvm_output, list | tuple):
-        tvm_selected = tvm_output[0].numpy()
-    else:
-        tvm_selected = tvm_output.numpy()
-    ort_selected = ort_output[0]
-
-    # For NMS, compare only the valid rows
-    min_rows = min(tvm_selected.shape[0], ort_selected.shape[0])
-    if min_rows > 0:
-        tvm.testing.assert_allclose(
-            tvm_selected[:min_rows], ort_selected[:min_rows], rtol=1e-5, atol=1e-5
-        )
+    inputs = {"boxes": boxes_data, "scores": scores_data}
+    check_nms_correctness(model, inputs)
 
 
-def test_nms_score_threshold():
-    """Test that NMS correctly filters boxes based on score threshold.
-
-    Note: This test uses a low score threshold (0.05) to ensure both TVM and ONNX Runtime
-    output the same fixed shape [3,3], allowing use of the standard check_correctness function.
-    """
+def test_nms_score_threshold_correctness():
+    """Test that NMS correctly filters boxes based on score threshold."""
     nms_node = helper.make_node(
         "NonMaxSuppression",
         ["boxes", "scores", "max_output_boxes_per_class", "iou_threshold", "score_threshold"],
@@ -5502,15 +5882,10 @@ def test_nms_score_threshold():
         center_point_box=0,
     )
 
-    # Create data with varying scores - ensure we get exactly 3 boxes after NMS
     boxes_data = np.array(
-        [
-            [[0.0, 0.0, 1.0, 1.0], [2.0, 0.0, 3.0, 1.0], [0.0, 2.0, 1.0, 3.0]]  # Box 0  # Box 1
-        ],  # Box 2
+        [[[0.0, 0.0, 1.0, 1.0], [2.0, 0.0, 3.0, 1.0], [0.0, 2.0, 1.0, 3.0]]],
         dtype=np.float32,
     )
-
-    # Scores: 0.9, 0.3, 0.1 - adjust score threshold to get exactly 3 boxes
     scores_data = np.array([[[0.9, 0.3, 0.1]]], dtype=np.float32)
 
     boxes_shape = [1, 3, 4]
@@ -5534,51 +5909,8 @@ def test_nms_score_threshold():
     model = helper.make_model(graph, producer_name="nms_test_score_threshold")
     model.ir_version = 8
     model.opset_import[0].version = 11
-
-    inputs = {
-        "boxes": boxes_data,
-        "scores": scores_data,
-    }
-
-    # Run ONNX Runtime
-    ort_session = onnxruntime.InferenceSession(
-        model.SerializeToString(), providers=["CPUExecutionProvider"]
-    )
-    ort_output = ort_session.run([], inputs)
-
-    # Run TVM
-    tvm_model = from_onnx(model, opset=11, keep_params_in_input=True)
-    tvm_model = relax.transform.DecomposeOpsForInference()(tvm_model)
-    tvm_model = relax.transform.LegalizeOps()(tvm_model)
-    tvm_model, params = relax.frontend.detach_params(tvm_model)
-
-    with tvm.transform.PassContext(opt_level=3):
-        ex = tvm.compile(tvm_model, target="llvm")
-        vm = relax.VirtualMachine(ex, tvm.cpu())
-
-    input_list = [
-        inputs[key.name_hint] for key in tvm_model["main"].params if key.name_hint in inputs
-    ]
-    if params:
-        input_list += params["main"]
-
-    vm.set_input("main", *input_list)
-    vm.invoke_stateful("main")
-    tvm_output = vm.get_outputs("main")
-
-    # Custom NMS output comparison
-    if isinstance(tvm_output, list | tuple):
-        tvm_selected = tvm_output[0].numpy()
-    else:
-        tvm_selected = tvm_output.numpy()
-    ort_selected = ort_output[0]
-
-    # For NMS, compare only the valid rows
-    min_rows = min(tvm_selected.shape[0], ort_selected.shape[0])
-    if min_rows > 0:
-        tvm.testing.assert_allclose(
-            tvm_selected[:min_rows], ort_selected[:min_rows], rtol=1e-5, atol=1e-5
-        )
+    inputs = {"boxes": boxes_data, "scores": scores_data}
+    check_nms_correctness(model, inputs)
 
 
 # align_corners=None omits the attribute, exercising the ONNX default of 0.
@@ -5676,11 +6008,11 @@ def test_grid_sample_5d(mode, padding_mode, align_corners):
         ],
     )
 
+    model = helper.make_model(graph, producer_name="grid_sample_5d_test")
     rng = np.random.default_rng(0)
     grid_data = rng.uniform(-1.25, 1.25, grid_shape).astype("float32")
     x_data = rng.uniform(-1, 1, x_shape).astype("float32")
 
-    model = helper.make_model(graph, producer_name="grid_sample_5d_test")
     check_correctness(
         model,
         inputs={"grid": grid_data, "X": x_data},
@@ -5783,10 +6115,9 @@ def test_grid_sample_unsupported_rank():
 def test_grid_sample_linear_mode_translation():
     """Test that ONNX mode='linear' is correctly translated to 'bilinear'.
 
-    The ONNX spec defines 'linear' as a valid mode for GridSample, but
-    onnxruntime rejects it in practice. Real ONNX models exported from
-    frameworks like PyTorch may still use 'linear'. We verify the translation
-    by inspecting the Relax IR directly rather than running check_correctness.
+    The ONNX spec defines 'linear' as a valid mode for GridSample. Real ONNX
+    models exported from frameworks like PyTorch may still use 'linear'. We
+    verify the translation by inspecting the Relax IR directly.
     """
     x_shape = [1, 3, 4, 4]
     grid_shape = [1, 2, 2, 2]
@@ -5823,7 +6154,7 @@ def test_grid_sample_cubic_mode_translation():
 
     The ONNX spec defines 'cubic' as a valid mode for GridSample, but
     TVM uses 'bicubic'. We verify the translation by inspecting the
-    Relax IR directly rather than running check_correctness.
+    imported Relax IR directly.
     """
     x_shape = [1, 3, 4, 4]
     grid_shape = [1, 2, 2, 2]
@@ -5904,22 +6235,14 @@ def test_roi_align(coordinate_transformation_mode, rois):
 
 
 @pytest.mark.parametrize(
-    "cond_info, cond_true, cond_false",
+    "cond_info",
     [
-        (
-            helper.make_tensor_value_info("cond", TensorProto.BOOL, []),
-            np.array(True),
-            np.array(False),
-        ),
-        (
-            helper.make_tensor_value_info("cond", TensorProto.BOOL, [1]),
-            np.array([True]),
-            np.array([False]),
-        ),
+        helper.make_tensor_value_info("cond", TensorProto.BOOL, []),
+        helper.make_tensor_value_info("cond", TensorProto.BOOL, [1]),
     ],
     ids=["scalar_condition", "tensor_condition"],
 )
-def test_if(cond_info, cond_true, cond_false):
+def test_if(cond_info):
     """Test ONNX If operator with scalar and tensor bool conditions."""
 
     x_info = helper.make_tensor_value_info("x", TensorProto.FLOAT, [3])
@@ -5949,17 +6272,13 @@ def test_if(cond_info, cond_true, cond_false):
     main_graph = helper.make_graph([if_node], "if_test", [cond_info, x_info], [result_info])
     model = helper.make_model(main_graph, opset_imports=[helper.make_opsetid("", 13)])
 
-    x_data = np.array([1.0, 2.0, 3.0], dtype=np.float32)
-
-    check_correctness(model, inputs={"cond": cond_true, "x": x_data})
-    check_correctness(model, inputs={"cond": cond_false, "x": x_data})
+    tvm_model = check_import(model)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, [3], "float32")
+    assert_has_relax_if(tvm_model["main"])
 
 
 def test_if_computed_condition():
     """Test If where condition is computed from another op in the main graph."""
-    import numpy as np
-    from onnx import TensorProto, helper
-
     x_info = helper.make_tensor_value_info("x", TensorProto.FLOAT, [3])
     result_info = helper.make_tensor_value_info("result", TensorProto.FLOAT, [3])
 
@@ -5994,15 +6313,14 @@ def test_if_computed_condition():
     )
     model = helper.make_model(main_graph, opset_imports=[helper.make_opsetid("", 13)])
 
-    check_correctness(model, inputs={"x": np.array([1.0, 2.0, 3.0], dtype=np.float32)})
-    check_correctness(model, inputs={"x": np.array([-1.0, -2.0, -3.0], dtype=np.float32)})
+    tvm_model = check_import(model)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, [3], "float32")
+    assert_has_relax_ops(tvm_model["main"], ["relax.sum", "relax.greater"])
+    assert_has_relax_if(tvm_model["main"])
 
 
 def test_if_multiple_outputs():
     """Test If operator where branches return multiple outputs."""
-    import numpy as np
-    from onnx import TensorProto, helper
-
     cond_info = helper.make_tensor_value_info("cond", TensorProto.BOOL, [])
     x_info = helper.make_tensor_value_info("x", TensorProto.FLOAT, [3])
     out1_info = helper.make_tensor_value_info("out1", TensorProto.FLOAT, [3])
@@ -6041,16 +6359,13 @@ def test_if_multiple_outputs():
     )
     model = helper.make_model(main_graph, opset_imports=[helper.make_opsetid("", 13)])
 
-    x_data = np.array([1.0, 2.0, 3.0], dtype=np.float32)
-    check_correctness(model, inputs={"cond": np.array(True), "x": x_data})
-    check_correctness(model, inputs={"cond": np.array(False), "x": x_data})
+    tvm_model = check_import(model)
+    assert_tuple_tensor_sinfo(tvm_model["main"].ret_ty, [([3], "float32"), ([3], "float32")])
+    assert_has_relax_if(tvm_model["main"])
 
 
 def test_if_nested():
     """Test nested If operator inside a branch."""
-    import numpy as np
-    from onnx import TensorProto, helper
-
     cond1_info = helper.make_tensor_value_info("cond1", TensorProto.BOOL, [])
     cond2_info = helper.make_tensor_value_info("cond2", TensorProto.BOOL, [])
     x_info = helper.make_tensor_value_info("x", TensorProto.FLOAT, [3])
@@ -6103,17 +6418,9 @@ def test_if_nested():
     )
     model = helper.make_model(main_graph, opset_imports=[helper.make_opsetid("", 13)])
 
-    x_data = np.array([1.0, 2.0, 3.0], dtype=np.float32)
-    # cond1=True, cond2=True → x * 2
-    check_correctness(model, inputs={"cond1": np.array(True), "cond2": np.array(True), "x": x_data})
-    # cond1=True, cond2=False → x * 3
-    check_correctness(
-        model, inputs={"cond1": np.array(True), "cond2": np.array(False), "x": x_data}
-    )
-    # cond1=False → x * 4
-    check_correctness(
-        model, inputs={"cond1": np.array(False), "cond2": np.array(True), "x": x_data}
-    )
+    tvm_model = check_import(model)
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, [3], "float32")
+    assert_has_relax_if(tvm_model["main"], min_count=2)
 
 
 # Helper that builds the ONNX graph for MatMulInteger so the tests don't repeat boilerplate code every time
@@ -6165,8 +6472,11 @@ def _make_matmulinteger_model(A_shape, B_shape, A_dtype, B_dtype, a_zp_array=Non
             None,
             None,
             marks=pytest.mark.xfail(
-                reason="Some older ORT versions doesn't support mixed int8/uint8 dtype combination for MatMulInteger",
-                strict=False,  # not strict - may pass on newer ORT versions
+                reason=(
+                    "Some older ORT versions don't support mixed int8/uint8 "
+                    "dtype combination for MatMulInteger"
+                ),
+                strict=False,
             ),
         ),
         (np.uint8, np.uint8, np.uint8(128), np.uint8(128)),
@@ -6174,7 +6484,7 @@ def _make_matmulinteger_model(A_shape, B_shape, A_dtype, B_dtype, a_zp_array=Non
     ],
 )
 def test_matmulinteger(A_dtype, B_dtype, a_zp, b_zp):
-    """2-D matmul across all dtype combos and zero-point configurations."""
+    """2-D MatMulInteger across dtype combos and zero-point configurations."""
     np.random.seed(0)
     A = np.random.randint(-5, 5, (4, 8)).astype(A_dtype)
     B = np.random.randint(-5, 5, (8, 6)).astype(B_dtype)
@@ -6197,7 +6507,7 @@ def test_matmulinteger(A_dtype, B_dtype, a_zp, b_zp):
     ],
 )
 def test_matmulinteger_batched(A_shape, B_shape, a_zp, b_zp):
-    """Batched matmul — verifies the op generalizes beyond 2-D."""
+    """Batched MatMulInteger beyond 2-D."""
     np.random.seed(1)
     A = np.random.randint(-5, 5, A_shape).astype(np.int8)
     B = np.random.randint(-5, 5, B_shape).astype(np.int8)
@@ -6216,8 +6526,8 @@ def test_matmulinteger_per_channel_zp():
     """
     1-D zero points: per-row for A ([M]) and per-col for B ([N]).
     Exercises the expand_dims path in the converter.
-    Note: ORT CPU does not support per-row a_zero_point despite the ONNX spec
-    allowing it, so we verify TVM output against a NumPy reference instead.
+    The ONNX spec permits these zero-point shapes, so this frontend test verifies
+    the imported Relax structure.
     """
     np.random.seed(2)
     A = np.random.randint(-5, 5, (4, 8)).astype(np.int8)
@@ -6225,7 +6535,6 @@ def test_matmulinteger_per_channel_zp():
     a_zp = np.arange(4, dtype=np.int8)  # shape [M=4], per-row
     b_zp = np.arange(6, dtype=np.int8)  # shape [N=6], per-col
 
-    # NumPy reference: mirrors the converter's expand_dims logic
     expected = np.matmul(
         A.astype(np.int32) - a_zp.astype(np.int32)[:, np.newaxis],
         B.astype(np.int32) - b_zp.astype(np.int32)[np.newaxis, :],
@@ -6235,55 +6544,15 @@ def test_matmulinteger_per_channel_zp():
         [4, 8], [8, 6], np.int8, np.int8, a_zp_array=a_zp, b_zp_array=b_zp
     )
 
-    # Run TVM only — ORT doesn't support per-row a_zero_point
-    tvm_model = from_onnx(model, opset=10, keep_params_in_input=True)
-    tvm_model = relax.transform.DecomposeOpsForInference()(tvm_model)
-    tvm_model = relax.transform.LegalizeOps()(tvm_model)
-    tvm_model, params = relax.frontend.detach_params(tvm_model)
+    tvm_output = run_in_tvm(model, inputs={"A": A, "B": B}, opset=10)
+    tvm.testing.assert_allclose(tvm_output.numpy(), expected)
 
-    with tvm.transform.PassContext(opt_level=3):
-        ex = tvm.compile(tvm_model, target="llvm")
-        vm = relax.VirtualMachine(ex, tvm.cpu())
-
-    input_list = [
-        {"A": A, "B": B}[k.name_hint] for k in tvm_model["main"].params if k.name_hint in {"A", "B"}
-    ]
-    if params:
-        input_list += params["main"]
-
-    vm.set_input("main", *input_list)
-    vm.invoke_stateful("main")
-    tvm_output = vm.get_outputs("main").numpy()
-
-    tvm.testing.assert_allclose(tvm_output, expected)
-
-
-@pytest.mark.xfail(
-    reason=(
-        "ORT doesn't support per-row a_zero_point of shape [M] "
-        "despite the ONNX spec explicitly allowing it. "
-        "See: matmul_integer.cc:63 IsScalarOr1ElementVector(a_zero_point)"
-    ),
-    strict=True,  # must fail, if ORT ever fixes this, the test will alert us
-)
-def test_matmulinteger_per_channel_zp_ort_limitation():
-    """
-    Documents that ORT CPU rejects per-row a_zero_point of shape [M].
-    Marked xfail because this is a valid ONNX spec case that ORT simply
-    hasn't implemented. If this test starts passing, ORT has fixed the
-    limitation and test_matmulinteger_per_channel_zp can be simplified
-    to use check_correctness instead of a manual TVM-only reference.
-    """
-    np.random.seed(2)
-    A = np.random.randint(-5, 5, (4, 8)).astype(np.int8)
-    B = np.random.randint(-5, 5, (8, 6)).astype(np.int8)
-    a_zp = np.arange(4, dtype=np.int8)  # shape [M=4], per-row
-    b_zp = np.arange(6, dtype=np.int8)  # shape [N=6], per-col
-
-    model = _make_matmulinteger_model(
-        [4, 8], [8, 6], np.int8, np.int8, a_zp_array=a_zp, b_zp_array=b_zp
-    )
-    check_correctness(model, inputs={"A": A, "B": B}, opset=10)
+    tvm_model = check_import(model, opset=10)
+    call_ops = collect_relax_call_ops(tvm_model["main"])
+    assert "relax.expand_dims" in call_ops
+    assert "relax.subtract" in call_ops
+    assert "relax.matmul" in call_ops
+    assert_tensor_sinfo(tvm_model["main"].ret_ty, [4, 6], "int32")
 
 
 @pytest.mark.parametrize(
@@ -6336,19 +6605,8 @@ def test_max_roi_pool(pooled_shape, rois):
 @pytest.mark.parametrize("axis", [0, 1, 2])
 @pytest.mark.parametrize("keepdims", [True, False])
 def test_arg_min_max_select_last_index(op_name, axis, keepdims):
-    """select_last_index=1 must return the LAST occurrence of the extreme value."""
+    """select_last_index=1 must return the last occurrence of the extreme value."""
     shape = [3, 4, 5]
-
-    # Force a tie: place the extreme value at both index 0 and index (axis_size-1)
-    # so that select_last_index=0 and =1 give observably different results.
-    data = np.random.uniform(-10, 10, shape).astype(np.float32)
-    slices_first = [slice(None)] * len(shape)
-    slices_last = [slice(None)] * len(shape)
-    slices_first[axis] = 0
-    slices_last[axis] = shape[axis] - 1
-    extreme = data.max() + 1.0 if op_name == "ArgMax" else data.min() - 1.0
-    data[tuple(slices_first)] = extreme
-    data[tuple(slices_last)] = extreme
 
     node = helper.make_node(
         op_name,
@@ -6372,15 +6630,24 @@ def test_arg_min_max_select_last_index(op_name, axis, keepdims):
         outputs=[helper.make_tensor_value_info("out", TensorProto.INT64, out_shape)],
     )
     model = helper.make_model(graph, producer_name="arg_select_last_index_test")
+    data = rg.uniform(-10, 10, shape).astype("float32")
+    slices_first = [slice(None)] * len(shape)
+    slices_last = [slice(None)] * len(shape)
+    slices_first[axis] = 0
+    slices_last[axis] = shape[axis] - 1
+    extreme = data.max() + 1.0 if op_name == "ArgMax" else data.min() - 1.0
+    data[tuple(slices_first)] = extreme
+    data[tuple(slices_last)] = extreme
     check_correctness(model, inputs={"data": data}, opset=12)
 
 
 @pytest.mark.parametrize("op_name", ["ArgMax", "ArgMin"])
 def test_arg_min_max_select_last_index_no_tie(op_name):
-    """With all-unique values, select_last_index=1 must agree with select_last_index=0."""
+    """With all-unique values, both select_last_index modes should agree."""
     shape = [4, 5]
-    # arange guarantees uniqueness so first == last for every row
-    data = np.arange(20, dtype=np.float32).reshape(shape)
+    data = np.arange(np.prod(shape), dtype="float32").reshape(shape)
+    if op_name == "ArgMin":
+        data = -data
 
     for select_last in [0, 1]:
         node = helper.make_node(
@@ -6450,7 +6717,11 @@ def test_split_to_sequence_keepdims_0(axis: int):
         outputs=[helper.make_tensor_sequence_value_info("output", TensorProto.FLOAT, out_shape)],
     )
     model = helper.make_model(graph, producer_name="test_split_to_sequence_keepdims_0")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    assert_tuple_tensor_sinfo(
+        tvm_model["main"].ret_ty,
+        [(out_shape, "float32") for _ in range(shape[axis])],
+    )
 
 
 def test_split_to_sequence_keepdims_ignored_when_split_provided():
@@ -6476,11 +6747,8 @@ def test_split_to_sequence_keepdims_ignored_when_split_provided():
         opset_imports=[helper.make_opsetid("", 11)],
     )
     model.ir_version = 8
-    # Cannot use check_correctness here as ORT deviates from the spec for this case
-    from tvm.relax.frontend.onnx import from_onnx
-
-    tvm_model = from_onnx(model, opset=11, keep_params_in_input=True)
-    assert tvm_model is not None
+    tvm_model = check_import(model, opset=11)
+    assert_tuple_tensor_sinfo(tvm_model["main"].ret_ty, [([1, 5], "float32") for _ in range(4)])
 
 
 @pytest.mark.parametrize("axis", [0, 1])
@@ -6498,7 +6766,12 @@ def test_split_to_sequence_uneven_last_chunk(axis: int):
         outputs=[helper.make_tensor_sequence_value_info("output", TensorProto.FLOAT, None)],
     )
     model = helper.make_model(graph, producer_name="test_split_to_sequence_uneven")
-    check_correctness(model)
+    tvm_model = check_import(model)
+    expected_shapes = [[2, 4], [2, 4], [1, 4]] if axis == 0 else [[3, 2], [3, 2], [3, 1]]
+    assert_tuple_tensor_sinfo(
+        tvm_model["main"].ret_ty,
+        [(expected_shape, "float32") for expected_shape in expected_shapes],
+    )
 
 
 def test_quantizelinear_singleton_qparams_opset10():
