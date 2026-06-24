@@ -28,6 +28,15 @@ if(USE_CUDA)
   if(NOT CUDA_FOUND)
     message(FATAL_ERROR "Cannot find CUDA, USE_CUDA=" ${USE_CUDA})
   endif()
+  if(NOT CUDA_CUDART_LIBRARY)
+    message(FATAL_ERROR "USE_CUDA=ON requires the CUDA runtime library libcudart")
+  endif()
+  if(NOT CUDA_CUDA_LIBRARY)
+    message(FATAL_ERROR
+      "USE_CUDA=ON requires the CUDA driver library libcuda. "
+      "Install the CUDA toolkit stubs or set CUDA_CUDA_LIBRARY=/path/to/libcuda.so"
+    )
+  endif()
   message(STATUS "Build with CUDA ${CUDA_VERSION} support")
   enable_language(CUDA)
 
@@ -74,6 +83,9 @@ if(USE_CUDA)
   add_library(tvm_runtime_cuda SHARED $<TARGET_OBJECTS:tvm_runtime_cuda_objs>)
   list(APPEND TVM_RUNTIME_BACKEND_LIBS tvm_runtime_cuda)
   target_link_libraries(tvm_runtime_cuda PUBLIC tvm_runtime ${CUDA_CUDART_LIBRARY} ${CUDA_CUDA_LIBRARY})
+  if(UNIX AND NOT APPLE)
+    target_link_options(tvm_runtime_cuda PRIVATE "LINKER:-z,defs")
+  endif()
   set_target_properties(tvm_runtime_cuda PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
