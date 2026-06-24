@@ -77,7 +77,16 @@ if(USE_CUDA)
   endif()
   add_library(tvm_runtime_cuda SHARED $<TARGET_OBJECTS:tvm_runtime_cuda_objs>)
   list(APPEND TVM_RUNTIME_BACKEND_LIBS tvm_runtime_cuda)
+  if(NOT CUDA_CUDA_LIBRARY)
+    message(FATAL_ERROR
+      "Cannot find the CUDA driver library. tvm_runtime_cuda uses the CUDA Driver API, "
+      "so USE_CUDA builds must link libcuda.so/nvcuda.lib from the CUDA toolkit stubs "
+      "or driver installation.")
+  endif()
   target_link_libraries(tvm_runtime_cuda PUBLIC tvm_runtime ${CUDA_CUDART_LIBRARY} ${CUDA_CUDA_LIBRARY})
+  if(TVM_NO_UNDEFINED_SYMBOLS)
+    target_link_options(tvm_runtime_cuda PRIVATE "${TVM_NO_UNDEFINED_SYMBOLS}")
+  endif()
   tvm_configure_target_library(tvm_runtime_cuda RUNTIME_MODULE)
 
   if(USE_NVTX)
