@@ -629,5 +629,144 @@ def test_partition_for_tensorrt():
     tvm.testing.assert_allclose(out, ref, rtol=1e-2, atol=1e-2)
 
 
+def test_tensorrt_permute_dims():
+    # Regression test for issue #19887: permute_dims offloads through the "tensorrt.transpose"
+    # composite name (the runtime converter key kept the Relay-era "transpose" name).
+    @tvm.script.ir_module
+    class PermuteDims:
+        @R.function
+        def main(data: R.Tensor((1, 3, 4, 5), "float32")):
+            with R.dataflow():
+                out = relax.op.permute_dims(data, axes=[0, 2, 3, 1])
+                R.output(out)
+            return out
+
+    data = np.random.randn(1, 3, 4, 5).astype("float32")
+    patterns = [("tensorrt.transpose", is_op("relax.permute_dims")(wildcard()))]
+    _offload_and_compare(PermuteDims, {}, patterns, data)
+
+
+@pytest.mark.parametrize(
+    "out_hw, method, coordinate_transformation_mode, rounding_method",
+    [
+        # Issue #19887 reproducer: nearest 2x upsample.
+        ((16, 16), "nearest_neighbor", "asymmetric", "floor"),
+        ((16, 16), "linear", "half_pixel", "round"),
+        # Non-integer ratios (up and down) exercise the coordinate formula; a clean 2x hides
+        # rounding bugs.
+        ((13, 11), "nearest_neighbor", "asymmetric", "floor"),
+        ((13, 11), "linear", "half_pixel", "round"),
+        ((5, 6), "linear", "half_pixel", "round"),
+        ((16, 16), "linear", "align_corners", "round"),
+        # round_prefer_floor is a valid ONNX nearest_mode the converter must map (kHALF_DOWN).
+        ((13, 11), "nearest_neighbor", "asymmetric", "round_prefer_floor"),
+        # pytorch_half_pixel (carried through by the ONNX frontend) maps onto half_pixel.
+        ((13, 11), "linear", "pytorch_half_pixel", "round"),
+    ],
+)
+def test_tensorrt_resize2d(out_hw, method, coordinate_transformation_mode, rounding_method):
+    # Regression test for issue #19887: image.resize2d offload. Relax passes the target size as a
+    # Shape argument (serialized as arg_size); the converter maps method / coordinate-transform /
+    # rounding onto TensorRT's IResizeLayer.
+    @tvm.script.ir_module
+    class Resize2D:
+        @R.function
+        def main(data: R.Tensor((1, 3, 8, 8), "float32")):
+            with R.dataflow():
+                out = relax.op.image.resize2d(
+                    data,
+                    size=out_hw,
+                    layout="NCHW",
+                    method=method,
+                    coordinate_transformation_mode=coordinate_transformation_mode,
+                    rounding_method=rounding_method,
+                )
+                R.output(out)
+            return out
+
+    data = np.random.randn(1, 3, 8, 8).astype("float32")
+    patterns = [("tensorrt.image.resize2d", is_op("relax.image.resize2d")(wildcard(), wildcard()))]
+    _offload_and_compare(Resize2D, {}, patterns, data)
+
+
+def test_tensorrt_resize2d_cubic():
+    # cubic with a non-default cubic_alpha must reach TensorRT (setCubicCoeff); the converter would
+    # otherwise silently fall back to TensorRT's default coefficient and diverge from TVM.
+    @tvm.script.ir_module
+    class Cubic:
+        @R.function
+        def main(data: R.Tensor((1, 3, 8, 8), "float32")):
+            with R.dataflow():
+                out = relax.op.image.resize2d(
+                    data,
+                    size=(16, 16),
+                    layout="NCHW",
+                    method="cubic",
+                    coordinate_transformation_mode="half_pixel",
+                    cubic_alpha=-0.5,
+                )
+                R.output(out)
+            return out
+
+    data = np.random.randn(1, 3, 8, 8).astype("float32")
+    patterns = [("tensorrt.image.resize2d", is_op("relax.image.resize2d")(wildcard(), wildcard()))]
+    _offload_and_compare(Cubic, {}, patterns, data)
+
+
+def test_tensorrt_silu():
+    # YOLO's signature activation (issue #19887 follow-on): TensorRT has no native SiLU, so the
+    # converter expresses it as x * sigmoid(x).
+    @tvm.script.ir_module
+    class Silu:
+        @R.function
+        def main(data: R.Tensor((1, 16, 8, 8), "float32")):
+            with R.dataflow():
+                out = relax.op.nn.silu(data)
+                R.output(out)
+            return out
+
+    data = np.random.randn(1, 16, 8, 8).astype("float32")
+    patterns = [("tensorrt.nn.silu", is_op("relax.nn.silu")(wildcard()))]
+    _offload_and_compare(Silu, {}, patterns, data)
+
+
+def test_tensorrt_resize2d_partition_for_tensorrt():
+    # End-to-end check that the pattern-table entry wires resize2d through partition_for_tensorrt,
+    # and that a conv -> upsample chain merges into a single TensorRT region (the YOLO neck shape
+    # behind issue #19887, where resize2d used to be a partition boundary).
+    from tvm.relax.backend.contrib.tensorrt import partition_for_tensorrt
+
+    @tvm.script.ir_module
+    class Model:
+        @R.function
+        def main(
+            data: R.Tensor((1, 8, 8, 8), "float32"), weight: R.Tensor((8, 8, 3, 3), "float32")
+        ):
+            with R.dataflow():
+                conv = relax.op.nn.conv2d(data, weight, padding=1)
+                out = relax.op.image.resize2d(
+                    conv, size=(16, 16), layout="NCHW", method="nearest_neighbor"
+                )
+                R.output(out)
+            return out
+
+    data = np.random.randn(1, 8, 8, 8).astype("float32")
+    weight = np.random.randn(8, 8, 3, 3).astype("float32")
+    ref = build_and_run(Model, [data, weight], "llvm", legalize=True)
+
+    mod = relax.transform.BindParams("main", {"weight": weight})(Model)
+    mod = partition_for_tensorrt(mod)
+    codegen_fns = [
+        fn
+        for fn in mod.functions.values()
+        if isinstance(fn, relax.Function) and fn.attrs is not None and "Codegen" in fn.attrs
+    ]
+    assert len(codegen_fns) == 1, "expected conv + resize2d to merge into a single TensorRT region"
+
+    mod = relax.transform.RunCodegen()(mod)
+    out = build_and_run(mod, [data], "cuda")
+    tvm.testing.assert_allclose(out, ref, rtol=1e-2, atol=1e-2)
+
+
 if __name__ == "__main__":
     tvm.testing.main()

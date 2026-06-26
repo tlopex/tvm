@@ -47,6 +47,7 @@ def _tensorrt_patterns() -> list[Pattern]:
     for composite, op in [
         ("tensorrt.nn.relu", "relax.nn.relu"),
         ("tensorrt.sigmoid", "relax.sigmoid"),
+        ("tensorrt.nn.silu", "relax.nn.silu"),
         ("tensorrt.tanh", "relax.tanh"),
         ("tensorrt.exp", "relax.exp"),
         ("tensorrt.log", "relax.log"),
@@ -103,6 +104,9 @@ def _tensorrt_patterns() -> list[Pattern]:
         ("tensorrt.reshape", "relax.reshape"),
     ]:
         patterns.append(_op_pattern(composite, op, 2))
+
+    # image.resize2d (data + target-size shape argument).
+    patterns.append(_op_pattern("tensorrt.image.resize2d", "relax.image.resize2d", 2))
 
     # layer_norm (data, gamma, beta) and clip (data, min, max).
     patterns.append(_op_pattern("tensorrt.nn.layer_norm", "relax.nn.layer_norm", 3))
