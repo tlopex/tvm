@@ -362,8 +362,14 @@ inline void CodeGenCHost::PrintTernaryCondExpr(const T* op, const char* compare,
   VisitExpr(op->b, temp_b);
   std::string b_id = SSAGetID(temp_b.str(), op->b.ty()->dtype);
 
-  os << "((" << a_id << ") " << compare << " (" << b_id << ") "
-     << "? (" << a_id << ") : (" << b_id << "))";
+  PrimType type = op->ty();
+  if (type.lanes() == 1 && type.MatchesCode(DLDataTypeCode::kDLFloat)) {
+    os << "((" << a_id << ") " << compare << " (" << b_id << ") ? (" << a_id << ") : (("
+       << a_id << ") == (" << a_id << ") ? (" << b_id << ") : (" << a_id << ")))";
+  } else {
+    os << "((" << a_id << ") " << compare << " (" << b_id << ") "
+       << "? (" << a_id << ") : (" << b_id << "))";
+  }
 }
 
 ffi::Module BuildCHost(IRModule mod, Target target) {

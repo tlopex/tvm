@@ -1299,5 +1299,34 @@ def test_bool_return_value():
     assert not built(15)
 
 
+@pytest.mark.skipif(not env.has_llvm(), reason="need llvm")
+def test_float_min_max_propagate_nan():
+    @I.ir_module(s_tir=True)
+    class Module:
+        @T.prim_func(s_tir=True)
+        def main(
+            A: T.Buffer((3,), "float32"),
+            B: T.Buffer((3,), "float32"),
+            C: T.Buffer((7,), "float32"),
+        ):
+            T.func_attr({"tirx.noalias": True})
+            C[0] = T.max(A[0], B[0])
+            C[1] = T.max(A[1], B[1])
+            C[2] = T.max(A[2], B[2])
+            C[3] = T.min(A[0], B[0])
+            C[4] = T.min(A[1], B[1])
+            C[5] = T.min(A[2], B[2])
+            C[6] = T.max(A[0], T.float32(0))
+
+    module = tvm.compile(Module, target="llvm")
+    dev = tvm.cpu(0)
+    a = tvm.runtime.tensor(np.array([np.nan, 1.0, np.nan], dtype="float32"), dev)
+    b = tvm.runtime.tensor(np.array([1.0, np.nan, np.nan], dtype="float32"), dev)
+    c = tvm.runtime.tensor(np.zeros(7, dtype="float32"), dev)
+    module(a, b, c)
+
+    assert np.isnan(c.numpy()).all()
+
+
 if __name__ == "__main__":
     tvm.testing.main()

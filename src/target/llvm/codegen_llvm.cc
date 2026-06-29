@@ -1641,13 +1641,35 @@ llvm::Value* CodeGenLLVM::VisitExpr_(const ModNode* op) {
 llvm::Value* CodeGenLLVM::VisitExpr_(const MinNode* op) {
   llvm::Value* a = MakeValue(op->a);
   llvm::Value* b = MakeValue(op->b);
-  return builder_->CreateSelect(CreateLT(PrimType(op->a.ty()->dtype), a, b), a, b);
+  PrimType dtype(op->a.ty()->dtype);
+  if (dtype.MatchesCode(DLDataTypeCode::kDLFloat)) {
+#if TVM_LLVM_VERSION >= 150
+    llvm::Type* type = DTypeToLLVMType(dtype);
+    llvm::Function* f = GetIntrinsicDecl(llvm::Intrinsic::minimum, type, {type, type});
+    return builder_->CreateCall(f, {a, b});
+#else
+    return builder_->CreateSelect(CreateLT(dtype, a, b), a,
+                                  builder_->CreateSelect(builder_->CreateFCmpOEQ(a, a), b, a));
+#endif
+  }
+  return builder_->CreateSelect(CreateLT(dtype, a, b), a, b);
 }
 
 llvm::Value* CodeGenLLVM::VisitExpr_(const MaxNode* op) {
   llvm::Value* a = MakeValue(op->a);
   llvm::Value* b = MakeValue(op->b);
-  return builder_->CreateSelect(CreateGT(PrimType(op->a.ty()->dtype), a, b), a, b);
+  PrimType dtype(op->a.ty()->dtype);
+  if (dtype.MatchesCode(DLDataTypeCode::kDLFloat)) {
+#if TVM_LLVM_VERSION >= 150
+    llvm::Type* type = DTypeToLLVMType(dtype);
+    llvm::Function* f = GetIntrinsicDecl(llvm::Intrinsic::maximum, type, {type, type});
+    return builder_->CreateCall(f, {a, b});
+#else
+    return builder_->CreateSelect(CreateGT(dtype, a, b), a,
+                                  builder_->CreateSelect(builder_->CreateFCmpOEQ(a, a), b, a));
+#endif
+  }
+  return builder_->CreateSelect(CreateGT(dtype, a, b), a, b);
 }
 
 llvm::Value* CodeGenLLVM::VisitExpr_(const EQNode* op) {
