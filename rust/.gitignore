@@ -1,2 +1,7 @@
 /target
 Cargo.lock
+
+# Re-include the stubgen-generated target/build module — the repo-root
+# unanchored `build/` pattern otherwise swallows it (this is how the module
+# went missing from the original bindings commit).
+!src/generated/target/build/
