@@ -222,6 +222,14 @@ def bind_assign_value(self: Parser, node: doc.expr, var_name: str, value: Any) -
         return value
     else:
         if not tvm.ir.is_prim_expr(value):
+            if isinstance(value, tvm.ir.Expr) and isinstance(value.ty, tvm.ir.PointerType):
+                # Pointer-typed expression (e.g. address arithmetic through
+                # intrinsic calls): a local scalar can't hold it — bind it to
+                # an immutable Var of the same pointer type instead.
+                ann_var = tvm.tirx.Var(var_name, value.ty)
+                IRBuilder.name(var_name, ann_var)
+                T.Bind(value, var=ann_var)
+                return ann_var
             value = tvm.tirx.const(value)
         if not isinstance(value, tvm.tirx.StringImm):
             # x = expr -> scalar (auto-typed from value)
@@ -542,6 +550,16 @@ def visit_ann_assign(self: Parser, node: doc.AnnAssign) -> None:
             ann_var = raw_ann.as_var(rhs_dtype=rhs.ty)
         if not isinstance(ann_var, Var):
             self.report_error(node.annotation, "Annotation should resolve to Var")
+        if (
+            isinstance(ann_var.ty, tvm.ir.PointerType)
+            and isinstance(getattr(rhs, "ty", None), tvm.ir.PointerType)
+            and rhs.ty != ann_var.ty
+        ):
+            # Pre-unification Bind only compared dtypes, so kernels routinely
+            # bind a "handle" (void*) value to a typed-pointer let var. Coerce
+            # with an explicit reinterpret to keep that pattern working under
+            # the structural value->ty == var->ty check.
+            rhs = tvm.tirx.reinterpret(ann_var.ty, rhs)
         self.eval_assign(target=lhs, source=ann_var, bind_value=bind_assign_value)
         T.Bind(rhs, var=ann_var)
     else:

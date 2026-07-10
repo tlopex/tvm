@@ -226,7 +226,9 @@ class LayoutApplier : public arith::IRMutatorWithAnalyzer {
       if (auto tile = buffer->layout.value().as<TileLayoutNode>(); tile && tile->HasThreadAxis()) {
         LOG(FATAL) << "Cannot lower direct BufferLoad/BufferStore on a buffer with thread-axis "
                    << "layout: unable to verify that the coordinate matches the current thread. "
-                   << "Use .view() + .local() to decompose thread and memory axes.";
+                   << "Use .view() + .local() to decompose thread and memory axes. "
+                   << "(buffer: " << buffer->name << ", scope: " << buffer.scope()
+                   << ", indices: " << indices << ", layout: " << buffer->layout.value() << ")";
       }
       auto res = buffer->layout.value()->Canonicalize()->Apply(indices, buffer->shape);
       TVM_FFI_ICHECK_EQ(res.size(), 1) << "Expected a single element offset";

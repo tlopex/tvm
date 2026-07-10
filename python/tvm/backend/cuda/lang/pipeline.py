@@ -145,8 +145,12 @@ class MBarrier:
         from tvm.ir import PointerType, PrimType
         from tvm.tirx import Var as TIRVar
 
-        expr = T.reinterpret("handle", T.ptx.map_shared_rank(self.buf.ptr_to([0]), rank))
-        ptr = TIRVar("remote_mbar_ptr", PointerType(PrimType("uint64")))
+        # Reinterpret straight to the pointer type of the bound var — the
+        # unified-IR Bind requires value->ty and var->ty to be structurally
+        # equal, so a bare "handle" (void*) value no longer type-checks.
+        ptr_ty = PointerType(PrimType("uint64"))
+        expr = T.reinterpret(ptr_ty, T.ptx.map_shared_rank(self.buf.ptr_to([0]), rank))
+        ptr = TIRVar("remote_mbar_ptr", ptr_ty)
         T.Bind(expr, var=ptr)
         buf = T.decl_buffer([self.depth], "uint64", data=ptr, scope="shared")
         remote = object.__new__(type(self))

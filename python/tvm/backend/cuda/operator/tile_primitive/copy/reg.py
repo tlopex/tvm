@@ -445,21 +445,27 @@ def _flat_coords(outer_atoms, flat_idx: int) -> list[int]:
     return coords
 
 
+# Returns void*: the IR-level ty of ``ptr_to`` (byte pointer) and the C-level
+# type codegen prints for the same expression (element-typed pointer) disagree,
+# so any concrete return type mismatches one side. void* erases both — matching
+# the pre-unification behavior where the result landed in a handle-typed local.
 _POINTER_OFFSET_SRC = (
     "\ntemplate <typename T>\n"
-    "__forceinline__ __device__ T* tvm_builtin_pointer_offset(T* ptr, int offset) {\n"
-    "    return ptr + offset;\n"
+    "__forceinline__ __device__ void* tvm_builtin_pointer_offset(T* ptr, int offset) {\n"
+    "    return (void*)(ptr + offset);\n"
     "}\n"
 )
 
 
 def _ptr_off(base_ptr, off):
+    from tvm.ir import PointerType, PrimType
+
     return T.cuda.func_call(
         "tvm_builtin_pointer_offset",
         base_ptr,
         off,
         source_code=_POINTER_OFFSET_SRC,
-        return_type=base_ptr.ty,
+        return_type=PointerType(PrimType("void")),
     )
 
 

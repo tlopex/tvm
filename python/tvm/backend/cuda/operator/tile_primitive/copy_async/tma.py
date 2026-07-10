@@ -812,7 +812,9 @@ def _assemble_plan(
         issue_axes=issue_axes,
         tensor_ptr=g_buf.data,
         elem_bytes=elem_bytes,
-        elem_dtype=g_buf.dtype,
+        # Buffer.dtype is a PrimType under the unified IR; the plan (and the
+        # call_packed arg list it feeds) wants the plain dtype string.
+        elem_dtype=str(g_buf.dtype),
     )
     return _merge_contig_full_box_dims(plan, analyzer)
 

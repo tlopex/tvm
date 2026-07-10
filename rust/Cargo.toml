@@ -24,6 +24,10 @@ publish = false
 [dependencies]
 tvm-ffi = { path = "../../tvm-ffi/rust/tvm-ffi" }
 
+[lib]
+name = "tvm_tirx_bindings"
+path = "src/lib.rs"
+
 [[bin]]
 name = "tirx_demo"
 path = "src/main.rs"

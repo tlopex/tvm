@@ -34,6 +34,30 @@ class Expr(Node):
     span: Span | None
     ty: "tvm.ir.Type"
 
+    @property
+    def dtype(self) -> tvm_ffi.dtype:
+        """Scalar dtype of a primitive-typed expression (legacy accessor).
+
+        Pre-unification TIR exposed ``expr.dtype`` on every PrimExpr; the
+        unified ``ir.Expr`` carries a full ``ty`` instead. This property keeps
+        the old accessor working for PrimType-valued expressions (and maps
+        pointer-typed vars to ``handle``, matching the old convention).
+        """
+        from .type import PointerType, PrimType
+
+        ty = self.ty
+        if isinstance(ty, PrimType):
+            return ty.dtype
+        if isinstance(ty, PointerType):
+            return tvm_ffi.dtype("handle")
+        raise AttributeError(
+            f"'{type(self).__name__}' expression has non-primitive type {ty}; no scalar dtype"
+        )
+
+
+# Legacy alias: pre-unification code imported PrimExpr from tvm.ir.expr
+PrimExpr = Expr
+
 
 def is_prim_expr(value: object) -> bool:
     """Return whether an expression has a primitive result type."""
