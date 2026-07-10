@@ -22,7 +22,10 @@ edition = "2021"
 publish = false
 
 [dependencies]
-tvm-ffi = { path = "../../tvm-ffi/rust/tvm-ffi" }
+# Pinned git dep (BLOCKERS C2 in tirx-kernels-dev): must stay in lockstep
+# with the editable python tvm-ffi install, and downstream crates
+# (cpusim-rs) must use the same source or cargo duplicates the crate.
+tvm-ffi = { git = "https://github.com/Seven-Streams/tvm-ffi.git", rev = "317fd81032e51d5caa17aab32a361b98daf98c95" }
 
 [lib]
 name = "tvm_tirx_bindings"
