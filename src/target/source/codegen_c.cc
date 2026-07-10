@@ -1186,7 +1186,18 @@ void CodeGenC::VisitStmt_(const BindNode* op) {
       stream << "*)" << value << ";\n";
     } else {
       PrintType(op->var->ty, this->stream);
-      this->stream << ' ' << AllocVarID(op->var.get()) << " = " << value << ";\n";
+      this->stream << ' ' << AllocVarID(op->var.get()) << " = ";
+      if (is_pointer) {
+        // The value's printed pointee type can differ from the var's declared
+        // pointee: address_of through a typed view of a byte pool takes the
+        // pool data var's type (u8*) while the expression prints element
+        // access through the view dtype. C++ pointer conversions must be
+        // explicit, so cast to the declared type.
+        this->stream << '(';
+        PrintType(op->var->ty, this->stream);
+        this->stream << ')';
+      }
+      this->stream << value << ";\n";
     }
   }
 }
