@@ -21,6 +21,8 @@ This test file demonstrates how to test a custom NPU backend
 implementation using TVM's testing infrastructure.
 """
 
+import json
+
 import numpy as np
 import pytest
 
@@ -219,6 +221,76 @@ def test_example_npu_codegen():
     # The module should now contain external function calls
     main_func = partitioned_mod["main"]
     assert main_func is not None
+
+
+@example_npu_enabled
+def test_example_npu_codegen_symbolic_arithmetic():
+    """Test code generation with a symbolic parameter and an unknown output shape."""
+    from tvm.relax.dpl import is_op, wildcard
+
+    @tvm.script.ir_module
+    class SymbolicArithmetic:
+        @R.function
+        def main(
+            x: R.Tensor((1, 16, "n", 16), "float32"),
+            bias: R.Tensor((1, 16, 8, 8), "float32"),
+        ):
+            with R.dataflow():
+                pooled = R.nn.max_pool2d(x, pool_size=(2, 2), strides=(2, 2), layout="NCHW")
+                out = R.add(pooled, bias)
+                R.output(out)
+            return out
+
+    patterns = [("example_npu.add", is_op("relax.add")(wildcard(), wildcard()))]
+    mod = FuseOpsByPattern(patterns, bind_constants=False, annotate_codegen=True)(
+        SymbolicArithmetic
+    )
+    assert any(
+        isinstance(param.ty, relax.ShapeType)
+        for func in mod.functions.values()
+        if isinstance(func, relax.Function)
+        for param in func.params
+    )
+    mod = RunCodegen()(mod)
+
+    graph = json.loads(mod.attrs["external_mods"][0].inspect_source())
+    kernel = next(node for node in graph["nodes"] if node["op"] == "kernel")
+    assert kernel["attrs"]["shape"] == [[-1, -1, -1, -1]]
+
+
+@example_npu_enabled
+def test_example_npu_runtime_symbolic_arithmetic():
+    """Test runtime argument binding when fusion adds a symbolic shape parameter."""
+    from tvm.relax.dpl import is_op, wildcard
+
+    @tvm.script.ir_module
+    class SymbolicArithmetic:
+        @R.function
+        def main(
+            x: R.Tensor((1, 16, "n", 16), "float32"),
+            bias: R.Tensor((1, 16, "n // 2", 8), "float32"),
+        ):
+            with R.dataflow():
+                pooled = R.nn.max_pool2d(x, pool_size=(2, 2), strides=(2, 2), layout="NCHW")
+                out = R.add(pooled, bias)
+                R.output(out)
+            return out
+
+    patterns = [("example_npu.add", is_op("relax.add")(wildcard(), wildcard()))]
+    mod = FuseOpsByPattern(patterns, bind_constants=False, annotate_codegen=True)(
+        SymbolicArithmetic
+    )
+    mod = RunCodegen()(mod)
+
+    with tvm.transform.PassContext(opt_level=3):
+        built = relax.build(mod, tvm.target.Target("llvm"))
+
+    vm = relax.VirtualMachine(built, tvm.cpu())
+    x = tvm.runtime.tensor(np.zeros((1, 16, 16, 16), dtype="float32"))
+    bias = tvm.runtime.tensor(np.zeros((1, 16, 8, 8), dtype="float32"))
+    result = vm["main"](x, bias)
+
+    assert result.numpy().shape == (1, 16, 8, 8)
 
 
 @example_npu_enabled

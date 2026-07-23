@@ -172,25 +172,26 @@ class JSONRuntimeBase : public ffi::ModuleObj {
    * \param args The packed args.
    */
   void SetInputOutputBuffers(const ffi::PackedArgs& args) {
-    TVM_FFI_ICHECK_EQ(args.size(), input_var_eid_.size() + outputs_.size())
-        << "Found mismatch in the number of provided data entryies and required.";
-
-    for (size_t i = 0; i < static_cast<size_t>(args.size()); i++) {
-      auto eid = i < input_var_eid_.size() ? input_var_eid_[i]
-                                           : EntryID(outputs_[i - input_var_eid_.size()]);
-
+    size_t data_entry_index = 0;
+    for (int i = 0; i < args.size(); ++i) {
       const DLTensor* arg;
       if (auto opt_nd = args[i].as<Tensor>()) {
-        Tensor arr = opt_nd.value();
-        arg = arr.operator->();
+        arg = opt_nd.value().operator->();
+      } else if (auto opt_dl_tensor = args[i].as<DLTensor*>()) {
+        arg = opt_dl_tensor.value();
       } else {
-        arg = args[i].cast<DLTensor*>();
+        continue;
       }
 
-      // Assign input/output the Tensor pointers to data entry so that we can directly
-      // read/write host buffers.
+      TVM_FFI_ICHECK_LT(data_entry_index, input_var_eid_.size() + outputs_.size());
+      auto eid = data_entry_index < input_var_eid_.size()
+                     ? input_var_eid_[data_entry_index]
+                     : EntryID(outputs_[data_entry_index - input_var_eid_.size()]);
       data_entry_[eid] = arg;
+      ++data_entry_index;
     }
+    TVM_FFI_ICHECK_EQ(data_entry_index, input_var_eid_.size() + outputs_.size())
+        << "Found mismatch in the number of provided data entries and required.";
   }
 
   /*!
