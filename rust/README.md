@@ -27,8 +27,15 @@ tvm-ffi crate 依赖已固定到官方 `apache/tvm-ffi` main（`b98be1bf`，
 见 `Cargo.toml`）。rust stubgen 本身尚未合入官方 main，生成代码里
 fork-only 的 `Function::from_type_method_cached` 在官方 crate 中不存在，
 故 `src/generated/ir/mod.rs` 中该调用点被手工改为 `crate::ffi_compat`
-（见 `src/ffi_compat.rs`）——这是 generated 目录里唯一的手工修改；
-下次用 rebase 到官方 main 的 stubgen 重新生成时可去掉。
+（见 `src/ffi_compat.rs`）。
+
+在 stubgen 输出之上还做了一次系统性手工变换（2026-08-03）：61 个
+`ffi_new() -> XxxBuilder` builder 全部替换为平铺参数的显式构造函数
+`pub fn new(arg1, arg2, ...) -> Self`——参数为该类型全部字段
+（base 链祖先字段在前，按声明顺序），内部嵌套构造 base Obj；
+`Op::ffi_new`（反射版）同步改名为 `Op::new`。下次重新生成时要么让
+stubgen 直接生成此形式，要么重放该变换（脚本思路：解析各
+`XxxObj` 字段布局 → 展开 base 链 → 替换 builder 三件套）。
 
 覆盖 cpusim 依赖清单（`tirx-kernels-dev/cpu_sim_component.md`）中的全部
 51 个 IR 节点/类型：tirx 表达式+语句全套、`Buffer`/`BufferRegion`/
@@ -43,12 +50,14 @@ source ~/tir/.venv/bin/activate
 cd rust && cargo run
 ```
 
-demo 做三件事（均为对生成布局的运行时验证）：
+demo 做四件事（均为对生成布局的运行时验证）：
 1. `generated::ir::IntImm` — 标量字段读取；
 2. `generated::tirx::IfThenElse` — 16 字节 `Optional<Stmt>` 字段
    （nullopt / engaged 两种状态）；
 3. `generated::ir::Op` — 带未注册 C++ 字段的 padded 布局
-   （`_pad0: [u8; 4]` 使 `num_inputs` 落在真实 offset 100）。
+   （`_pad0: [u8; 4]` 使 `num_inputs` 落在真实 offset 100）；
+4. 显式构造函数 — `Span::new(...)` / `Evaluate::new(span, value)` /
+   `SeqStmt::new(span, seq)` 纯 Rust 构造 + base 链字段落位验证。
 
 ## 重新生成
 
@@ -66,7 +75,7 @@ done
 - 加载 `libtvm_compiler.so` 的进程需要 conda 工具链的 libstdc++
   （`CXXABI_1.3.15`），故 `LD_LIBRARY_PATH` 前置
   `~/miniforge3/envs/tvm-build-venv/lib`（demo 的 `build.rs` 已自动注入）。
-- 无 `ffi_new` 的类型（表达式节点等，父类不可原生构造）通过
+- 无 `new` 构造函数的类型（表达式节点等，父类不可原生构造）通过
   `Function::get_global("ir.IntImm")` 等注册的 C++ 构造函数创建（见 demo）。
 - 已知限制与后续计划见 `../../tvm-ffi/rust-stubgen-feature-request.md`
   （剩余 open 项：F7 构造 builder、F8 多前缀、F9 skip 传递）。

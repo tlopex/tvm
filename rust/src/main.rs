@@ -29,9 +29,9 @@
 mod ffi_compat;
 mod generated;
 
-use generated::ir::{IntImm, Op};
-use generated::tirx::IfThenElse;
-use tvm_ffi::{Any, AnyView, DLDataType, DLDataTypeExt, Function, Module, Result};
+use generated::ir::{Expr, IntImm, IntImmObj, Op, SourceName, Span};
+use generated::tirx::{Evaluate, IfThenElse, SeqStmt, Stmt};
+use tvm_ffi::{Any, AnyView, Array, DLDataType, DLDataTypeExt, Function, Module, Result};
 
 fn lib_path() -> String {
     format!(
@@ -103,6 +103,22 @@ fn main() -> Result<()> {
              binary.num_inputs, binary.support_level);
     assert_eq!(variadic.num_inputs, -1);
     assert_eq!(binary.num_inputs, 2);
+
+    println!("\n=========== Example 4: explicit new(arg1, ...) ctors (pure Rust construction) ===========");
+    // Flat ctors take every field explicitly, base-chain fields first:
+    // Evaluate::new(span, value) fills StmtObj.span through the base chain.
+    let sn = SourceName::new(tvm_ffi::String::from("<demo>"));
+    let span = Span::new(sn, 1, 0, 1, 8);
+    let value: Expr = mk_int("int32", 7)?.try_into()?;
+    let ev = Evaluate::new(span.clone(), value);
+    let got = ev.value.downcast::<IntImmObj>().map(|n| n.value);
+    let ev_stmt: Stmt = Any::from(AnyView::from(&ev)).try_into()?;
+    let seq = SeqStmt::new(span, Array::new(vec![ev_stmt.clone()]));
+    println!("Evaluate.value as IntImm = {:?}, .span.line = {}", got, ev_stmt.span.line);
+    println!("SeqStmt.seq.len() = {}", seq.seq.len());
+    assert_eq!(got, Some(7));
+    assert_eq!(ev_stmt.span.line, 1);
+    assert_eq!(seq.seq.len(), 1);
 
     println!("\nOK: the stubgen output compiles and mirrors the C++ objects exactly.");
     Ok(())
