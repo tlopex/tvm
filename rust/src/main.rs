@@ -20,11 +20,13 @@
 //! Demo: drive the stubgen-generated TIRx/IR bindings against this repo's
 //! `build/lib/libtvm_compiler.so`.
 //!
-//! `src/generated/` is the unmodified output of `tvm-ffi-stubgen --target rust`
-//! (see rust/README.md for the regeneration command). Three checks:
+//! `src/generated/` is the output of `tvm-ffi-stubgen --target rust` with a
+//! single hand patch (see `ffi_compat`; regeneration recipe in rust/README.md).
+//! Three checks:
 //!   1. scalar field read            (generated::ir::IntImm)
 //!   2. Optional<ObjectRef> field    (generated::tirx::IfThenElse.else_case)
 //!   3. padded layout w/ hidden C++  (generated::ir::Op.num_inputs, `_pad0`)
+mod ffi_compat;
 mod generated;
 
 use generated::ir::{IntImm, Op};
@@ -102,6 +104,6 @@ fn main() -> Result<()> {
     assert_eq!(variadic.num_inputs, -1);
     assert_eq!(binary.num_inputs, 2);
 
-    println!("\nOK: the unmodified stubgen output compiles and mirrors the C++ objects exactly.");
+    println!("\nOK: the stubgen output compiles and mirrors the C++ objects exactly.");
     Ok(())
 }

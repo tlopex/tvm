@@ -25,7 +25,7 @@ publish = false
 # Pinned git dep (BLOCKERS C2 in tirx-kernels-dev): must stay in lockstep
 # with the editable python tvm-ffi install, and downstream crates
 # (cpusim-rs) must use the same source or cargo duplicates the crate.
-tvm-ffi = { git = "https://github.com/Seven-Streams/tvm-ffi.git", rev = "317fd81032e51d5caa17aab32a361b98daf98c95" }
+tvm-ffi = { git = "https://github.com/apache/tvm-ffi.git", rev = "b98be1bf4062b85a95a7330327645ffd86f99b05" }
 
 [lib]
 name = "tvm_tirx_bindings"

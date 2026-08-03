@@ -19,9 +19,16 @@
 
 `src/generated/` 是 `tvm-ffi-stubgen --target rust`（来自 `../../tvm-ffi`，
 rust_stubgen 分支）对本仓库 `build/lib/libtvm_compiler.so` 反射生成的
-**未经手工修改**的 Rust 绑定：131 个 `#[repr(C)]` 结构体镜像
+Rust 绑定：131 个 `#[repr(C)]` 结构体镜像
 （ir / tirx / target / transform / instrument / arith 六个前缀），
 0 类型跳过，0 错误 0 警告编译。
+
+tvm-ffi crate 依赖已固定到官方 `apache/tvm-ffi` main（`b98be1bf`，
+见 `Cargo.toml`）。rust stubgen 本身尚未合入官方 main，生成代码里
+fork-only 的 `Function::from_type_method_cached` 在官方 crate 中不存在，
+故 `src/generated/ir/mod.rs` 中该调用点被手工改为 `crate::ffi_compat`
+（见 `src/ffi_compat.rs`）——这是 generated 目录里唯一的手工修改；
+下次用 rebase 到官方 main 的 stubgen 重新生成时可去掉。
 
 覆盖 cpusim 依赖清单（`tirx-kernels-dev/cpu_sim_component.md`）中的全部
 51 个 IR 节点/类型：tirx 表达式+语句全套、`Buffer`/`BufferRegion`/

@@ -1125,7 +1125,9 @@ impl Op {
 
     pub fn ffi_new(span: Span, ty: Type, name: String, description: String, arguments: Array<ArgumentInfo>, attrs_type_key: String, num_inputs: i64, support_level: i64) -> Result<Op> {
         thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(&F, OpObj::type_index(), "__ffi_init__")?;
+        // Patched post-generation: `Function::from_type_method_cached` is
+        // fork-only API not present in apache/tvm-ffi main (see ffi_compat.rs).
+        let f = crate::ffi_compat::from_type_method_cached(&F, OpObj::type_index(), "__ffi_init__")?;
         Ok(f.call_packed(&[AnyView::from(&span), AnyView::from(&ty), AnyView::from(&name), AnyView::from(&description), AnyView::from(&arguments), AnyView::from(&attrs_type_key), AnyView::from(&num_inputs), AnyView::from(&support_level)])?.try_into()?)
     }
 }

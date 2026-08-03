@@ -19,7 +19,9 @@
 
 //! Library facade over the stubgen-generated TIRx/IR bindings so downstream
 //! crates (e.g. cpusim-rs) can `use tvm_tirx_bindings::generated::...`.
-//! `src/generated/` is the unmodified `tvm-ffi-stubgen --target rust` output;
-//! see README.md for the regeneration recipe.
+//! `src/generated/` is the `tvm-ffi-stubgen --target rust` output with a
+//! single hand patch (see `ffi_compat`); see README.md for the regeneration
+//! recipe.
 
+pub mod ffi_compat;
 pub mod generated;
