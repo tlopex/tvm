@@ -28,8 +28,12 @@ runtime_source="$repo_dir/3rdparty/tvm-ffi"
 runtime_crate="$runtime_source/rust/tvm-ffi"
 compiler_lib="${TVM_COMPILER_LIB:-$repo_dir/build/lib/libtvm_compiler.so}"
 prefixes=(ir tirx target transform instrument arith)
-prefix_csv="ir,tirx,target,transform,instrument,arith"
-schema_version="tvm-ffi-reflection-rust-v2"
+prefix_csv="$(IFS=,; printf '%s' "${prefixes[*]}")"
+schema_version="tvm-ffi-reflection-rust-v3"
+expected_object_count=131
+expected_global_count=395
+expected_getter_count=307
+expected_packed_fallback_count=18
 
 mode="${1:---check}"
 if [[ "$mode" != "--check" && "$mode" != "--write" ]]; then
@@ -58,6 +62,12 @@ fi
 runtime_commit="$(git -C "$runtime_source" rev-parse 'HEAD^{commit}')"
 if [[ -n "$(git -C "$runtime_source" status --porcelain=v1 --untracked-files=normal)" ]]; then
     echo "tvm-ffi runtime worktree must be clean before regeneration" >&2
+    exit 1
+fi
+cargo_runtime_commit="$(sed -nE '/^tvm-ffi = /s/.*rev = "([0-9a-f]{40})".*/\1/p' "$script_dir/Cargo.toml")"
+if [[ "$cargo_runtime_commit" != "$runtime_commit" ]]; then
+    echo "Cargo.toml tvm-ffi rev must match the runtime submodule HEAD" >&2
+    echo "Cargo.toml: ${cargo_runtime_commit:-<missing>}; submodule: $runtime_commit" >&2
     exit 1
 fi
 
@@ -246,6 +256,23 @@ if [[ "${#rust_files[@]}" == 0 ]]; then
 fi
 rustfmt --edition 2021 "${rust_files[@]}"
 "$script_dir/check_generated_safety.sh" "$candidate"
+
+object_count="$(rg --no-ignore -o '^pub struct [A-Za-z_][A-Za-z0-9_]*Obj\s*\{' "$candidate" -g '*.rs' | wc -l)"
+global_count="$(rg --no-ignore -o '^pub fn ' "$candidate" -g '*.rs' | wc -l)"
+getter_count="$(rg --no-ignore -o 'tvm_ffi::object::get_object_field\s*::' "$candidate" -g '*.rs' | wc -l)"
+packed_fallback_count="$(rg --no-ignore -o '^pub fn [A-Za-z0-9_#]+_packed\s*\(' "$candidate" -g '*.rs' | wc -l)"
+if [[ "$object_count" != "$expected_object_count" ||
+      "$global_count" != "$expected_global_count" ||
+      "$getter_count" != "$expected_getter_count" ||
+      "$packed_fallback_count" != "$expected_packed_fallback_count" ]]; then
+    echo "generated coverage manifest changed; audit the schema before updating expectations" >&2
+    echo "objects: $object_count (expected $expected_object_count)" >&2
+    echo "globals: $global_count (expected $expected_global_count)" >&2
+    echo "getters: $getter_count (expected $expected_getter_count)" >&2
+    echo "packed fallbacks: $packed_fallback_count (expected $expected_packed_fallback_count)" >&2
+    exit 1
+fi
+echo "coverage manifest passed: $object_count objects, $global_count globals, $getter_count getters, $packed_fallback_count packed fallbacks"
 
 rustfmt_version="$(rustfmt --version)"
 {

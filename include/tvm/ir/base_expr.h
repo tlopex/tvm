@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <type_traits>
 
 namespace tvm {
@@ -426,8 +427,20 @@ struct TypeTraits<TypedExpr<ExpectedType>>
   using Base::GetMismatchTypeInfo;
   using Base::MoveFromAnyAfterCheck;
   using Base::MoveToAny;
-  using Base::TypeSchema;
-  using Base::TypeStr;
+
+  TVM_FFI_INLINE static std::string TypeStr() {
+    return "TypedExpr<" + TypeTraits<ExpectedType>::TypeStr() + ">";
+  }
+
+  TVM_FFI_INLINE static std::string TypeSchema() {
+    std::string schema = R"({"type":"TypedExpr","args":[{"type":")" +
+                         std::string(ExprNode::_type_key) + R"("},)" +
+                         TypeTraits<ExpectedType>::TypeSchema() + "]}";
+    if constexpr (TypedExpr<ExpectedType>::_type_is_nullable) {
+      return R"({"type":"Optional","args":[)" + schema + "]}";
+    }
+    return schema;
+  }
 
   TVM_FFI_INLINE static bool CheckAnyStrict(const TVMFFIAny* src) {
     if (src->type_index == TypeIndex::kTVMFFINone) {
@@ -462,6 +475,14 @@ template <typename ObjectRefType, typename ExpectedType, typename... FallbackTyp
 struct TypedExprWithFallbackTraitsBase
     : public ObjectRefWithFallbackTraitsBase<ObjectRefType, FallbackTypes...> {
   using Base = ObjectRefWithFallbackTraitsBase<ObjectRefType, FallbackTypes...>;
+
+  TVM_FFI_INLINE static std::string TypeStr() {
+    return TypeTraits<TypedExpr<ExpectedType>>::TypeStr();
+  }
+
+  TVM_FFI_INLINE static std::string TypeSchema() {
+    return TypeTraits<TypedExpr<ExpectedType>>::TypeSchema();
+  }
 
   TVM_FFI_INLINE static bool CheckAnyStrict(const TVMFFIAny* src) {
     return TypeTraits<TypedExpr<ExpectedType>>::CheckAnyStrict(src);

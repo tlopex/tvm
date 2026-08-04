@@ -29,3 +29,10 @@ pub mod generated;
 pub mod mutator;
 pub mod passes;
 pub mod visitor;
+
+/// An IR expression whose reflected result type is a primitive scalar/vector type.
+///
+/// Unlike an ordinary [`generated::ir::Expr`], this refinement is checked when
+/// the value crosses the FFI boundary or is created with
+/// [`tvm_ffi::TypedExpr::try_from_base`].
+pub type PrimExpr = tvm_ffi::TypedExpr<generated::ir::Expr, generated::ir::PrimType>;

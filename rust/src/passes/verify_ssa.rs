@@ -31,14 +31,18 @@ use crate::generated::ir::{Expr, IRModule};
 use crate::generated::tirx::{analysis, AllocBuffer, Bind, Buffer, For, Let, PrimFunc, Var};
 use crate::generated::transform::Pass;
 use crate::visitor::{try_downcast, walk_expr, walk_stmt, StmtExprVisitor};
+use crate::PrimExpr;
 use tvm_ffi::{Array, Error, ObjectArc, ObjectRefCore, Result};
 
 fn object_identity<R: ObjectRefCore>(value: &R) -> usize {
     unsafe { ObjectArc::as_raw(<R as ObjectRefCore>::data(value)) as *const () as usize }
 }
 
-fn expr_deep_equal(lhs: &Expr, rhs: &Expr) -> Result<bool> {
-    analysis::expr_deep_equal(Some(lhs.clone()), Some(rhs.clone()))
+fn expr_deep_equal(lhs: &Expr, rhs: &PrimExpr) -> Result<bool> {
+    analysis::expr_deep_equal(
+        Some(PrimExpr::try_from_base(lhs.clone())?),
+        Some(rhs.clone()),
+    )
 }
 
 fn type_error(message: impl AsRef<str>) -> Error {
@@ -99,11 +103,11 @@ impl SsaVerifier {
 
             let data: Expr = data.into();
             self.visit_expr(&data)?;
-            self.visit_expr_array(&shape, "Buffer::shape")?;
+            self.visit_prim_expr_array(&shape, "Buffer::shape")?;
             if strides.is_defined() {
-                self.visit_expr_array(&strides, "Buffer::strides")?;
+                self.visit_prim_expr_array(&strides, "Buffer::strides")?;
             }
-            self.visit_expr(&elem_offset)
+            self.visit_prim_expr(&elem_offset)
         })();
         self.in_match_scope = previous_scope;
         result
@@ -166,10 +170,13 @@ impl StmtExprVisitor for SsaVerifier {
                 return Ok(());
             }
         } else {
-            self.definitions.insert(identity, value.clone());
+            // Keep the unrefined owning handle in the table.  Removing the
+            // static refinement does not change the object reference, so the
+            // definition and pointer-identity semantics remain unchanged.
+            self.definitions.insert(identity, value.clone().into_base());
         }
-        self.visit_expr(&value)?;
-        self.visit_expr(&body)
+        self.visit_prim_expr(&value)?;
+        self.visit_prim_expr(&body)
     }
 
     fn visit_bind(&mut self, node: &Bind) -> Result<()> {
@@ -188,10 +195,10 @@ impl StmtExprVisitor for SsaVerifier {
 
         let value: Expr = loop_var.clone().into();
         self.mark_definition(&loop_var, value, false);
-        self.visit_expr(&min)?;
-        self.visit_expr(&extent)?;
+        self.visit_prim_expr(&min)?;
+        self.visit_prim_expr(&extent)?;
         if let Some(step) = step {
-            self.visit_expr(&step)?;
+            self.visit_prim_expr(&step)?;
         }
         self.visit_stmt(&body)
     }

@@ -29,15 +29,12 @@ use super::super::transform::Pass;
 use super::super::transform::PassInfo;
 use std::marker::PhantomData;
 use std::rc::Rc;
-use tvm_ffi::Any;
 use tvm_ffi::AnyView;
 use tvm_ffi::Function;
 use tvm_ffi::Map;
 use tvm_ffi::Object;
 use tvm_ffi::ObjectArc;
 use tvm_ffi::ObjectCore;
-use tvm_ffi::ObjectRefCast;
-use tvm_ffi::ObjectRefCore;
 use tvm_ffi::Result;
 use tvm_ffi::String;
 // tvm-ffi-stubgen(end)
@@ -255,8 +252,7 @@ pub fn verify_ssa() -> Result<Option<Pass>> {
 #[type_key = "tirx.transform.RemoveNoOpConfig"]
 pub struct RemoveNoOpConfigObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -267,33 +263,6 @@ pub struct RemoveNoOpConfig {
 }
 
 impl RemoveNoOpConfig {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> RemoveNoOpConfigBuilder {
-        RemoveNoOpConfigBuilder {
-            max_simplification_steps: None,
-            ignore_profiler_call: None,
-        }
-    }
-
     pub fn max_simplification_steps(&self) -> Result<i64> {
         tvm_ffi::object::get_object_field::<i64, _>(
             self,
@@ -310,49 +279,6 @@ impl RemoveNoOpConfig {
         )
     }
 }
-
-pub struct RemoveNoOpConfigBuilder {
-    max_simplification_steps: Option<i64>,
-    ignore_profiler_call: Option<bool>,
-}
-
-impl RemoveNoOpConfigBuilder {
-    pub fn with_max_simplification_steps(mut self, value: i64) -> Self {
-        self.max_simplification_steps = Some(value);
-        self
-    }
-
-    pub fn with_ignore_profiler_call(mut self, value: bool) -> Self {
-        self.ignore_profiler_call = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<RemoveNoOpConfig> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            RemoveNoOpConfigObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.max_simplification_steps {
-            owned_args.push(Any::from(tvm_ffi::String::from("max_simplification_steps")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.ignore_profiler_call {
-            owned_args.push(Any::from(tvm_ffi::String::from("ignore_profiler_call")));
-            owned_args.push(Any::from(value));
-        }
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/tirx.transform.StmtSimplifyConfig
@@ -361,8 +287,7 @@ impl RemoveNoOpConfigBuilder {
 #[type_key = "tirx.transform.StmtSimplifyConfig"]
 pub struct StmtSimplifyConfigObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -373,34 +298,6 @@ pub struct StmtSimplifyConfig {
 }
 
 impl StmtSimplifyConfig {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> StmtSimplifyConfigBuilder {
-        StmtSimplifyConfigBuilder {
-            transitively_prove_inequalities: None,
-            convert_boolean_to_and_of_ors: None,
-            apply_constraints_to_boolean_branches: None,
-        }
-    }
-
     pub fn transitively_prove_inequalities(&self) -> Result<bool> {
         tvm_ffi::object::get_object_field::<bool, _>(
             self,
@@ -425,65 +322,6 @@ impl StmtSimplifyConfig {
         )
     }
 }
-
-pub struct StmtSimplifyConfigBuilder {
-    transitively_prove_inequalities: Option<bool>,
-    convert_boolean_to_and_of_ors: Option<bool>,
-    apply_constraints_to_boolean_branches: Option<bool>,
-}
-
-impl StmtSimplifyConfigBuilder {
-    pub fn with_transitively_prove_inequalities(mut self, value: bool) -> Self {
-        self.transitively_prove_inequalities = Some(value);
-        self
-    }
-
-    pub fn with_convert_boolean_to_and_of_ors(mut self, value: bool) -> Self {
-        self.convert_boolean_to_and_of_ors = Some(value);
-        self
-    }
-
-    pub fn with_apply_constraints_to_boolean_branches(mut self, value: bool) -> Self {
-        self.apply_constraints_to_boolean_branches = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<StmtSimplifyConfig> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            StmtSimplifyConfigObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.transitively_prove_inequalities {
-            owned_args.push(Any::from(tvm_ffi::String::from(
-                "transitively_prove_inequalities",
-            )));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.convert_boolean_to_and_of_ors {
-            owned_args.push(Any::from(tvm_ffi::String::from(
-                "convert_boolean_to_and_of_ors",
-            )));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.apply_constraints_to_boolean_branches {
-            owned_args.push(Any::from(tvm_ffi::String::from(
-                "apply_constraints_to_boolean_branches",
-            )));
-            owned_args.push(Any::from(value));
-        }
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/tirx.transform.UnrollLoopConfig
@@ -492,8 +330,7 @@ impl StmtSimplifyConfigBuilder {
 #[type_key = "tirx.transform.UnrollLoopConfig"]
 pub struct UnrollLoopConfigObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -504,36 +341,6 @@ pub struct UnrollLoopConfig {
 }
 
 impl UnrollLoopConfig {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> UnrollLoopConfigBuilder {
-        UnrollLoopConfigBuilder {
-            auto_max_step: None,
-            auto_max_depth: None,
-            auto_max_extent: None,
-            explicit_unroll: None,
-            unroll_local_access: None,
-        }
-    }
-
     pub fn auto_max_step(&self) -> Result<i64> {
         tvm_ffi::object::get_object_field::<i64, _>(
             self,
@@ -572,79 +379,6 @@ impl UnrollLoopConfig {
             UnrollLoopConfigObj::type_index(),
             "unroll_local_access",
         )
-    }
-}
-
-pub struct UnrollLoopConfigBuilder {
-    auto_max_step: Option<i64>,
-    auto_max_depth: Option<i64>,
-    auto_max_extent: Option<i64>,
-    explicit_unroll: Option<i64>,
-    unroll_local_access: Option<i64>,
-}
-
-impl UnrollLoopConfigBuilder {
-    pub fn with_auto_max_step(mut self, value: i64) -> Self {
-        self.auto_max_step = Some(value);
-        self
-    }
-
-    pub fn with_auto_max_depth(mut self, value: i64) -> Self {
-        self.auto_max_depth = Some(value);
-        self
-    }
-
-    pub fn with_auto_max_extent(mut self, value: i64) -> Self {
-        self.auto_max_extent = Some(value);
-        self
-    }
-
-    pub fn with_explicit_unroll(mut self, value: i64) -> Self {
-        self.explicit_unroll = Some(value);
-        self
-    }
-
-    pub fn with_unroll_local_access(mut self, value: i64) -> Self {
-        self.unroll_local_access = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<UnrollLoopConfig> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            UnrollLoopConfigObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.auto_max_step {
-            owned_args.push(Any::from(tvm_ffi::String::from("auto_max_step")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.auto_max_depth {
-            owned_args.push(Any::from(tvm_ffi::String::from("auto_max_depth")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.auto_max_extent {
-            owned_args.push(Any::from(tvm_ffi::String::from("auto_max_extent")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.explicit_unroll {
-            owned_args.push(Any::from(tvm_ffi::String::from("explicit_unroll")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.unroll_local_access {
-            owned_args.push(Any::from(tvm_ffi::String::from("unroll_local_access")));
-            owned_args.push(Any::from(value));
-        }
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)

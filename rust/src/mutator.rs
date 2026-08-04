@@ -31,7 +31,7 @@ use crate::generated::tirx::{
     For, IfThenElse, SBlock, SBlockRealize, ScopeIdDefStmt, SeqStmt, Stmt, TilePrimitiveCall,
     While,
 };
-use tvm_ffi::{AnyValue, Array, Error, ObjectRefCast, Result};
+use tvm_ffi::{AnyValue, Array, Error, ObjectRefCast, ObjectRefCore, Result};
 
 fn type_error(message: impl AsRef<str>) -> Error {
     Error::new(tvm_ffi::error::TYPE_ERROR, message.as_ref(), "")

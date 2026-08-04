@@ -32,7 +32,7 @@ use crate::generated::tirx::{AttrStmt, Evaluate, For, IfThenElse, PrimFunc, Stmt
 use crate::generated::transform::Pass;
 use crate::mutator::StatementMutator;
 use crate::visitor::{try_downcast, StmtExprVisitor};
-use tvm_ffi::Result;
+use tvm_ffi::{ObjectRefCore, Result};
 
 struct UnknownCallFinder {
     found: bool,
@@ -183,7 +183,10 @@ impl StatementMutator for ConservativeNoOpRemover {
         // An explicit step participates in loop execution rather than being a
         // one-time bound. If it may call unknown code, extracting it into one
         // Evaluate would change its execution count. Keep the loop unchanged.
-        if step.as_ref().is_some_and(contains_unknown_call) {
+        if step
+            .as_ref()
+            .is_some_and(|value| contains_unknown_call(value))
+        {
             return Ok(original.clone());
         }
 

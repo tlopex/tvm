@@ -23,11 +23,13 @@
 
 // tvm-ffi-stubgen(begin): import-section
 use super::super::ir::Expr;
+use super::super::ir::PrimType;
 use super::super::tirx::PrimFunc;
 use tvm_ffi::object::ObjectRef;
 use tvm_ffi::Any;
 use tvm_ffi::AnyView;
 use tvm_ffi::Result;
+use tvm_ffi::TypedExpr;
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): global/tirx.analysis
@@ -53,7 +55,10 @@ pub fn verify_well_formed(_0: Option<ObjectRef>, _1: bool) -> Result<bool> {
         .try_into()?)
 }
 
-pub fn expr_deep_equal(_0: Option<Expr>, _1: Option<Expr>) -> Result<bool> {
+pub fn expr_deep_equal(
+    _0: Option<TypedExpr<Expr, PrimType>>,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+) -> Result<bool> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "tirx.analysis.expr_deep_equal")?;
     Ok(f.call_packed(&[AnyView::from(&_0), AnyView::from(&_1)])?

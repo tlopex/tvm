@@ -64,7 +64,7 @@ dependencies = [
 [[package]]
 name = "tvm-ffi"
 version = "0.1.0-alpha.0"
-source = "git+https://github.com/tlopex/tvm-ffi.git?rev=0bc872fe530d83a610511ed18079f4f2e62bda3c#0bc872fe530d83a610511ed18079f4f2e62bda3c"
+source = "git+https://github.com/tlopex/tvm-ffi.git?rev=e7f9fc593c8aa417924eb40ec2778e72b1e148a9#e7f9fc593c8aa417924eb40ec2778e72b1e148a9"
 dependencies = [
  "paste",
  "tvm-ffi-macros",
@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "tvm-ffi-macros"
 version = "0.1.0-alpha.0"
-source = "git+https://github.com/tlopex/tvm-ffi.git?rev=0bc872fe530d83a610511ed18079f4f2e62bda3c#0bc872fe530d83a610511ed18079f4f2e62bda3c"
+source = "git+https://github.com/tlopex/tvm-ffi.git?rev=e7f9fc593c8aa417924eb40ec2778e72b1e148a9#e7f9fc593c8aa417924eb40ec2778e72b1e148a9"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -85,7 +85,7 @@ dependencies = [
 [[package]]
 name = "tvm-ffi-sys"
 version = "0.1.0-alpha.0"
-source = "git+https://github.com/tlopex/tvm-ffi.git?rev=0bc872fe530d83a610511ed18079f4f2e62bda3c#0bc872fe530d83a610511ed18079f4f2e62bda3c"
+source = "git+https://github.com/tlopex/tvm-ffi.git?rev=e7f9fc593c8aa417924eb40ec2778e72b1e148a9#e7f9fc593c8aa417924eb40ec2778e72b1e148a9"
 
 [[package]]
 name = "tvm-tirx-bindings"

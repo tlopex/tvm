@@ -23,7 +23,7 @@ use crate::ffi_api;
 use crate::generated::tirx::{AssertStmt, PrimFunc, Stmt};
 use crate::generated::transform::Pass;
 use crate::mutator::StatementMutator;
-use tvm_ffi::Result;
+use tvm_ffi::{ObjectRefCore, Result};
 
 struct AssertSkipper;
 

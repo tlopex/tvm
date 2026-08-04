@@ -55,6 +55,18 @@ TEST(Expr, PrimTypeBoolLanes) {
   TVM_FFI_ICHECK(boolx4.MatchesElementType(DLDataTypeCode::kDLBool, 8));
 }
 
+TEST(Expr, TypedExprTypeSchemaPreservesRefinement) {
+  using namespace tvm;
+  EXPECT_EQ(ffi::TypeTraits<Expr>::TypeSchema(),
+            R"({"type":"Optional","args":[{"type":"ir.Expr"}]})");
+  EXPECT_EQ(
+      ffi::TypeTraits<PrimExpr>::TypeSchema(),
+      R"({"type":"Optional","args":[{"type":"TypedExpr","args":[{"type":"ir.Expr"},{"type":"ir.PrimType"}]}]})");
+  EXPECT_EQ(
+      ffi::TypeTraits<ffi::Array<PrimExpr>>::TypeSchema(),
+      R"({"type":"ffi.Array","args":[{"type":"Optional","args":[{"type":"TypedExpr","args":[{"type":"ir.Expr"},{"type":"ir.PrimType"}]}]}]})");
+}
+
 TEST(ExprNodeRef, Basic) {
   using namespace tvm;
   using namespace tvm::tirx;

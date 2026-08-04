@@ -37,10 +37,10 @@ use tvm_ffi::Map;
 use tvm_ffi::Object;
 use tvm_ffi::ObjectArc;
 use tvm_ffi::ObjectCore;
-use tvm_ffi::ObjectRefCast;
 use tvm_ffi::ObjectRefCore;
 use tvm_ffi::Result;
 use tvm_ffi::String;
+use tvm_ffi::TypedExpr;
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): global/ir
@@ -424,7 +424,11 @@ pub fn prim_type(_0: DLDataType) -> Result<PrimType> {
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
 }
 
-pub fn range(_0: Option<Expr>, _1: Option<Expr>, _2: Option<Span>) -> Result<Option<Range>> {
+pub fn range(
+    _0: Option<TypedExpr<Expr, PrimType>>,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+    _2: Option<Span>,
+) -> Result<Option<Range>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "ir.Range")?;
     Ok(
@@ -434,8 +438,8 @@ pub fn range(_0: Option<Expr>, _1: Option<Expr>, _2: Option<Span>) -> Result<Opt
 }
 
 pub fn range_from_min_extent(
-    _0: Option<Expr>,
-    _1: Option<Expr>,
+    _0: Option<TypedExpr<Expr, PrimType>>,
+    _1: Option<TypedExpr<Expr, PrimType>>,
     _2: Option<Span>,
 ) -> Result<Option<Range>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
@@ -597,8 +601,7 @@ pub fn v_device(_0: Option<Target>, _1: i64, _2: String) -> Result<Option<VDevic
 #[type_key = "ir.ArgumentInfo"]
 pub struct ArgumentInfoObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -609,34 +612,6 @@ pub struct ArgumentInfo {
 }
 
 impl ArgumentInfo {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> ArgumentInfoBuilder {
-        ArgumentInfoBuilder {
-            name: None,
-            type_info: None,
-            description: None,
-        }
-    }
-
     pub fn name(&self) -> Result<String> {
         tvm_ffi::object::get_object_field::<String, _>(self, ArgumentInfoObj::type_index(), "name")
     }
@@ -657,59 +632,6 @@ impl ArgumentInfo {
         )
     }
 }
-
-pub struct ArgumentInfoBuilder {
-    name: Option<String>,
-    type_info: Option<String>,
-    description: Option<String>,
-}
-
-impl ArgumentInfoBuilder {
-    pub fn with_name(mut self, value: String) -> Self {
-        self.name = Some(value);
-        self
-    }
-
-    pub fn with_type_info(mut self, value: String) -> Self {
-        self.type_info = Some(value);
-        self
-    }
-
-    pub fn with_description(mut self, value: String) -> Self {
-        self.description = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<ArgumentInfo> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            ArgumentInfoObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("name")));
-        owned_args.push(Any::from(self.name.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `name` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("type_info")));
-        owned_args.push(Any::from(self.type_info.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `type_info` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("description")));
-        owned_args.push(Any::from(self.description.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `description` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/ir.Attrs
@@ -718,8 +640,7 @@ impl ArgumentInfoBuilder {
 #[type_key = "ir.Attrs"]
 pub struct AttrsObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -727,50 +648,6 @@ pub struct AttrsObj {
 #[derive(tvm_ffi::derive::ObjectRef, Clone)]
 pub struct Attrs {
     data: ObjectArc<AttrsObj>,
-}
-
-impl Attrs {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> AttrsBuilder {
-        AttrsBuilder {}
-    }
-}
-
-pub struct AttrsBuilder {}
-
-impl AttrsBuilder {
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<Attrs> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f =
-            tvm_ffi::Function::from_type_method_cached(&F, AttrsObj::type_index(), "__ffi_init__")?;
-        let owned_args: Vec<Any> = Vec::new();
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
 }
 // tvm-ffi-stubgen(end)
 
@@ -780,8 +657,7 @@ impl AttrsBuilder {
 #[type_key = "ir.DictAttrs"]
 pub struct DictAttrsObj {
     base: AttrsObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -808,69 +684,12 @@ impl From<DictAttrs> for Attrs {
 }
 
 impl DictAttrs {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> DictAttrsBuilder {
-        DictAttrsBuilder { __dict__: None }
-    }
-
     pub fn __dict__(&self) -> Result<Map<String, AnyValue>> {
         tvm_ffi::object::get_object_field::<Map<String, AnyValue>, _>(
             self,
             DictAttrsObj::type_index(),
             "__dict__",
         )
-    }
-}
-
-pub struct DictAttrsBuilder {
-    __dict__: Option<Map<String, AnyValue>>,
-}
-
-impl DictAttrsBuilder {
-    pub fn with_dict(mut self, value: Map<String, AnyValue>) -> Self {
-        self.__dict__ = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<DictAttrs> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            DictAttrsObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("__dict__")));
-        owned_args.push(Any::from(self.__dict__.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `__dict__` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -881,8 +700,7 @@ impl DictAttrsBuilder {
 #[type_key = "ir.EnvFunc"]
 pub struct EnvFuncObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -893,33 +711,6 @@ pub struct EnvFunc {
 }
 
 impl EnvFunc {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> EnvFuncBuilder {
-        EnvFuncBuilder {
-            name: None,
-            func: None,
-        }
-    }
-
     pub fn name(&self) -> Result<String> {
         tvm_ffi::object::get_object_field::<String, _>(self, EnvFuncObj::type_index(), "name")
     }
@@ -932,49 +723,6 @@ impl EnvFunc {
         )
     }
 }
-
-pub struct EnvFuncBuilder {
-    name: Option<String>,
-    func: Option<Option<Function>>,
-}
-
-impl EnvFuncBuilder {
-    pub fn with_name(mut self, value: String) -> Self {
-        self.name = Some(value);
-        self
-    }
-
-    pub fn with_func(mut self, value: Option<Function>) -> Self {
-        self.func = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<EnvFunc> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            EnvFuncObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("name")));
-        owned_args.push(Any::from(self.name.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `name` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("func")));
-        owned_args.push(Any::from(self.func.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `func` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/ir.Expr
@@ -983,8 +731,7 @@ impl EnvFuncBuilder {
 #[type_key = "ir.Expr"]
 pub struct ExprObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -995,79 +742,12 @@ pub struct Expr {
 }
 
 impl Expr {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> ExprBuilder {
-        ExprBuilder {
-            span: None,
-            ty: None,
-        }
-    }
-
     pub fn span(&self) -> Result<Option<Span>> {
         tvm_ffi::object::get_object_field::<Option<Span>, _>(self, ExprObj::type_index(), "span")
     }
 
     pub fn ty(&self) -> Result<Type> {
         tvm_ffi::object::get_object_field::<Type, _>(self, ExprObj::type_index(), "ty")
-    }
-}
-
-pub struct ExprBuilder {
-    span: Option<Option<Span>>,
-    ty: Option<Type>,
-}
-
-impl ExprBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_ty(mut self, value: Type) -> Self {
-        self.ty = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<Expr> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f =
-            tvm_ffi::Function::from_type_method_cached(&F, ExprObj::type_index(), "__ffi_init__")?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.ty {
-            owned_args.push(Any::from(tvm_ffi::String::from("ty")));
-            owned_args.push(Any::from(value));
-        }
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -1078,8 +758,7 @@ impl ExprBuilder {
 #[type_key = "ir.BaseFunc"]
 pub struct BaseFuncObj {
     base: ExprObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1106,89 +785,8 @@ impl From<BaseFunc> for Expr {
 }
 
 impl BaseFunc {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> BaseFuncBuilder {
-        BaseFuncBuilder {
-            span: None,
-            ty: None,
-            attrs: None,
-        }
-    }
-
     pub fn attrs(&self) -> Result<DictAttrs> {
         tvm_ffi::object::get_object_field::<DictAttrs, _>(self, BaseFuncObj::type_index(), "attrs")
-    }
-}
-
-pub struct BaseFuncBuilder {
-    span: Option<Option<Span>>,
-    ty: Option<Type>,
-    attrs: Option<DictAttrs>,
-}
-
-impl BaseFuncBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_ty(mut self, value: Type) -> Self {
-        self.ty = Some(value);
-        self
-    }
-
-    pub fn with_attrs(mut self, value: DictAttrs) -> Self {
-        self.attrs = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<BaseFunc> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            BaseFuncObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.ty {
-            owned_args.push(Any::from(tvm_ffi::String::from("ty")));
-            owned_args.push(Any::from(value));
-        }
-        owned_args.push(Any::from(tvm_ffi::String::from("attrs")));
-        owned_args.push(Any::from(self.attrs.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `attrs` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -1199,8 +797,7 @@ impl BaseFuncBuilder {
 #[type_key = "ir.Call"]
 pub struct CallObj {
     base: ExprObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1227,37 +824,6 @@ impl From<Call> for Expr {
 }
 
 impl Call {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> CallBuilder {
-        CallBuilder {
-            span: None,
-            ty: None,
-            op: None,
-            args: None,
-            attrs: None,
-            ty_args: None,
-        }
-    }
-
     pub fn op(&self) -> Result<Option<Expr>> {
         tvm_ffi::object::get_object_field::<Option<Expr>, _>(self, CallObj::type_index(), "op")
     }
@@ -1278,86 +844,6 @@ impl Call {
         tvm_ffi::object::get_object_field::<Array<Type>, _>(self, CallObj::type_index(), "ty_args")
     }
 }
-
-pub struct CallBuilder {
-    span: Option<Option<Span>>,
-    ty: Option<Type>,
-    op: Option<Option<Expr>>,
-    args: Option<Array<Option<Expr>>>,
-    attrs: Option<Option<Attrs>>,
-    ty_args: Option<Array<Type>>,
-}
-
-impl CallBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_ty(mut self, value: Type) -> Self {
-        self.ty = Some(value);
-        self
-    }
-
-    pub fn with_op(mut self, value: Option<Expr>) -> Self {
-        self.op = Some(value);
-        self
-    }
-
-    pub fn with_args(mut self, value: Array<Option<Expr>>) -> Self {
-        self.args = Some(value);
-        self
-    }
-
-    pub fn with_attrs(mut self, value: Option<Attrs>) -> Self {
-        self.attrs = Some(value);
-        self
-    }
-
-    pub fn with_ty_args(mut self, value: Array<Type>) -> Self {
-        self.ty_args = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<Call> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f =
-            tvm_ffi::Function::from_type_method_cached(&F, CallObj::type_index(), "__ffi_init__")?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.ty {
-            owned_args.push(Any::from(tvm_ffi::String::from("ty")));
-            owned_args.push(Any::from(value));
-        }
-        owned_args.push(Any::from(tvm_ffi::String::from("op")));
-        owned_args.push(Any::from(self.op.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `op` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("args")));
-        owned_args.push(Any::from(self.args.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `args` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("attrs")));
-        owned_args.push(Any::from(self.attrs.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `attrs` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("ty_args")));
-        owned_args.push(Any::from(self.ty_args.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `ty_args` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/ir.FloatImm
@@ -1366,8 +852,7 @@ impl CallBuilder {
 #[type_key = "ir.FloatImm"]
 pub struct FloatImmObj {
     base: ExprObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1394,89 +879,8 @@ impl From<FloatImm> for Expr {
 }
 
 impl FloatImm {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> FloatImmBuilder {
-        FloatImmBuilder {
-            span: None,
-            ty: None,
-            value: None,
-        }
-    }
-
     pub fn value(&self) -> Result<f64> {
         tvm_ffi::object::get_object_field::<f64, _>(self, FloatImmObj::type_index(), "value")
-    }
-}
-
-pub struct FloatImmBuilder {
-    span: Option<Option<Span>>,
-    ty: Option<Type>,
-    value: Option<f64>,
-}
-
-impl FloatImmBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_ty(mut self, value: Type) -> Self {
-        self.ty = Some(value);
-        self
-    }
-
-    pub fn with_value(mut self, value: f64) -> Self {
-        self.value = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<FloatImm> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            FloatImmObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.ty {
-            owned_args.push(Any::from(tvm_ffi::String::from("ty")));
-            owned_args.push(Any::from(value));
-        }
-        owned_args.push(Any::from(tvm_ffi::String::from("value")));
-        owned_args.push(Any::from(self.value.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `value` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -1487,8 +891,7 @@ impl FloatImmBuilder {
 #[type_key = "ir.GlobalInfo"]
 pub struct GlobalInfoObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1496,24 +899,6 @@ pub struct GlobalInfoObj {
 #[derive(tvm_ffi::derive::ObjectRef, Clone)]
 pub struct GlobalInfo {
     data: ObjectArc<GlobalInfoObj>,
-}
-
-impl GlobalInfo {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
 }
 // tvm-ffi-stubgen(end)
 
@@ -1523,8 +908,7 @@ impl GlobalInfo {
 #[type_key = "ir.DummyGlobalInfo"]
 pub struct DummyGlobalInfoObj {
     base: GlobalInfoObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1549,53 +933,6 @@ impl From<DummyGlobalInfo> for GlobalInfo {
         <GlobalInfo as tvm_ffi::ObjectRefCore>::from_data(up)
     }
 }
-
-impl DummyGlobalInfo {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> DummyGlobalInfoBuilder {
-        DummyGlobalInfoBuilder {}
-    }
-}
-
-pub struct DummyGlobalInfoBuilder {}
-
-impl DummyGlobalInfoBuilder {
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<DummyGlobalInfo> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            DummyGlobalInfoObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let owned_args: Vec<Any> = Vec::new();
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/ir.GlobalVar
@@ -1604,8 +941,7 @@ impl DummyGlobalInfoBuilder {
 #[type_key = "ir.GlobalVar"]
 pub struct GlobalVarObj {
     base: ExprObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1632,93 +968,12 @@ impl From<GlobalVar> for Expr {
 }
 
 impl GlobalVar {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> GlobalVarBuilder {
-        GlobalVarBuilder {
-            span: None,
-            ty: None,
-            name_hint: None,
-        }
-    }
-
     pub fn name_hint(&self) -> Result<String> {
         tvm_ffi::object::get_object_field::<String, _>(
             self,
             GlobalVarObj::type_index(),
             "name_hint",
         )
-    }
-}
-
-pub struct GlobalVarBuilder {
-    span: Option<Option<Span>>,
-    ty: Option<Type>,
-    name_hint: Option<String>,
-}
-
-impl GlobalVarBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_ty(mut self, value: Type) -> Self {
-        self.ty = Some(value);
-        self
-    }
-
-    pub fn with_name_hint(mut self, value: String) -> Self {
-        self.name_hint = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<GlobalVar> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            GlobalVarObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.ty {
-            owned_args.push(Any::from(tvm_ffi::String::from("ty")));
-            owned_args.push(Any::from(value));
-        }
-        owned_args.push(Any::from(tvm_ffi::String::from("name_hint")));
-        owned_args.push(Any::from(self.name_hint.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `name_hint` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -1729,8 +984,7 @@ impl GlobalVarBuilder {
 #[type_key = "ir.IRModule"]
 pub struct IRModuleObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1741,36 +995,6 @@ pub struct IRModule {
 }
 
 impl IRModule {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> IRModuleBuilder {
-        IRModuleBuilder {
-            functions: None,
-            global_var_map_: None,
-            source_map: None,
-            attrs: None,
-            global_infos: None,
-        }
-    }
-
     pub fn functions(&self) -> Result<Map<Option<GlobalVar>, Option<BaseFunc>>> {
         tvm_ffi::object::get_object_field::<Map<Option<GlobalVar>, Option<BaseFunc>>, _>(
             self,
@@ -1807,83 +1031,6 @@ impl IRModule {
         )
     }
 }
-
-pub struct IRModuleBuilder {
-    functions: Option<Map<Option<GlobalVar>, Option<BaseFunc>>>,
-    global_var_map_: Option<Map<String, Option<GlobalVar>>>,
-    source_map: Option<SourceMap>,
-    attrs: Option<DictAttrs>,
-    global_infos: Option<Map<String, Array<Option<GlobalInfo>>>>,
-}
-
-impl IRModuleBuilder {
-    pub fn with_functions(mut self, value: Map<Option<GlobalVar>, Option<BaseFunc>>) -> Self {
-        self.functions = Some(value);
-        self
-    }
-
-    pub fn with_global_var_map(mut self, value: Map<String, Option<GlobalVar>>) -> Self {
-        self.global_var_map_ = Some(value);
-        self
-    }
-
-    pub fn with_source_map(mut self, value: SourceMap) -> Self {
-        self.source_map = Some(value);
-        self
-    }
-
-    pub fn with_attrs(mut self, value: DictAttrs) -> Self {
-        self.attrs = Some(value);
-        self
-    }
-
-    pub fn with_global_infos(mut self, value: Map<String, Array<Option<GlobalInfo>>>) -> Self {
-        self.global_infos = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<IRModule> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            IRModuleObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("functions")));
-        owned_args.push(Any::from(self.functions.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `functions` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("global_var_map_")));
-        owned_args.push(Any::from(self.global_var_map_.ok_or_else(|| {
-            tvm_ffi::Error::new(
-                tvm_ffi::VALUE_ERROR,
-                "field `global_var_map_` is not set",
-                "",
-            )
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("source_map")));
-        owned_args.push(Any::from(self.source_map.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `source_map` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("attrs")));
-        owned_args.push(Any::from(self.attrs.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `attrs` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("global_infos")));
-        owned_args.push(Any::from(self.global_infos.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `global_infos` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/ir.IntImm
@@ -1892,8 +1039,7 @@ impl IRModuleBuilder {
 #[type_key = "ir.IntImm"]
 pub struct IntImmObj {
     base: ExprObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1920,89 +1066,8 @@ impl From<IntImm> for Expr {
 }
 
 impl IntImm {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> IntImmBuilder {
-        IntImmBuilder {
-            span: None,
-            ty: None,
-            value: None,
-        }
-    }
-
     pub fn value(&self) -> Result<i64> {
         tvm_ffi::object::get_object_field::<i64, _>(self, IntImmObj::type_index(), "value")
-    }
-}
-
-pub struct IntImmBuilder {
-    span: Option<Option<Span>>,
-    ty: Option<Type>,
-    value: Option<i64>,
-}
-
-impl IntImmBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_ty(mut self, value: Type) -> Self {
-        self.ty = Some(value);
-        self
-    }
-
-    pub fn with_value(mut self, value: i64) -> Self {
-        self.value = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<IntImm> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            IntImmObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.ty {
-            owned_args.push(Any::from(tvm_ffi::String::from("ty")));
-            owned_args.push(Any::from(value));
-        }
-        owned_args.push(Any::from(tvm_ffi::String::from("value")));
-        owned_args.push(Any::from(self.value.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `value` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -2013,8 +1078,7 @@ impl IntImmBuilder {
 #[type_key = "ir.IntSet"]
 pub struct IntSetObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2022,24 +1086,6 @@ pub struct IntSetObj {
 #[derive(tvm_ffi::derive::ObjectRef, Clone)]
 pub struct IntSet {
     data: ObjectArc<IntSetObj>,
-}
-
-impl IntSet {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
 }
 // tvm-ffi-stubgen(end)
 
@@ -2049,8 +1095,7 @@ impl IntSet {
 #[type_key = "ir.Op"]
 pub struct OpObj {
     base: ExprObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2077,39 +1122,6 @@ impl From<Op> for Expr {
 }
 
 impl Op {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> OpBuilder {
-        OpBuilder {
-            span: None,
-            ty: None,
-            name: None,
-            description: None,
-            arguments: None,
-            attrs_type_key: None,
-            num_inputs: None,
-            support_level: None,
-        }
-    }
-
     pub fn name(&self) -> Result<String> {
         tvm_ffi::object::get_object_field::<String, _>(self, OpObj::type_index(), "name")
     }
@@ -2138,110 +1150,6 @@ impl Op {
         tvm_ffi::object::get_object_field::<i64, _>(self, OpObj::type_index(), "support_level")
     }
 }
-
-pub struct OpBuilder {
-    span: Option<Option<Span>>,
-    ty: Option<Type>,
-    name: Option<String>,
-    description: Option<String>,
-    arguments: Option<Array<Option<ArgumentInfo>>>,
-    attrs_type_key: Option<String>,
-    num_inputs: Option<i64>,
-    support_level: Option<i64>,
-}
-
-impl OpBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_ty(mut self, value: Type) -> Self {
-        self.ty = Some(value);
-        self
-    }
-
-    pub fn with_name(mut self, value: String) -> Self {
-        self.name = Some(value);
-        self
-    }
-
-    pub fn with_description(mut self, value: String) -> Self {
-        self.description = Some(value);
-        self
-    }
-
-    pub fn with_arguments(mut self, value: Array<Option<ArgumentInfo>>) -> Self {
-        self.arguments = Some(value);
-        self
-    }
-
-    pub fn with_attrs_type_key(mut self, value: String) -> Self {
-        self.attrs_type_key = Some(value);
-        self
-    }
-
-    pub fn with_num_inputs(mut self, value: i64) -> Self {
-        self.num_inputs = Some(value);
-        self
-    }
-
-    pub fn with_support_level(mut self, value: i64) -> Self {
-        self.support_level = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<Op> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f =
-            tvm_ffi::Function::from_type_method_cached(&F, OpObj::type_index(), "__ffi_init__")?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.ty {
-            owned_args.push(Any::from(tvm_ffi::String::from("ty")));
-            owned_args.push(Any::from(value));
-        }
-        owned_args.push(Any::from(tvm_ffi::String::from("name")));
-        owned_args.push(Any::from(self.name.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `name` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("description")));
-        owned_args.push(Any::from(self.description.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `description` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("arguments")));
-        owned_args.push(Any::from(self.arguments.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `arguments` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("attrs_type_key")));
-        owned_args.push(Any::from(self.attrs_type_key.ok_or_else(|| {
-            tvm_ffi::Error::new(
-                tvm_ffi::VALUE_ERROR,
-                "field `attrs_type_key` is not set",
-                "",
-            )
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("num_inputs")));
-        owned_args.push(Any::from(self.num_inputs.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `num_inputs` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("support_level")));
-        owned_args.push(Any::from(self.support_level.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `support_level` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/ir.PrimExprConvertible
@@ -2250,8 +1158,7 @@ impl OpBuilder {
 #[type_key = "ir.PrimExprConvertible"]
 pub struct PrimExprConvertibleObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2259,24 +1166,6 @@ pub struct PrimExprConvertibleObj {
 #[derive(tvm_ffi::derive::ObjectRef, Clone)]
 pub struct PrimExprConvertible {
     data: ObjectArc<PrimExprConvertibleObj>,
-}
-
-impl PrimExprConvertible {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
 }
 // tvm-ffi-stubgen(end)
 
@@ -2286,8 +1175,7 @@ impl PrimExprConvertible {
 #[type_key = "ir.Range"]
 pub struct RangeObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2298,94 +1186,24 @@ pub struct Range {
 }
 
 impl Range {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
+    pub fn min(&self) -> Result<Option<TypedExpr<Expr, PrimType>>> {
+        tvm_ffi::object::get_object_field::<Option<TypedExpr<Expr, PrimType>>, _>(
+            self,
+            RangeObj::type_index(),
+            "min",
+        )
     }
 
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> RangeBuilder {
-        RangeBuilder {
-            min: None,
-            extent: None,
-            span: None,
-        }
-    }
-
-    pub fn min(&self) -> Result<Option<Expr>> {
-        tvm_ffi::object::get_object_field::<Option<Expr>, _>(self, RangeObj::type_index(), "min")
-    }
-
-    pub fn extent(&self) -> Result<Option<Expr>> {
-        tvm_ffi::object::get_object_field::<Option<Expr>, _>(self, RangeObj::type_index(), "extent")
+    pub fn extent(&self) -> Result<Option<TypedExpr<Expr, PrimType>>> {
+        tvm_ffi::object::get_object_field::<Option<TypedExpr<Expr, PrimType>>, _>(
+            self,
+            RangeObj::type_index(),
+            "extent",
+        )
     }
 
     pub fn span(&self) -> Result<Option<Span>> {
         tvm_ffi::object::get_object_field::<Option<Span>, _>(self, RangeObj::type_index(), "span")
-    }
-}
-
-pub struct RangeBuilder {
-    min: Option<Option<Expr>>,
-    extent: Option<Option<Expr>>,
-    span: Option<Option<Span>>,
-}
-
-impl RangeBuilder {
-    pub fn with_min(mut self, value: Option<Expr>) -> Self {
-        self.min = Some(value);
-        self
-    }
-
-    pub fn with_extent(mut self, value: Option<Expr>) -> Self {
-        self.extent = Some(value);
-        self
-    }
-
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<Range> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f =
-            tvm_ffi::Function::from_type_method_cached(&F, RangeObj::type_index(), "__ffi_init__")?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("min")));
-        owned_args.push(Any::from(self.min.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `min` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("extent")));
-        owned_args.push(Any::from(self.extent.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `extent` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("span")));
-        owned_args.push(Any::from(self.span.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `span` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -2396,8 +1214,7 @@ impl RangeBuilder {
 #[type_key = "ir.Source"]
 pub struct SourceObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2408,33 +1225,6 @@ pub struct Source {
 }
 
 impl Source {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> SourceBuilder {
-        SourceBuilder {
-            source_name: None,
-            source: None,
-        }
-    }
-
     pub fn source_name(&self) -> Result<Option<SourceName>> {
         tvm_ffi::object::get_object_field::<Option<SourceName>, _>(
             self,
@@ -2447,49 +1237,6 @@ impl Source {
         tvm_ffi::object::get_object_field::<String, _>(self, SourceObj::type_index(), "source")
     }
 }
-
-pub struct SourceBuilder {
-    source_name: Option<Option<SourceName>>,
-    source: Option<String>,
-}
-
-impl SourceBuilder {
-    pub fn with_source_name(mut self, value: Option<SourceName>) -> Self {
-        self.source_name = Some(value);
-        self
-    }
-
-    pub fn with_source(mut self, value: String) -> Self {
-        self.source = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<Source> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            SourceObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("source_name")));
-        owned_args.push(Any::from(self.source_name.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `source_name` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("source")));
-        owned_args.push(Any::from(self.source.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `source` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/ir.SourceMap
@@ -2498,8 +1245,7 @@ impl SourceBuilder {
 #[type_key = "ir.SourceMap"]
 pub struct SourceMapObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2510,69 +1256,12 @@ pub struct SourceMap {
 }
 
 impl SourceMap {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> SourceMapBuilder {
-        SourceMapBuilder { source_map: None }
-    }
-
     pub fn source_map(&self) -> Result<Map<Option<SourceName>, Source>> {
         tvm_ffi::object::get_object_field::<Map<Option<SourceName>, Source>, _>(
             self,
             SourceMapObj::type_index(),
             "source_map",
         )
-    }
-}
-
-pub struct SourceMapBuilder {
-    source_map: Option<Map<Option<SourceName>, Source>>,
-}
-
-impl SourceMapBuilder {
-    pub fn with_source_map(mut self, value: Map<Option<SourceName>, Source>) -> Self {
-        self.source_map = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<SourceMap> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            SourceMapObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("source_map")));
-        owned_args.push(Any::from(self.source_map.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `source_map` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -2583,8 +1272,7 @@ impl SourceMapBuilder {
 #[type_key = "ir.SourceName"]
 pub struct SourceNameObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2595,65 +1283,8 @@ pub struct SourceName {
 }
 
 impl SourceName {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> SourceNameBuilder {
-        SourceNameBuilder { name: None }
-    }
-
     pub fn name(&self) -> Result<String> {
         tvm_ffi::object::get_object_field::<String, _>(self, SourceNameObj::type_index(), "name")
-    }
-}
-
-pub struct SourceNameBuilder {
-    name: Option<String>,
-}
-
-impl SourceNameBuilder {
-    pub fn with_name(mut self, value: String) -> Self {
-        self.name = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<SourceName> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            SourceNameObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("name")));
-        owned_args.push(Any::from(self.name.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `name` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -2664,8 +1295,7 @@ impl SourceNameBuilder {
 #[type_key = "ir.Span"]
 pub struct SpanObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2676,36 +1306,6 @@ pub struct Span {
 }
 
 impl Span {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> SpanBuilder {
-        SpanBuilder {
-            source_name: None,
-            line: None,
-            column: None,
-            end_line: None,
-            end_column: None,
-        }
-    }
-
     pub fn source_name(&self) -> Result<Option<SourceName>> {
         tvm_ffi::object::get_object_field::<Option<SourceName>, _>(
             self,
@@ -2730,76 +1330,6 @@ impl Span {
         tvm_ffi::object::get_object_field::<i64, _>(self, SpanObj::type_index(), "end_column")
     }
 }
-
-pub struct SpanBuilder {
-    source_name: Option<Option<SourceName>>,
-    line: Option<i64>,
-    column: Option<i64>,
-    end_line: Option<i64>,
-    end_column: Option<i64>,
-}
-
-impl SpanBuilder {
-    pub fn with_source_name(mut self, value: Option<SourceName>) -> Self {
-        self.source_name = Some(value);
-        self
-    }
-
-    pub fn with_line(mut self, value: i64) -> Self {
-        self.line = Some(value);
-        self
-    }
-
-    pub fn with_column(mut self, value: i64) -> Self {
-        self.column = Some(value);
-        self
-    }
-
-    pub fn with_end_line(mut self, value: i64) -> Self {
-        self.end_line = Some(value);
-        self
-    }
-
-    pub fn with_end_column(mut self, value: i64) -> Self {
-        self.end_column = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<Span> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f =
-            tvm_ffi::Function::from_type_method_cached(&F, SpanObj::type_index(), "__ffi_init__")?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("source_name")));
-        owned_args.push(Any::from(self.source_name.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `source_name` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("line")));
-        owned_args.push(Any::from(self.line.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `line` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("column")));
-        owned_args.push(Any::from(self.column.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `column` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("end_line")));
-        owned_args.push(Any::from(self.end_line.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `end_line` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("end_column")));
-        owned_args.push(Any::from(self.end_column.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `end_column` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/ir.SequentialSpan
@@ -2808,8 +1338,7 @@ impl SpanBuilder {
 #[type_key = "ir.SequentialSpan"]
 pub struct SequentialSpanObj {
     base: SpanObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2836,126 +1365,12 @@ impl From<SequentialSpan> for Span {
 }
 
 impl SequentialSpan {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> SequentialSpanBuilder {
-        SequentialSpanBuilder {
-            source_name: None,
-            line: None,
-            column: None,
-            end_line: None,
-            end_column: None,
-            spans: None,
-        }
-    }
-
     pub fn spans(&self) -> Result<Array<Option<Span>>> {
         tvm_ffi::object::get_object_field::<Array<Option<Span>>, _>(
             self,
             SequentialSpanObj::type_index(),
             "spans",
         )
-    }
-}
-
-pub struct SequentialSpanBuilder {
-    source_name: Option<Option<SourceName>>,
-    line: Option<i64>,
-    column: Option<i64>,
-    end_line: Option<i64>,
-    end_column: Option<i64>,
-    spans: Option<Array<Option<Span>>>,
-}
-
-impl SequentialSpanBuilder {
-    pub fn with_source_name(mut self, value: Option<SourceName>) -> Self {
-        self.source_name = Some(value);
-        self
-    }
-
-    pub fn with_line(mut self, value: i64) -> Self {
-        self.line = Some(value);
-        self
-    }
-
-    pub fn with_column(mut self, value: i64) -> Self {
-        self.column = Some(value);
-        self
-    }
-
-    pub fn with_end_line(mut self, value: i64) -> Self {
-        self.end_line = Some(value);
-        self
-    }
-
-    pub fn with_end_column(mut self, value: i64) -> Self {
-        self.end_column = Some(value);
-        self
-    }
-
-    pub fn with_spans(mut self, value: Array<Option<Span>>) -> Self {
-        self.spans = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<SequentialSpan> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            SequentialSpanObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("source_name")));
-        owned_args.push(Any::from(self.source_name.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `source_name` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("line")));
-        owned_args.push(Any::from(self.line.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `line` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("column")));
-        owned_args.push(Any::from(self.column.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `column` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("end_line")));
-        owned_args.push(Any::from(self.end_line.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `end_line` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("end_column")));
-        owned_args.push(Any::from(self.end_column.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `end_column` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("spans")));
-        owned_args.push(Any::from(self.spans.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `spans` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -2966,8 +1381,7 @@ impl SequentialSpanBuilder {
 #[type_key = "ir.Type"]
 pub struct TypeObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2978,62 +1392,8 @@ pub struct Type {
 }
 
 impl Type {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> TypeBuilder {
-        TypeBuilder { span: None }
-    }
-
     pub fn span(&self) -> Result<Option<Span>> {
         tvm_ffi::object::get_object_field::<Option<Span>, _>(self, TypeObj::type_index(), "span")
-    }
-}
-
-pub struct TypeBuilder {
-    span: Option<Option<Span>>,
-}
-
-impl TypeBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<Type> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f =
-            tvm_ffi::Function::from_type_method_cached(&F, TypeObj::type_index(), "__ffi_init__")?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -3044,8 +1404,7 @@ impl TypeBuilder {
 #[type_key = "ir.FuncType"]
 pub struct FuncTypeObj {
     base: TypeObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -3072,34 +1431,6 @@ impl From<FuncType> for Type {
 }
 
 impl FuncType {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> FuncTypeBuilder {
-        FuncTypeBuilder {
-            span: None,
-            arg_types: None,
-            ret_type: None,
-        }
-    }
-
     pub fn arg_types(&self) -> Result<Array<Type>> {
         tvm_ffi::object::get_object_field::<Array<Type>, _>(
             self,
@@ -3112,59 +1443,6 @@ impl FuncType {
         tvm_ffi::object::get_object_field::<Type, _>(self, FuncTypeObj::type_index(), "ret_type")
     }
 }
-
-pub struct FuncTypeBuilder {
-    span: Option<Option<Span>>,
-    arg_types: Option<Array<Type>>,
-    ret_type: Option<Type>,
-}
-
-impl FuncTypeBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_arg_types(mut self, value: Array<Type>) -> Self {
-        self.arg_types = Some(value);
-        self
-    }
-
-    pub fn with_ret_type(mut self, value: Type) -> Self {
-        self.ret_type = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<FuncType> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            FuncTypeObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        owned_args.push(Any::from(tvm_ffi::String::from("arg_types")));
-        owned_args.push(Any::from(self.arg_types.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `arg_types` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("ret_type")));
-        owned_args.push(Any::from(self.ret_type.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `ret_type` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/ir.PointerType
@@ -3173,8 +1451,7 @@ impl FuncTypeBuilder {
 #[type_key = "ir.PointerType"]
 pub struct PointerTypeObj {
     base: TypeObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -3201,34 +1478,6 @@ impl From<PointerType> for Type {
 }
 
 impl PointerType {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> PointerTypeBuilder {
-        PointerTypeBuilder {
-            span: None,
-            element_type: None,
-            storage_scope: None,
-        }
-    }
-
     pub fn element_type(&self) -> Result<Type> {
         tvm_ffi::object::get_object_field::<Type, _>(
             self,
@@ -3245,59 +1494,6 @@ impl PointerType {
         )
     }
 }
-
-pub struct PointerTypeBuilder {
-    span: Option<Option<Span>>,
-    element_type: Option<Type>,
-    storage_scope: Option<String>,
-}
-
-impl PointerTypeBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_element_type(mut self, value: Type) -> Self {
-        self.element_type = Some(value);
-        self
-    }
-
-    pub fn with_storage_scope(mut self, value: String) -> Self {
-        self.storage_scope = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<PointerType> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            PointerTypeObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        owned_args.push(Any::from(tvm_ffi::String::from("element_type")));
-        owned_args.push(Any::from(self.element_type.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `element_type` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("storage_scope")));
-        owned_args.push(Any::from(self.storage_scope.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `storage_scope` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/ir.PrimType
@@ -3306,8 +1502,7 @@ impl PointerTypeBuilder {
 #[type_key = "ir.PrimType"]
 pub struct PrimTypeObj {
     base: TypeObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -3334,78 +1529,8 @@ impl From<PrimType> for Type {
 }
 
 impl PrimType {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> PrimTypeBuilder {
-        PrimTypeBuilder {
-            span: None,
-            dtype: None,
-        }
-    }
-
     pub fn dtype(&self) -> Result<DLDataType> {
         tvm_ffi::object::get_object_field::<DLDataType, _>(self, PrimTypeObj::type_index(), "dtype")
-    }
-}
-
-pub struct PrimTypeBuilder {
-    span: Option<Option<Span>>,
-    dtype: Option<DLDataType>,
-}
-
-impl PrimTypeBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_dtype(mut self, value: DLDataType) -> Self {
-        self.dtype = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<PrimType> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            PrimTypeObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        owned_args.push(Any::from(tvm_ffi::String::from("dtype")));
-        owned_args.push(Any::from(self.dtype.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `dtype` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -3416,8 +1541,7 @@ impl PrimTypeBuilder {
 #[type_key = "ir.TensorMapType"]
 pub struct TensorMapTypeObj {
     base: TypeObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -3442,65 +1566,6 @@ impl From<TensorMapType> for Type {
         <Type as tvm_ffi::ObjectRefCore>::from_data(up)
     }
 }
-
-impl TensorMapType {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> TensorMapTypeBuilder {
-        TensorMapTypeBuilder { span: None }
-    }
-}
-
-pub struct TensorMapTypeBuilder {
-    span: Option<Option<Span>>,
-}
-
-impl TensorMapTypeBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<TensorMapType> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            TensorMapTypeObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/ir.TupleType
@@ -3509,8 +1574,7 @@ impl TensorMapTypeBuilder {
 #[type_key = "ir.TupleType"]
 pub struct TupleTypeObj {
     base: TypeObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -3537,82 +1601,12 @@ impl From<TupleType> for Type {
 }
 
 impl TupleType {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> TupleTypeBuilder {
-        TupleTypeBuilder {
-            span: None,
-            fields: None,
-        }
-    }
-
     pub fn fields(&self) -> Result<Array<Type>> {
         tvm_ffi::object::get_object_field::<Array<Type>, _>(
             self,
             TupleTypeObj::type_index(),
             "fields",
         )
-    }
-}
-
-pub struct TupleTypeBuilder {
-    span: Option<Option<Span>>,
-    fields: Option<Array<Type>>,
-}
-
-impl TupleTypeBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_fields(mut self, value: Array<Type>) -> Self {
-        self.fields = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<TupleType> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            TupleTypeObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        owned_args.push(Any::from(tvm_ffi::String::from("fields")));
-        owned_args.push(Any::from(self.fields.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `fields` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -3623,8 +1617,7 @@ impl TupleTypeBuilder {
 #[type_key = "ir.UniqueNameSupply"]
 pub struct UniqueNameSupplyObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -3632,53 +1625,6 @@ pub struct UniqueNameSupplyObj {
 #[derive(tvm_ffi::derive::ObjectRef, Clone)]
 pub struct UniqueNameSupply {
     data: ObjectArc<UniqueNameSupplyObj>,
-}
-
-impl UniqueNameSupply {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> UniqueNameSupplyBuilder {
-        UniqueNameSupplyBuilder {}
-    }
-}
-
-pub struct UniqueNameSupplyBuilder {}
-
-impl UniqueNameSupplyBuilder {
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<UniqueNameSupply> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            UniqueNameSupplyObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let owned_args: Vec<Any> = Vec::new();
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
 }
 // tvm-ffi-stubgen(end)
 
@@ -3688,8 +1634,7 @@ impl UniqueNameSupplyBuilder {
 #[type_key = "ir.VDevice"]
 pub struct VDeviceObj {
     base: GlobalInfoObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -3716,34 +1661,6 @@ impl From<VDevice> for GlobalInfo {
 }
 
 impl VDevice {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> VDeviceBuilder {
-        VDeviceBuilder {
-            target: None,
-            vdevice_id: None,
-            memory_scope: None,
-        }
-    }
-
     pub fn target(&self) -> Result<Option<Target>> {
         tvm_ffi::object::get_object_field::<Option<Target>, _>(
             self,
@@ -3762,59 +1679,6 @@ impl VDevice {
             VDeviceObj::type_index(),
             "memory_scope",
         )
-    }
-}
-
-pub struct VDeviceBuilder {
-    target: Option<Option<Target>>,
-    vdevice_id: Option<i64>,
-    memory_scope: Option<String>,
-}
-
-impl VDeviceBuilder {
-    pub fn with_target(mut self, value: Option<Target>) -> Self {
-        self.target = Some(value);
-        self
-    }
-
-    pub fn with_vdevice_id(mut self, value: i64) -> Self {
-        self.vdevice_id = Some(value);
-        self
-    }
-
-    pub fn with_memory_scope(mut self, value: String) -> Self {
-        self.memory_scope = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<VDevice> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            VDeviceObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("target")));
-        owned_args.push(Any::from(self.target.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `target` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("vdevice_id")));
-        owned_args.push(Any::from(self.vdevice_id.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `vdevice_id` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("memory_scope")));
-        owned_args.push(Any::from(self.memory_scope.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `memory_scope` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)

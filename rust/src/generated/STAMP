@@ -1,6 +1,6 @@
 format_version=1
-schema_version=tvm-ffi-reflection-rust-v2
-generator_commit=0bc872fe530d83a610511ed18079f4f2e62bda3c
-runtime_commit=0bc872fe530d83a610511ed18079f4f2e62bda3c
+schema_version=tvm-ffi-reflection-rust-v3
+generator_commit=e7f9fc593c8aa417924eb40ec2778e72b1e148a9
+runtime_commit=e7f9fc593c8aa417924eb40ec2778e72b1e148a9
 prefixes=ir,tirx,target,transform,instrument,arith
 rustfmt=rustfmt 1.9.0-stable (8bab26f4f6 2026-07-14)

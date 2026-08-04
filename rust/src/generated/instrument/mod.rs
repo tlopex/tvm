@@ -29,8 +29,6 @@ use tvm_ffi::Function;
 use tvm_ffi::Object;
 use tvm_ffi::ObjectArc;
 use tvm_ffi::ObjectCore;
-use tvm_ffi::ObjectRefCast;
-use tvm_ffi::ObjectRefCore;
 use tvm_ffi::Result;
 use tvm_ffi::String;
 // tvm-ffi-stubgen(end)
@@ -76,8 +74,7 @@ pub fn render_time_pass_profiles() -> Result<String> {
 #[type_key = "instrument.PassInstrument"]
 pub struct PassInstrumentObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -88,22 +85,6 @@ pub struct PassInstrument {
 }
 
 impl PassInstrument {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
     pub fn name(&self) -> Result<String> {
         tvm_ffi::object::get_object_field::<String, _>(
             self,

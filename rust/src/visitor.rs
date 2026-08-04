@@ -23,7 +23,7 @@
 //! visitor therefore operates only on owning generated reference wrappers and
 //! reads children through their fallible reflection-backed getters.
 
-use crate::generated::ir::{Call, Expr, FloatImm, IntImm, Range};
+use crate::generated::ir::{Call, Expr, FloatImm, IntImm, PrimType, Range};
 use crate::generated::tirx::{
     Add, AllocBuffer, And, AssertStmt, AttrStmt, Bind, Break, Broadcast, Buffer, BufferLoad,
     BufferRegion, BufferStore, Cast, Continue, DeclBuffer, Div, Evaluate, FloorDiv, FloorMod, For,
@@ -31,7 +31,8 @@ use crate::generated::tirx::{
     SBlockRealize, ScopeIdDefStmt, Select, SeqStmt, Shuffle, Stmt, StringImm, Sub,
     TilePrimitiveCall, Var, While, EQ, GE, GT, LE, LT, NE,
 };
-use tvm_ffi::{AnyCompatible, AnyValue, Array, Error, ObjectArc, ObjectRefCore, Result};
+use crate::PrimExpr;
+use tvm_ffi::{AnyCompatible, AnyValue, Array, Error, ObjectArc, ObjectRefCore, Result, TypeIndex};
 
 fn lookup_type_index(type_key: &str) -> Option<i32> {
     unsafe {
@@ -49,17 +50,17 @@ fn lookup_type_index(type_key: &str) -> Option<i32> {
     }
 }
 
-/// Owning, subtype-aware downcast that tolerates a generated type absent from
-/// the loaded runtime.
+/// Owning, subtype-aware downcast that tolerates a generated target container
+/// type absent from the loaded runtime.
 ///
 /// Generated `downcast` uses the target container's cached `type_index()`.
-/// A missing type can therefore panic and poison that cache forever.  Visitor
-/// dispatch resolves the type key without that cache, checks the runtime
-/// hierarchy, then clones and re-wraps the source handle.
+/// A missing container type can therefore panic and poison that cache forever.
+/// Visitor dispatch resolves the container type key without that cache, then
+/// applies the target's full (possibly refined) compatibility check.
 pub fn try_downcast<R, N>(value: &R) -> Option<N>
 where
-    R: ObjectRefCore,
-    N: ObjectRefCore,
+    R: ObjectRefCore + AnyCompatible,
+    N: ObjectRefCore + AnyCompatible,
 {
     unsafe {
         let source = <R as ObjectRefCore>::data(value);
@@ -75,13 +76,24 @@ where
             return None;
         }
 
-        // `ObjectRefCore` wrappers are transparent owners of ObjectArc.  Clone
-        // first to retain one strong reference, then transfer that ownership to
-        // the target wrapper after the runtime subtype check above.
-        let retained = source.clone();
-        let target_raw = ObjectArc::into_raw(retained) as *const N::ContainerType;
-        Some(N::from_data(ObjectArc::from_raw(target_raw)))
+        // Container ancestry alone is insufficient for refined handles such
+        // as PrimExpr and parameterized containers. Run the target's complete
+        // AnyCompatible check before constructing the owning result. The
+        // direct type-key lookup above ensures a missing generated container
+        // never reaches (and poisons) its cached `type_index()` initializer.
+        let mut any = tvm_ffi::tvm_ffi_sys::TVMFFIAny::new();
+        R::copy_to_any_view(value, &mut any);
+        N::check_any_strict(&any).then(|| N::copy_from_any_view_after_check(&any))
     }
+}
+
+/// Return whether an `Expr` satisfies TVM's `PrimExpr` type refinement.
+///
+/// `PrimExpr` is not a runtime object subtype: C++ defines it as an `Expr`
+/// whose `ty` is `PrimType`. Heterogeneous `AnyValue` entries do not carry the
+/// static [`PrimExpr`] wrapper, so their refinement must be checked here.
+pub fn is_prim_expr(expr: &Expr) -> Result<bool> {
+    Ok(try_downcast::<_, PrimType>(&expr.ty()?).is_some())
 }
 
 fn runtime_type_index<R: ObjectRefCore>(value: &R) -> Option<i32> {
@@ -217,8 +229,8 @@ macro_rules! binary_visit_methods {
             fn $method(&mut self, node: &$node) -> Result<()> {
                 let a = required(node.a()?, concat!($name, "::a"))?;
                 let b = required(node.b()?, concat!($name, "::b"))?;
-                self.visit_expr(&a)?;
-                self.visit_expr(&b)
+                self.visit_prim_expr(&a)?;
+                self.visit_prim_expr(&b)
             }
         )+
     };
@@ -238,6 +250,12 @@ pub trait StmtExprVisitor {
         walk_stmt(self, stmt)
     }
 
+    /// Visit a checked primitive expression while preserving its refinement
+    /// at the visitor API boundary.
+    fn visit_prim_expr(&mut self, expr: &PrimExpr) -> Result<()> {
+        self.visit_expr(expr.as_base())
+    }
+
     fn visit_expr_array(&mut self, values: &Array<Option<Expr>>, path: &str) -> Result<()> {
         for index in 0..values.len() {
             let value = required_array_item(values, index, path)?;
@@ -246,15 +264,27 @@ pub trait StmtExprVisitor {
         Ok(())
     }
 
+    fn visit_prim_expr_array(
+        &mut self,
+        values: &Array<Option<PrimExpr>>,
+        path: &str,
+    ) -> Result<()> {
+        for index in 0..values.len() {
+            let value = required_array_item(values, index, path)?;
+            self.visit_prim_expr(&value)?;
+        }
+        Ok(())
+    }
+
     fn visit_buffer_def(&mut self, buffer: &Buffer, _alloc_data: bool) -> Result<()> {
         let shape = buffer.shape()?;
-        self.visit_expr_array(&shape, "Buffer::shape")?;
+        self.visit_prim_expr_array(&shape, "Buffer::shape")?;
 
         let strides = buffer.strides()?;
-        self.visit_expr_array(&strides, "Buffer::strides")?;
+        self.visit_prim_expr_array(&strides, "Buffer::strides")?;
 
         let elem_offset = required(buffer.elem_offset()?, "Buffer::elem_offset")?;
-        self.visit_expr(&elem_offset)
+        self.visit_prim_expr(&elem_offset)
     }
 
     fn visit_buffer_use(&mut self, _buffer: &Buffer) -> Result<()> {
@@ -276,8 +306,8 @@ pub trait StmtExprVisitor {
     fn visit_range(&mut self, range: &Range, path: &str) -> Result<()> {
         let min = required(range.min()?, &format!("{path}.min"))?;
         let extent = required(range.extent()?, &format!("{path}.extent"))?;
-        self.visit_expr(&min)?;
-        self.visit_expr(&extent)
+        self.visit_prim_expr(&min)?;
+        self.visit_prim_expr(&extent)
     }
 
     fn visit_iter_var_domain(&mut self, iter_var: &IterVar, path: &str) -> Result<()> {
@@ -294,19 +324,19 @@ pub trait StmtExprVisitor {
         self.visit_buffer_use(&buffer)?;
 
         let indices = node.indices()?;
-        self.visit_expr_array(&indices, "BufferLoad::indices")
+        self.visit_prim_expr_array(&indices, "BufferLoad::indices")
     }
 
     fn visit_producer_load(&mut self, node: &ProducerLoad) -> Result<()> {
         let indices = node.indices()?;
-        self.visit_expr_array(&indices, "ProducerLoad::indices")
+        self.visit_prim_expr_array(&indices, "ProducerLoad::indices")
     }
 
     fn visit_let(&mut self, node: &Let) -> Result<()> {
         let value = required(node.value()?, "Let::value")?;
         let body = required(node.body()?, "Let::body")?;
-        self.visit_expr(&value)?;
-        self.visit_expr(&body)
+        self.visit_prim_expr(&value)?;
+        self.visit_prim_expr(&body)
     }
 
     fn visit_call(&mut self, node: &Call) -> Result<()> {
@@ -342,52 +372,52 @@ pub trait StmtExprVisitor {
         }
 
         let source = node.source()?;
-        self.visit_expr_array(&source, "Reduce::source")?;
+        self.visit_prim_expr_array(&source, "Reduce::source")?;
 
         let init = node.init()?;
-        self.visit_expr_array(&init, "Reduce::init")?;
+        self.visit_prim_expr_array(&init, "Reduce::init")?;
 
         let condition = required(node.condition()?, "Reduce::condition")?;
-        self.visit_expr(&condition)
+        self.visit_prim_expr(&condition)
     }
 
     fn visit_cast(&mut self, node: &Cast) -> Result<()> {
         let value = required(node.value()?, "Cast::value")?;
-        self.visit_expr(&value)
+        self.visit_prim_expr(&value)
     }
 
     fn visit_not(&mut self, node: &Not) -> Result<()> {
         let a = required(node.a()?, "Not::a")?;
-        self.visit_expr(&a)
+        self.visit_prim_expr(&a)
     }
 
     fn visit_select(&mut self, node: &Select) -> Result<()> {
         let condition = required(node.condition()?, "Select::condition")?;
         let true_value = required(node.true_value()?, "Select::true_value")?;
         let false_value = required(node.false_value()?, "Select::false_value")?;
-        self.visit_expr(&condition)?;
-        self.visit_expr(&true_value)?;
-        self.visit_expr(&false_value)
+        self.visit_prim_expr(&condition)?;
+        self.visit_prim_expr(&true_value)?;
+        self.visit_prim_expr(&false_value)
     }
 
     fn visit_ramp(&mut self, node: &Ramp) -> Result<()> {
         let base = required(node.base()?, "Ramp::base")?;
         let stride = required(node.stride()?, "Ramp::stride")?;
-        self.visit_expr(&base)?;
-        self.visit_expr(&stride)
+        self.visit_prim_expr(&base)?;
+        self.visit_prim_expr(&stride)
     }
 
     fn visit_broadcast(&mut self, node: &Broadcast) -> Result<()> {
         let value = required(node.value()?, "Broadcast::value")?;
-        self.visit_expr(&value)
+        self.visit_prim_expr(&value)
     }
 
     fn visit_shuffle(&mut self, node: &Shuffle) -> Result<()> {
         let indices = node.indices()?;
-        self.visit_expr_array(&indices, "Shuffle::indices")?;
+        self.visit_prim_expr_array(&indices, "Shuffle::indices")?;
 
         let vectors = node.vectors()?;
-        self.visit_expr_array(&vectors, "Shuffle::vectors")
+        self.visit_prim_expr_array(&vectors, "Shuffle::vectors")
     }
 
     fn visit_int_imm(&mut self, _node: &IntImm) -> Result<()> {
@@ -410,7 +440,7 @@ pub trait StmtExprVisitor {
     fn visit_attr_stmt(&mut self, node: &AttrStmt) -> Result<()> {
         let value = required(node.value()?, "AttrStmt::value")?;
         let body = required(node.body()?, "AttrStmt::body")?;
-        self.visit_expr(&value)?;
+        self.visit_prim_expr(&value)?;
         self.visit_stmt(&body)
     }
 
@@ -418,7 +448,7 @@ pub trait StmtExprVisitor {
         let condition = required(node.condition()?, "IfThenElse::condition")?;
         let then_case = required(node.then_case()?, "IfThenElse::then_case")?;
         let else_case = node.else_case()?;
-        self.visit_expr(&condition)?;
+        self.visit_prim_expr(&condition)?;
         self.visit_stmt(&then_case)?;
         if let Some(else_case) = else_case {
             self.visit_stmt(&else_case)?;
@@ -431,10 +461,10 @@ pub trait StmtExprVisitor {
         let extent = required(node.extent()?, "For::extent")?;
         let step = node.step()?;
         let body = required(node.body()?, "For::body")?;
-        self.visit_expr(&min)?;
-        self.visit_expr(&extent)?;
+        self.visit_prim_expr(&min)?;
+        self.visit_prim_expr(&extent)?;
         if let Some(step) = step {
-            self.visit_expr(&step)?;
+            self.visit_prim_expr(&step)?;
         }
         self.visit_stmt(&body)
     }
@@ -442,7 +472,7 @@ pub trait StmtExprVisitor {
     fn visit_while(&mut self, node: &While) -> Result<()> {
         let condition = required(node.condition()?, "While::condition")?;
         let body = required(node.body()?, "While::body")?;
-        self.visit_expr(&condition)?;
+        self.visit_prim_expr(&condition)?;
         self.visit_stmt(&body)
     }
 
@@ -469,8 +499,8 @@ pub trait StmtExprVisitor {
         let value = required(node.value()?, "BufferStore::value")?;
         let indices = node.indices()?;
         self.visit_buffer_use(&buffer)?;
-        self.visit_expr(&value)?;
-        self.visit_expr_array(&indices, "BufferStore::indices")
+        self.visit_prim_expr(&value)?;
+        self.visit_prim_expr_array(&indices, "BufferStore::indices")
     }
 
     fn visit_assert_stmt(&mut self, node: &AssertStmt) -> Result<()> {
@@ -478,7 +508,7 @@ pub trait StmtExprVisitor {
         let error_kind = required(node.error_kind()?, "AssertStmt::error_kind")?;
         let message_parts = node.message_parts()?;
 
-        self.visit_expr(&condition)?;
+        self.visit_prim_expr(&condition)?;
         let error_kind: Expr = error_kind.into();
         self.visit_expr(&error_kind)?;
         for index in 0..message_parts.len() {
@@ -556,8 +586,8 @@ pub trait StmtExprVisitor {
         let iter_values = node.iter_values()?;
         let predicate = required(node.predicate()?, "SBlockRealize::predicate")?;
         let block = required(node.block()?, "SBlockRealize::block")?;
-        self.visit_expr_array(&iter_values, "SBlockRealize::iter_values")?;
-        self.visit_expr(&predicate)?;
+        self.visit_prim_expr_array(&iter_values, "SBlockRealize::iter_values")?;
+        self.visit_prim_expr(&predicate)?;
         let block: Stmt = block.into();
         self.visit_stmt(&block)
     }
@@ -566,39 +596,48 @@ pub trait StmtExprVisitor {
         let definition = required(node.def()?, "ScopeIdDefStmt::def")?;
         let extents = definition.extents()?;
         if let Some(extents) = extents {
-            self.visit_expr_array(&extents, "ScopeIdDefStmt::def.extents")?;
+            self.visit_prim_expr_array(&extents, "ScopeIdDefStmt::def.extents")?;
         }
 
         let preferred_extents = definition.preferred_extents()?;
         if let Some(preferred_extents) = preferred_extents {
-            self.visit_expr_array(&preferred_extents, "ScopeIdDefStmt::def.preferred_extents")?;
+            self.visit_prim_expr_array(
+                &preferred_extents,
+                "ScopeIdDefStmt::def.preferred_extents",
+            )?;
         }
         Ok(())
     }
 
     fn visit_tile_primitive_any(&mut self, value: &AnyValue) -> Result<()> {
-        // Scalars and None are valid configuration values and have no IR
-        // children.  Convert object-valued entries to the generic root handle,
-        // then use the same cache-independent checked downcast as dispatch.
-        let Some(object) = value.try_as::<tvm_ffi::object::ObjectRef>() else {
-            return Ok(());
-        };
-
-        // Match C++ exactly: BufferRegion is deliberately recognized and
-        // skipped; its ranges are not children of a TilePrimitiveCall.
-        if try_downcast::<_, BufferRegion>(&object).is_some() {
+        if value.as_any().type_index() == TypeIndex::kTVMFFINone as i32 {
             return Ok(());
         }
-        if let Some(expr) = try_downcast::<_, Expr>(&object) {
-            return self.visit_expr(&expr);
-        }
-        if let Some(stmt) = try_downcast::<_, Stmt>(&object) {
-            return self.visit_stmt(&stmt);
+
+        // BufferRegion is also PrimExprConvertible, but C++ deliberately
+        // recognizes and skips it before attempting the conversion.
+        let object = value.try_as::<tvm_ffi::object::ObjectRef>();
+        if object
+            .as_ref()
+            .is_some_and(|object| try_downcast::<_, BufferRegion>(object).is_some())
+        {
+            return Ok(());
         }
 
-        // Other object-valued config entries are metadata in the C++ visitor,
-        // not IR children.  Expression/statement subtypes still fail closed in
-        // walk_expr/walk_stmt when their concrete node kind is unknown.
+        if let Some(object) = object {
+            // C++ uses Any::as<PrimExpr>(), which is a strict reinterpretation:
+            // it does not apply scalar or PrimExprConvertible fallbacks.
+            if let Some(expr) = try_downcast::<_, PrimExpr>(&object) {
+                return self.visit_prim_expr(&expr);
+            }
+            if let Some(stmt) = try_downcast::<_, Stmt>(&object) {
+                return self.visit_stmt(&stmt);
+            }
+        }
+
+        // Other values are metadata in the C++ visitor, not IR children.
+        // Expression/statement subtypes still fail closed in walk_expr/
+        // walk_stmt when their concrete node kind is unknown.
         Ok(())
     }
 

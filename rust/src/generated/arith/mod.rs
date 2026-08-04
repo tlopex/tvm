@@ -26,9 +26,8 @@ use super::ir::Expr;
 use super::ir::ExprObj;
 use super::ir::IntSet;
 use super::ir::IntSetObj;
+use super::ir::PrimType;
 use super::ir::Range;
-use super::ir::Span;
-use super::ir::Type;
 use super::tirx::Buffer;
 use super::tirx::PrimFunc;
 use super::tirx::Stmt;
@@ -45,10 +44,10 @@ use tvm_ffi::Map;
 use tvm_ffi::Object;
 use tvm_ffi::ObjectArc;
 use tvm_ffi::ObjectCore;
-use tvm_ffi::ObjectRefCast;
 use tvm_ffi::ObjectRefCore;
 use tvm_ffi::Result;
 use tvm_ffi::String;
+use tvm_ffi::TypedExpr;
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): global/arith
@@ -64,7 +63,11 @@ pub fn analyzer_bind_packed(args: &[AnyView<'_>]) -> Result<Any> {
     f.call_packed(args)
 }
 
-pub fn analyzer_can_prove(_0: Analyzer, _1: Option<Expr>, _2: i64) -> Result<bool> {
+pub fn analyzer_can_prove(
+    _0: Analyzer,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+    _2: i64,
+) -> Result<bool> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.AnalyzerCanProve")?;
     Ok(
@@ -73,7 +76,11 @@ pub fn analyzer_can_prove(_0: Analyzer, _1: Option<Expr>, _2: i64) -> Result<boo
     )
 }
 
-pub fn analyzer_can_prove_equal(_0: Analyzer, _1: Option<Expr>, _2: Option<Expr>) -> Result<bool> {
+pub fn analyzer_can_prove_equal(
+    _0: Analyzer,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+    _2: Option<TypedExpr<Expr, PrimType>>,
+) -> Result<bool> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.AnalyzerCanProveEqual")?;
     Ok(
@@ -82,7 +89,10 @@ pub fn analyzer_can_prove_equal(_0: Analyzer, _1: Option<Expr>, _2: Option<Expr>
     )
 }
 
-pub fn analyzer_canonical_simplify(_0: Analyzer, _1: Option<Expr>) -> Result<Option<Expr>> {
+pub fn analyzer_canonical_simplify(
+    _0: Analyzer,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+) -> Result<Option<TypedExpr<Expr, PrimType>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.AnalyzerCanonicalSimplify")?;
     Ok(f.call_packed(&[AnyView::from(&_0), AnyView::from(&_1)])?
@@ -95,7 +105,10 @@ pub fn analyzer_clone(_0: Analyzer) -> Result<Analyzer> {
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
 }
 
-pub fn analyzer_const_int_bound(_0: Analyzer, _1: Option<Expr>) -> Result<Option<ConstIntBound>> {
+pub fn analyzer_const_int_bound(
+    _0: Analyzer,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+) -> Result<Option<ConstIntBound>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.AnalyzerConstIntBound")?;
     Ok(f.call_packed(&[AnyView::from(&_0), AnyView::from(&_1)])?
@@ -128,7 +141,7 @@ pub fn analyzer_const_int_bound_update(
 
 pub fn analyzer_enter_constraint_context(
     _0: Analyzer,
-    _1: Option<Expr>,
+    _1: Option<TypedExpr<Expr, PrimType>>,
 ) -> Result<Option<Function>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.AnalyzerEnterConstraintContext")?;
@@ -148,7 +161,7 @@ pub fn analyzer_get_rewrite_simplify_stats(_0: Analyzer) -> Result<Option<Object
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
 }
 
-pub fn analyzer_get_smtlib2(_0: Analyzer, _1: Option<Expr>) -> Result<String> {
+pub fn analyzer_get_smtlib2(_0: Analyzer, _1: Option<TypedExpr<Expr, PrimType>>) -> Result<String> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.AnalyzerGetSMTLIB2")?;
     Ok(f.call_packed(&[AnyView::from(&_0), AnyView::from(&_1)])?
@@ -163,7 +176,7 @@ pub fn analyzer_get_z3_stats(_0: Analyzer) -> Result<String> {
 
 pub fn analyzer_int_set(
     _0: Analyzer,
-    _1: Option<Expr>,
+    _1: Option<TypedExpr<Expr, PrimType>>,
     _2: Option<Map<Option<Var>, Option<IntSet>>>,
 ) -> Result<Option<IntSet>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
@@ -197,7 +210,10 @@ pub fn analyzer_is_z3_enabled(_0: Analyzer) -> Result<bool> {
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
 }
 
-pub fn analyzer_modular_set(_0: Analyzer, _1: Option<Expr>) -> Result<Option<ModularSet>> {
+pub fn analyzer_modular_set(
+    _0: Analyzer,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+) -> Result<Option<ModularSet>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.AnalyzerModularSet")?;
     Ok(f.call_packed(&[AnyView::from(&_0), AnyView::from(&_1)])?
@@ -227,7 +243,10 @@ pub fn analyzer_reset_rewrite_simplify_stats(_0: Analyzer) -> Result<()> {
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
 }
 
-pub fn analyzer_rewrite_simplify(_0: Analyzer, _1: Option<Expr>) -> Result<Option<Expr>> {
+pub fn analyzer_rewrite_simplify(
+    _0: Analyzer,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+) -> Result<Option<TypedExpr<Expr, PrimType>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.AnalyzerRewriteSimplify")?;
     Ok(f.call_packed(&[AnyView::from(&_0), AnyView::from(&_1)])?
@@ -262,7 +281,11 @@ pub fn analyzer_set_z3_timeout_ms(_0: Analyzer, _1: i64) -> Result<()> {
         .try_into()?)
 }
 
-pub fn analyzer_simplify(_0: Analyzer, _1: Option<Expr>, _2: i64) -> Result<Option<Expr>> {
+pub fn analyzer_simplify(
+    _0: Analyzer,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+    _2: i64,
+) -> Result<Option<TypedExpr<Expr, PrimType>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.AnalyzerSimplify")?;
     Ok(
@@ -273,8 +296,8 @@ pub fn analyzer_simplify(_0: Analyzer, _1: Option<Expr>, _2: i64) -> Result<Opti
 
 pub fn analyzer_try_compare(
     _0: Analyzer,
-    _1: Option<Expr>,
-    _2: Option<Expr>,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+    _2: Option<TypedExpr<Expr, PrimType>>,
     _3: bool,
 ) -> Result<i64> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
@@ -296,8 +319,8 @@ pub fn const_int_bound(_0: i64, _1: i64) -> Result<Option<ConstIntBound>> {
 }
 
 pub fn deduce_bound(
-    _0: Option<Expr>,
-    _1: Option<Expr>,
+    _0: Option<TypedExpr<Expr, PrimType>>,
+    _1: Option<TypedExpr<Expr, PrimType>>,
     _2: Map<Option<Var>, Option<IntSet>>,
     _3: Map<Option<Var>, Option<IntSet>>,
 ) -> Result<Option<IntSet>> {
@@ -312,7 +335,10 @@ pub fn deduce_bound(
     .try_into()?)
 }
 
-pub fn detect_clip_bound(_0: Option<Expr>, _1: Array<Option<Var>>) -> Result<Array<Option<Expr>>> {
+pub fn detect_clip_bound(
+    _0: Option<TypedExpr<Expr, PrimType>>,
+    _1: Array<Option<Var>>,
+) -> Result<Array<Option<TypedExpr<Expr, PrimType>>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.DetectClipBound")?;
     Ok(f.call_packed(&[AnyView::from(&_0), AnyView::from(&_1)])?
@@ -320,9 +346,9 @@ pub fn detect_clip_bound(_0: Option<Expr>, _1: Array<Option<Var>>) -> Result<Arr
 }
 
 pub fn detect_iter_map(
-    _0: Array<Option<Expr>>,
+    _0: Array<Option<TypedExpr<Expr, PrimType>>>,
     _1: Map<Option<Var>, Option<Range>>,
-    _2: Option<Expr>,
+    _2: Option<TypedExpr<Expr, PrimType>>,
     _3: i64,
     _4: bool,
     _5: Option<Analyzer>,
@@ -341,9 +367,9 @@ pub fn detect_iter_map(
 }
 
 pub fn detect_linear_equation(
-    _0: Option<Expr>,
+    _0: Option<TypedExpr<Expr, PrimType>>,
     _1: Array<Option<Var>>,
-) -> Result<Array<Option<Expr>>> {
+) -> Result<Array<Option<TypedExpr<Expr, PrimType>>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.DetectLinearEquation")?;
     Ok(f.call_packed(&[AnyView::from(&_0), AnyView::from(&_1)])?
@@ -378,7 +404,7 @@ pub fn domain_touched_access_map(
 pub fn estimate_region_lower_bound(
     _0: Array<Option<Range>>,
     _1: Map<Option<Var>, Option<Range>>,
-    _2: Option<Expr>,
+    _2: Option<TypedExpr<Expr, PrimType>>,
     _3: Option<Analyzer>,
 ) -> Result<Option<Array<Option<IntSet>>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
@@ -395,7 +421,7 @@ pub fn estimate_region_lower_bound(
 pub fn estimate_region_strict_bound(
     _0: Array<Option<Range>>,
     _1: Map<Option<Var>, Option<Range>>,
-    _2: Option<Expr>,
+    _2: Option<TypedExpr<Expr, PrimType>>,
     _3: Option<Analyzer>,
 ) -> Result<Option<Array<Option<IntSet>>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
@@ -412,7 +438,7 @@ pub fn estimate_region_strict_bound(
 pub fn estimate_region_upper_bound(
     _0: Array<Option<Range>>,
     _1: Map<Option<Var>, Option<Range>>,
-    _2: Option<Expr>,
+    _2: Option<TypedExpr<Expr, PrimType>>,
     _3: Option<Analyzer>,
 ) -> Result<Option<Array<Option<IntSet>>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
@@ -429,7 +455,7 @@ pub fn estimate_region_upper_bound(
 pub fn int_constraints(
     _0: Array<Option<Var>>,
     _1: Map<Option<Var>, Option<Range>>,
-    _2: Array<Option<Expr>>,
+    _2: Array<Option<TypedExpr<Expr, PrimType>>>,
 ) -> Result<Option<IntConstraints>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.IntConstraints")?;
@@ -442,8 +468,8 @@ pub fn int_constraints(
 pub fn int_constraints_transform(
     _0: Option<IntConstraints>,
     _1: Option<IntConstraints>,
-    _2: Map<Option<Var>, Option<Expr>>,
-    _3: Map<Option<Var>, Option<Expr>>,
+    _2: Map<Option<Var>, Option<TypedExpr<Expr, PrimType>>>,
+    _3: Map<Option<Var>, Option<TypedExpr<Expr, PrimType>>>,
 ) -> Result<Option<IntConstraintsTransform>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.IntConstraintsTransform")?;
@@ -457,10 +483,10 @@ pub fn int_constraints_transform(
 }
 
 pub fn int_group_bounds(
-    _0: Option<Expr>,
-    _1: Array<Option<Expr>>,
-    _2: Array<Option<Expr>>,
-    _3: Array<Option<Expr>>,
+    _0: Option<TypedExpr<Expr, PrimType>>,
+    _1: Array<Option<TypedExpr<Expr, PrimType>>>,
+    _2: Array<Option<TypedExpr<Expr, PrimType>>>,
+    _3: Array<Option<TypedExpr<Expr, PrimType>>>,
 ) -> Result<Option<IntGroupBounds>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.IntGroupBounds")?;
@@ -497,20 +523,23 @@ pub fn int_set_is_nothing(_0: Option<IntSet>) -> Result<bool> {
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
 }
 
-pub fn interval_set(_0: Option<Expr>, _1: Option<Expr>) -> Result<Option<IntervalSet>> {
+pub fn interval_set(
+    _0: Option<TypedExpr<Expr, PrimType>>,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+) -> Result<Option<IntervalSet>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.IntervalSet")?;
     Ok(f.call_packed(&[AnyView::from(&_0), AnyView::from(&_1)])?
         .try_into()?)
 }
 
-pub fn interval_set_get_max(_0: Option<IntSet>) -> Result<Option<Expr>> {
+pub fn interval_set_get_max(_0: Option<IntSet>) -> Result<Option<TypedExpr<Expr, PrimType>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.IntervalSetGetMax")?;
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
 }
 
-pub fn interval_set_get_min(_0: Option<IntSet>) -> Result<Option<Expr>> {
+pub fn interval_set_get_min(_0: Option<IntSet>) -> Result<Option<TypedExpr<Expr, PrimType>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.IntervalSetGetMin")?;
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
@@ -518,8 +547,8 @@ pub fn interval_set_get_min(_0: Option<IntSet>) -> Result<Option<Expr>> {
 
 pub fn inverse_affine_iter_map(
     _0: Array<Option<IterSumExpr>>,
-    _1: Array<Option<Expr>>,
-) -> Result<Map<Option<Var>, Option<Expr>>> {
+    _1: Array<Option<TypedExpr<Expr, PrimType>>>,
+) -> Result<Map<Option<Var>, Option<TypedExpr<Expr, PrimType>>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.InverseAffineIterMap")?;
     Ok(f.call_packed(&[AnyView::from(&_0), AnyView::from(&_1)])?
@@ -527,13 +556,13 @@ pub fn inverse_affine_iter_map(
 }
 
 pub fn iter_map_simplify(
-    _0: Array<Option<Expr>>,
+    _0: Array<Option<TypedExpr<Expr, PrimType>>>,
     _1: Map<Option<Var>, Option<Range>>,
-    _2: Option<Expr>,
+    _2: Option<TypedExpr<Expr, PrimType>>,
     _3: i64,
     _4: bool,
     _5: Option<Analyzer>,
-) -> Result<Array<Option<Expr>>> {
+) -> Result<Array<Option<TypedExpr<Expr, PrimType>>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.IterMapSimplify")?;
     Ok(f.call_packed(&[
@@ -547,7 +576,10 @@ pub fn iter_map_simplify(
     .try_into()?)
 }
 
-pub fn iter_mark(_0: Option<Expr>, _1: Option<Expr>) -> Result<Option<IterMark>> {
+pub fn iter_mark(
+    _0: Option<TypedExpr<Expr, PrimType>>,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+) -> Result<Option<IterMark>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.IterMark")?;
     Ok(f.call_packed(&[AnyView::from(&_0), AnyView::from(&_1)])?
@@ -556,9 +588,9 @@ pub fn iter_mark(_0: Option<Expr>, _1: Option<Expr>) -> Result<Option<IterMark>>
 
 pub fn iter_split_expr(
     _0: Option<IterMark>,
-    _1: Option<Expr>,
-    _2: Option<Expr>,
-    _3: Option<Expr>,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+    _2: Option<TypedExpr<Expr, PrimType>>,
+    _3: Option<TypedExpr<Expr, PrimType>>,
 ) -> Result<Option<IterSplitExpr>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.IterSplitExpr")?;
@@ -573,7 +605,7 @@ pub fn iter_split_expr(
 
 pub fn iter_sum_expr(
     _0: Array<Option<IterSplitExpr>>,
-    _1: Option<Expr>,
+    _1: Option<TypedExpr<Expr, PrimType>>,
 ) -> Result<Option<IterSumExpr>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.IterSumExpr")?;
@@ -588,20 +620,22 @@ pub fn modular_set(_0: i64, _1: i64) -> Result<Option<ModularSet>> {
         .try_into()?)
 }
 
-pub fn neg_inf() -> Result<Option<Expr>> {
+pub fn neg_inf() -> Result<Option<TypedExpr<Expr, PrimType>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.NegInf")?;
     Ok(f.call_packed(&[])?.try_into()?)
 }
 
-pub fn normalize_iter_map_to_expr(_0: Option<Expr>) -> Result<Option<Expr>> {
+pub fn normalize_iter_map_to_expr(
+    _0: Option<TypedExpr<Expr, PrimType>>,
+) -> Result<Option<TypedExpr<Expr, PrimType>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.NormalizeIterMapToExpr")?;
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
 }
 
 pub fn normalize_to_iter_sum(
-    _0: Option<Expr>,
+    _0: Option<TypedExpr<Expr, PrimType>>,
     _1: Map<Option<Var>, Option<Range>>,
     _2: Option<Analyzer>,
 ) -> Result<Option<IterSumExpr>> {
@@ -613,13 +647,13 @@ pub fn normalize_to_iter_sum(
     )
 }
 
-pub fn pos_inf() -> Result<Option<Expr>> {
+pub fn pos_inf() -> Result<Option<TypedExpr<Expr, PrimType>>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.PosInf")?;
     Ok(f.call_packed(&[])?.try_into()?)
 }
 
-pub fn presburger_set(_0: Option<Expr>) -> Result<Option<IntSet>> {
+pub fn presburger_set(_0: Option<TypedExpr<Expr, PrimType>>) -> Result<Option<IntSet>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.PresburgerSet")?;
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
@@ -650,10 +684,10 @@ pub fn solve_linear_equations_packed(args: &[AnyView<'_>]) -> Result<Any> {
 }
 
 pub fn subspace_divide(
-    _0: Array<Option<Expr>>,
+    _0: Array<Option<TypedExpr<Expr, PrimType>>>,
     _1: Map<Option<Var>, Option<Range>>,
     _2: Array<Option<Var>>,
-    _3: Option<Expr>,
+    _3: Option<TypedExpr<Expr, PrimType>>,
     _4: i64,
     _5: bool,
     _6: Option<Analyzer>,
@@ -678,20 +712,23 @@ pub fn union_lower_bound(_0: Array<Option<IntSet>>) -> Result<Option<IntSet>> {
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
 }
 
-pub fn intset_interval(_0: Option<Expr>, _1: Option<Expr>) -> Result<Option<IntSet>> {
+pub fn intset_interval(
+    _0: Option<TypedExpr<Expr, PrimType>>,
+    _1: Option<TypedExpr<Expr, PrimType>>,
+) -> Result<Option<IntSet>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.intset_interval")?;
     Ok(f.call_packed(&[AnyView::from(&_0), AnyView::from(&_1)])?
         .try_into()?)
 }
 
-pub fn intset_single_point(_0: Option<Expr>) -> Result<Option<IntSet>> {
+pub fn intset_single_point(_0: Option<TypedExpr<Expr, PrimType>>) -> Result<Option<IntSet>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.intset_single_point")?;
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
 }
 
-pub fn intset_vector(_0: Option<Expr>) -> Result<Option<IntSet>> {
+pub fn intset_vector(_0: Option<TypedExpr<Expr, PrimType>>) -> Result<Option<IntSet>> {
     thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
     let f = tvm_ffi::Function::get_global_cached(&F, "arith.intset_vector")?;
     Ok(f.call_packed(&[AnyView::from(&_0)])?.try_into()?)
@@ -704,8 +741,7 @@ pub fn intset_vector(_0: Option<Expr>) -> Result<Option<IntSet>> {
 #[type_key = "arith.Analyzer"]
 pub struct AnalyzerObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -713,53 +749,6 @@ pub struct AnalyzerObj {
 #[derive(tvm_ffi::derive::ObjectRef, Clone)]
 pub struct Analyzer {
     data: ObjectArc<AnalyzerObj>,
-}
-
-impl Analyzer {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> AnalyzerBuilder {
-        AnalyzerBuilder {}
-    }
-}
-
-pub struct AnalyzerBuilder {}
-
-impl AnalyzerBuilder {
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<Analyzer> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            AnalyzerObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let owned_args: Vec<Any> = Vec::new();
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
 }
 // tvm-ffi-stubgen(end)
 
@@ -769,8 +758,7 @@ impl AnalyzerBuilder {
 #[type_key = "arith.CanonicalExpr"]
 pub struct CanonicalExprObj {
     base: ExprObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -795,24 +783,6 @@ impl From<CanonicalExpr> for Expr {
         <Expr as tvm_ffi::ObjectRefCore>::from_data(up)
     }
 }
-
-impl CanonicalExpr {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/arith.ConstIntBound
@@ -821,8 +791,7 @@ impl CanonicalExpr {
 #[type_key = "arith.ConstIntBound"]
 pub struct ConstIntBoundObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -833,33 +802,6 @@ pub struct ConstIntBound {
 }
 
 impl ConstIntBound {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> ConstIntBoundBuilder {
-        ConstIntBoundBuilder {
-            min_value: None,
-            max_value: None,
-        }
-    }
-
     pub fn min_value(&self) -> Result<i64> {
         tvm_ffi::object::get_object_field::<i64, _>(
             self,
@@ -876,49 +818,6 @@ impl ConstIntBound {
         )
     }
 }
-
-pub struct ConstIntBoundBuilder {
-    min_value: Option<i64>,
-    max_value: Option<i64>,
-}
-
-impl ConstIntBoundBuilder {
-    pub fn with_min_value(mut self, value: i64) -> Self {
-        self.min_value = Some(value);
-        self
-    }
-
-    pub fn with_max_value(mut self, value: i64) -> Self {
-        self.max_value = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<ConstIntBound> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            ConstIntBoundObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("min_value")));
-        owned_args.push(Any::from(self.min_value.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `min_value` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("max_value")));
-        owned_args.push(Any::from(self.max_value.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `max_value` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/arith.IntConstraints
@@ -927,8 +826,7 @@ impl ConstIntBoundBuilder {
 #[type_key = "arith.IntConstraints"]
 pub struct IntConstraintsObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -939,34 +837,6 @@ pub struct IntConstraints {
 }
 
 impl IntConstraints {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> IntConstraintsBuilder {
-        IntConstraintsBuilder {
-            variables: None,
-            ranges: None,
-            relations: None,
-        }
-    }
-
     pub fn variables(&self) -> Result<Array<Option<Var>>> {
         tvm_ffi::object::get_object_field::<Array<Option<Var>>, _>(
             self,
@@ -983,65 +853,12 @@ impl IntConstraints {
         )
     }
 
-    pub fn relations(&self) -> Result<Array<Option<Expr>>> {
-        tvm_ffi::object::get_object_field::<Array<Option<Expr>>, _>(
+    pub fn relations(&self) -> Result<Array<Option<TypedExpr<Expr, PrimType>>>> {
+        tvm_ffi::object::get_object_field::<Array<Option<TypedExpr<Expr, PrimType>>>, _>(
             self,
             IntConstraintsObj::type_index(),
             "relations",
         )
-    }
-}
-
-pub struct IntConstraintsBuilder {
-    variables: Option<Array<Option<Var>>>,
-    ranges: Option<Map<Option<Var>, Option<Range>>>,
-    relations: Option<Array<Option<Expr>>>,
-}
-
-impl IntConstraintsBuilder {
-    pub fn with_variables(mut self, value: Array<Option<Var>>) -> Self {
-        self.variables = Some(value);
-        self
-    }
-
-    pub fn with_ranges(mut self, value: Map<Option<Var>, Option<Range>>) -> Self {
-        self.ranges = Some(value);
-        self
-    }
-
-    pub fn with_relations(mut self, value: Array<Option<Expr>>) -> Self {
-        self.relations = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<IntConstraints> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            IntConstraintsObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("variables")));
-        owned_args.push(Any::from(self.variables.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `variables` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("ranges")));
-        owned_args.push(Any::from(self.ranges.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `ranges` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("relations")));
-        owned_args.push(Any::from(self.relations.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `relations` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -1052,8 +869,7 @@ impl IntConstraintsBuilder {
 #[type_key = "arith.IntConstraintsTransform"]
 pub struct IntConstraintsTransformObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1064,35 +880,6 @@ pub struct IntConstraintsTransform {
 }
 
 impl IntConstraintsTransform {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> IntConstraintsTransformBuilder {
-        IntConstraintsTransformBuilder {
-            src: None,
-            dst: None,
-            src_to_dst: None,
-            dst_to_src: None,
-        }
-    }
-
     pub fn src(&self) -> Result<Option<IntConstraints>> {
         tvm_ffi::object::get_object_field::<Option<IntConstraints>, _>(
             self,
@@ -1109,83 +896,20 @@ impl IntConstraintsTransform {
         )
     }
 
-    pub fn src_to_dst(&self) -> Result<Map<Option<Var>, Option<Expr>>> {
-        tvm_ffi::object::get_object_field::<Map<Option<Var>, Option<Expr>>, _>(
+    pub fn src_to_dst(&self) -> Result<Map<Option<Var>, Option<TypedExpr<Expr, PrimType>>>> {
+        tvm_ffi::object::get_object_field::<Map<Option<Var>, Option<TypedExpr<Expr, PrimType>>>, _>(
             self,
             IntConstraintsTransformObj::type_index(),
             "src_to_dst",
         )
     }
 
-    pub fn dst_to_src(&self) -> Result<Map<Option<Var>, Option<Expr>>> {
-        tvm_ffi::object::get_object_field::<Map<Option<Var>, Option<Expr>>, _>(
+    pub fn dst_to_src(&self) -> Result<Map<Option<Var>, Option<TypedExpr<Expr, PrimType>>>> {
+        tvm_ffi::object::get_object_field::<Map<Option<Var>, Option<TypedExpr<Expr, PrimType>>>, _>(
             self,
             IntConstraintsTransformObj::type_index(),
             "dst_to_src",
         )
-    }
-}
-
-pub struct IntConstraintsTransformBuilder {
-    src: Option<Option<IntConstraints>>,
-    dst: Option<Option<IntConstraints>>,
-    src_to_dst: Option<Map<Option<Var>, Option<Expr>>>,
-    dst_to_src: Option<Map<Option<Var>, Option<Expr>>>,
-}
-
-impl IntConstraintsTransformBuilder {
-    pub fn with_src(mut self, value: Option<IntConstraints>) -> Self {
-        self.src = Some(value);
-        self
-    }
-
-    pub fn with_dst(mut self, value: Option<IntConstraints>) -> Self {
-        self.dst = Some(value);
-        self
-    }
-
-    pub fn with_src_to_dst(mut self, value: Map<Option<Var>, Option<Expr>>) -> Self {
-        self.src_to_dst = Some(value);
-        self
-    }
-
-    pub fn with_dst_to_src(mut self, value: Map<Option<Var>, Option<Expr>>) -> Self {
-        self.dst_to_src = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<IntConstraintsTransform> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            IntConstraintsTransformObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("src")));
-        owned_args.push(Any::from(self.src.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `src` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("dst")));
-        owned_args.push(Any::from(self.dst.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `dst` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("src_to_dst")));
-        owned_args.push(Any::from(self.src_to_dst.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `src_to_dst` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("dst_to_src")));
-        owned_args.push(Any::from(self.dst_to_src.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `dst_to_src` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -1196,8 +920,7 @@ impl IntConstraintsTransformBuilder {
 #[type_key = "arith.IntGroupBounds"]
 pub struct IntGroupBoundsObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1208,128 +931,36 @@ pub struct IntGroupBounds {
 }
 
 impl IntGroupBounds {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> IntGroupBoundsBuilder {
-        IntGroupBoundsBuilder {
-            coef: None,
-            lower: None,
-            equal: None,
-            upper: None,
-        }
-    }
-
-    pub fn coef(&self) -> Result<Option<Expr>> {
-        tvm_ffi::object::get_object_field::<Option<Expr>, _>(
+    pub fn coef(&self) -> Result<Option<TypedExpr<Expr, PrimType>>> {
+        tvm_ffi::object::get_object_field::<Option<TypedExpr<Expr, PrimType>>, _>(
             self,
             IntGroupBoundsObj::type_index(),
             "coef",
         )
     }
 
-    pub fn lower(&self) -> Result<Array<Option<Expr>>> {
-        tvm_ffi::object::get_object_field::<Array<Option<Expr>>, _>(
+    pub fn lower(&self) -> Result<Array<Option<TypedExpr<Expr, PrimType>>>> {
+        tvm_ffi::object::get_object_field::<Array<Option<TypedExpr<Expr, PrimType>>>, _>(
             self,
             IntGroupBoundsObj::type_index(),
             "lower",
         )
     }
 
-    pub fn equal(&self) -> Result<Array<Option<Expr>>> {
-        tvm_ffi::object::get_object_field::<Array<Option<Expr>>, _>(
+    pub fn equal(&self) -> Result<Array<Option<TypedExpr<Expr, PrimType>>>> {
+        tvm_ffi::object::get_object_field::<Array<Option<TypedExpr<Expr, PrimType>>>, _>(
             self,
             IntGroupBoundsObj::type_index(),
             "equal",
         )
     }
 
-    pub fn upper(&self) -> Result<Array<Option<Expr>>> {
-        tvm_ffi::object::get_object_field::<Array<Option<Expr>>, _>(
+    pub fn upper(&self) -> Result<Array<Option<TypedExpr<Expr, PrimType>>>> {
+        tvm_ffi::object::get_object_field::<Array<Option<TypedExpr<Expr, PrimType>>>, _>(
             self,
             IntGroupBoundsObj::type_index(),
             "upper",
         )
-    }
-}
-
-pub struct IntGroupBoundsBuilder {
-    coef: Option<Option<Expr>>,
-    lower: Option<Array<Option<Expr>>>,
-    equal: Option<Array<Option<Expr>>>,
-    upper: Option<Array<Option<Expr>>>,
-}
-
-impl IntGroupBoundsBuilder {
-    pub fn with_coef(mut self, value: Option<Expr>) -> Self {
-        self.coef = Some(value);
-        self
-    }
-
-    pub fn with_lower(mut self, value: Array<Option<Expr>>) -> Self {
-        self.lower = Some(value);
-        self
-    }
-
-    pub fn with_equal(mut self, value: Array<Option<Expr>>) -> Self {
-        self.equal = Some(value);
-        self
-    }
-
-    pub fn with_upper(mut self, value: Array<Option<Expr>>) -> Self {
-        self.upper = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<IntGroupBounds> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            IntGroupBoundsObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("coef")));
-        owned_args.push(Any::from(self.coef.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `coef` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("lower")));
-        owned_args.push(Any::from(self.lower.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `lower` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("equal")));
-        owned_args.push(Any::from(self.equal.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `equal` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("upper")));
-        owned_args.push(Any::from(self.upper.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `upper` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -1340,8 +971,7 @@ impl IntGroupBoundsBuilder {
 #[type_key = "arith.IntervalSet"]
 pub struct IntervalSetObj {
     base: IntSetObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1368,90 +998,20 @@ impl From<IntervalSet> for IntSet {
 }
 
 impl IntervalSet {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> IntervalSetBuilder {
-        IntervalSetBuilder {
-            min_value: None,
-            max_value: None,
-        }
-    }
-
-    pub fn min_value(&self) -> Result<Option<Expr>> {
-        tvm_ffi::object::get_object_field::<Option<Expr>, _>(
+    pub fn min_value(&self) -> Result<Option<TypedExpr<Expr, PrimType>>> {
+        tvm_ffi::object::get_object_field::<Option<TypedExpr<Expr, PrimType>>, _>(
             self,
             IntervalSetObj::type_index(),
             "min_value",
         )
     }
 
-    pub fn max_value(&self) -> Result<Option<Expr>> {
-        tvm_ffi::object::get_object_field::<Option<Expr>, _>(
+    pub fn max_value(&self) -> Result<Option<TypedExpr<Expr, PrimType>>> {
+        tvm_ffi::object::get_object_field::<Option<TypedExpr<Expr, PrimType>>, _>(
             self,
             IntervalSetObj::type_index(),
             "max_value",
         )
-    }
-}
-
-pub struct IntervalSetBuilder {
-    min_value: Option<Option<Expr>>,
-    max_value: Option<Option<Expr>>,
-}
-
-impl IntervalSetBuilder {
-    pub fn with_min_value(mut self, value: Option<Expr>) -> Self {
-        self.min_value = Some(value);
-        self
-    }
-
-    pub fn with_max_value(mut self, value: Option<Expr>) -> Self {
-        self.max_value = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<IntervalSet> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            IntervalSetObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("min_value")));
-        owned_args.push(Any::from(self.min_value.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `min_value` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("max_value")));
-        owned_args.push(Any::from(self.max_value.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `max_value` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -1462,8 +1022,7 @@ impl IntervalSetBuilder {
 #[type_key = "arith.IterMapExpr"]
 pub struct IterMapExprObj {
     base: ExprObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1488,24 +1047,6 @@ impl From<IterMapExpr> for Expr {
         <Expr as tvm_ffi::ObjectRefCore>::from_data(up)
     }
 }
-
-impl IterMapExpr {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/arith.IterMapResult
@@ -1514,8 +1055,7 @@ impl IterMapExpr {
 #[type_key = "arith.IterMapResult"]
 pub struct IterMapResultObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1526,34 +1066,6 @@ pub struct IterMapResult {
 }
 
 impl IterMapResult {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> IterMapResultBuilder {
-        IterMapResultBuilder {
-            indices: None,
-            errors: None,
-            padding_predicate: None,
-        }
-    }
-
     pub fn indices(&self) -> Result<Array<Option<IterSumExpr>>> {
         tvm_ffi::object::get_object_field::<Array<Option<IterSumExpr>>, _>(
             self,
@@ -1570,69 +1082,12 @@ impl IterMapResult {
         )
     }
 
-    pub fn padding_predicate(&self) -> Result<Option<Expr>> {
-        tvm_ffi::object::get_object_field::<Option<Expr>, _>(
+    pub fn padding_predicate(&self) -> Result<Option<TypedExpr<Expr, PrimType>>> {
+        tvm_ffi::object::get_object_field::<Option<TypedExpr<Expr, PrimType>>, _>(
             self,
             IterMapResultObj::type_index(),
             "padding_predicate",
         )
-    }
-}
-
-pub struct IterMapResultBuilder {
-    indices: Option<Array<Option<IterSumExpr>>>,
-    errors: Option<Array<String>>,
-    padding_predicate: Option<Option<Expr>>,
-}
-
-impl IterMapResultBuilder {
-    pub fn with_indices(mut self, value: Array<Option<IterSumExpr>>) -> Self {
-        self.indices = Some(value);
-        self
-    }
-
-    pub fn with_errors(mut self, value: Array<String>) -> Self {
-        self.errors = Some(value);
-        self
-    }
-
-    pub fn with_padding_predicate(mut self, value: Option<Expr>) -> Self {
-        self.padding_predicate = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<IterMapResult> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            IterMapResultObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("indices")));
-        owned_args.push(Any::from(self.indices.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `indices` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("errors")));
-        owned_args.push(Any::from(self.errors.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `errors` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("padding_predicate")));
-        owned_args.push(Any::from(self.padding_predicate.ok_or_else(|| {
-            tvm_ffi::Error::new(
-                tvm_ffi::VALUE_ERROR,
-                "field `padding_predicate` is not set",
-                "",
-            )
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -1643,8 +1098,7 @@ impl IterMapResultBuilder {
 #[type_key = "arith.IterMark"]
 pub struct IterMarkObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1655,90 +1109,20 @@ pub struct IterMark {
 }
 
 impl IterMark {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> IterMarkBuilder {
-        IterMarkBuilder {
-            source: None,
-            extent: None,
-        }
-    }
-
-    pub fn source(&self) -> Result<Option<Expr>> {
-        tvm_ffi::object::get_object_field::<Option<Expr>, _>(
+    pub fn source(&self) -> Result<Option<TypedExpr<Expr, PrimType>>> {
+        tvm_ffi::object::get_object_field::<Option<TypedExpr<Expr, PrimType>>, _>(
             self,
             IterMarkObj::type_index(),
             "source",
         )
     }
 
-    pub fn extent(&self) -> Result<Option<Expr>> {
-        tvm_ffi::object::get_object_field::<Option<Expr>, _>(
+    pub fn extent(&self) -> Result<Option<TypedExpr<Expr, PrimType>>> {
+        tvm_ffi::object::get_object_field::<Option<TypedExpr<Expr, PrimType>>, _>(
             self,
             IterMarkObj::type_index(),
             "extent",
         )
-    }
-}
-
-pub struct IterMarkBuilder {
-    source: Option<Option<Expr>>,
-    extent: Option<Option<Expr>>,
-}
-
-impl IterMarkBuilder {
-    pub fn with_source(mut self, value: Option<Expr>) -> Self {
-        self.source = Some(value);
-        self
-    }
-
-    pub fn with_extent(mut self, value: Option<Expr>) -> Self {
-        self.extent = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<IterMark> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            IterMarkObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("source")));
-        owned_args.push(Any::from(self.source.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `source` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("extent")));
-        owned_args.push(Any::from(self.extent.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `extent` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -1749,8 +1133,7 @@ impl IterMarkBuilder {
 #[type_key = "arith.IterSplitExpr"]
 pub struct IterSplitExprObj {
     base: IterMapExprObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1777,37 +1160,6 @@ impl From<IterSplitExpr> for IterMapExpr {
 }
 
 impl IterSplitExpr {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> IterSplitExprBuilder {
-        IterSplitExprBuilder {
-            span: None,
-            ty: None,
-            source: None,
-            lower_factor: None,
-            extent: None,
-            scale: None,
-        }
-    }
-
     pub fn source(&self) -> Result<Option<IterMark>> {
         tvm_ffi::object::get_object_field::<Option<IterMark>, _>(
             self,
@@ -1816,111 +1168,28 @@ impl IterSplitExpr {
         )
     }
 
-    pub fn lower_factor(&self) -> Result<Option<Expr>> {
-        tvm_ffi::object::get_object_field::<Option<Expr>, _>(
+    pub fn lower_factor(&self) -> Result<Option<TypedExpr<Expr, PrimType>>> {
+        tvm_ffi::object::get_object_field::<Option<TypedExpr<Expr, PrimType>>, _>(
             self,
             IterSplitExprObj::type_index(),
             "lower_factor",
         )
     }
 
-    pub fn extent(&self) -> Result<Option<Expr>> {
-        tvm_ffi::object::get_object_field::<Option<Expr>, _>(
+    pub fn extent(&self) -> Result<Option<TypedExpr<Expr, PrimType>>> {
+        tvm_ffi::object::get_object_field::<Option<TypedExpr<Expr, PrimType>>, _>(
             self,
             IterSplitExprObj::type_index(),
             "extent",
         )
     }
 
-    pub fn scale(&self) -> Result<Option<Expr>> {
-        tvm_ffi::object::get_object_field::<Option<Expr>, _>(
+    pub fn scale(&self) -> Result<Option<TypedExpr<Expr, PrimType>>> {
+        tvm_ffi::object::get_object_field::<Option<TypedExpr<Expr, PrimType>>, _>(
             self,
             IterSplitExprObj::type_index(),
             "scale",
         )
-    }
-}
-
-pub struct IterSplitExprBuilder {
-    span: Option<Option<Span>>,
-    ty: Option<Type>,
-    source: Option<Option<IterMark>>,
-    lower_factor: Option<Option<Expr>>,
-    extent: Option<Option<Expr>>,
-    scale: Option<Option<Expr>>,
-}
-
-impl IterSplitExprBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_ty(mut self, value: Type) -> Self {
-        self.ty = Some(value);
-        self
-    }
-
-    pub fn with_source(mut self, value: Option<IterMark>) -> Self {
-        self.source = Some(value);
-        self
-    }
-
-    pub fn with_lower_factor(mut self, value: Option<Expr>) -> Self {
-        self.lower_factor = Some(value);
-        self
-    }
-
-    pub fn with_extent(mut self, value: Option<Expr>) -> Self {
-        self.extent = Some(value);
-        self
-    }
-
-    pub fn with_scale(mut self, value: Option<Expr>) -> Self {
-        self.scale = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<IterSplitExpr> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            IterSplitExprObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.ty {
-            owned_args.push(Any::from(tvm_ffi::String::from("ty")));
-            owned_args.push(Any::from(value));
-        }
-        owned_args.push(Any::from(tvm_ffi::String::from("source")));
-        owned_args.push(Any::from(self.source.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `source` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("lower_factor")));
-        owned_args.push(Any::from(self.lower_factor.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `lower_factor` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("extent")));
-        owned_args.push(Any::from(self.extent.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `extent` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("scale")));
-        owned_args.push(Any::from(self.scale.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `scale` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -1931,8 +1200,7 @@ impl IterSplitExprBuilder {
 #[type_key = "arith.IterSumExpr"]
 pub struct IterSumExprObj {
     base: IterMapExprObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -1959,35 +1227,6 @@ impl From<IterSumExpr> for IterMapExpr {
 }
 
 impl IterSumExpr {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> IterSumExprBuilder {
-        IterSumExprBuilder {
-            span: None,
-            ty: None,
-            args: None,
-            base: None,
-        }
-    }
-
     pub fn args(&self) -> Result<Array<Option<IterSplitExpr>>> {
         tvm_ffi::object::get_object_field::<Array<Option<IterSplitExpr>>, _>(
             self,
@@ -1996,75 +1235,12 @@ impl IterSumExpr {
         )
     }
 
-    pub fn base(&self) -> Result<Option<Expr>> {
-        tvm_ffi::object::get_object_field::<Option<Expr>, _>(
+    pub fn base(&self) -> Result<Option<TypedExpr<Expr, PrimType>>> {
+        tvm_ffi::object::get_object_field::<Option<TypedExpr<Expr, PrimType>>, _>(
             self,
             IterSumExprObj::type_index(),
             "base",
         )
-    }
-}
-
-pub struct IterSumExprBuilder {
-    span: Option<Option<Span>>,
-    ty: Option<Type>,
-    args: Option<Array<Option<IterSplitExpr>>>,
-    base: Option<Option<Expr>>,
-}
-
-impl IterSumExprBuilder {
-    pub fn with_span(mut self, value: Option<Span>) -> Self {
-        self.span = Some(value);
-        self
-    }
-
-    pub fn with_ty(mut self, value: Type) -> Self {
-        self.ty = Some(value);
-        self
-    }
-
-    pub fn with_args(mut self, value: Array<Option<IterSplitExpr>>) -> Self {
-        self.args = Some(value);
-        self
-    }
-
-    pub fn with_base(mut self, value: Option<Expr>) -> Self {
-        self.base = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<IterSumExpr> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            IterSumExprObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.span {
-            owned_args.push(Any::from(tvm_ffi::String::from("span")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.ty {
-            owned_args.push(Any::from(tvm_ffi::String::from("ty")));
-            owned_args.push(Any::from(value));
-        }
-        owned_args.push(Any::from(tvm_ffi::String::from("args")));
-        owned_args.push(Any::from(self.args.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `args` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("base")));
-        owned_args.push(Any::from(self.base.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `base` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -2075,8 +1251,7 @@ impl IterSumExprBuilder {
 #[type_key = "arith.ModularSet"]
 pub struct ModularSetObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2087,82 +1262,12 @@ pub struct ModularSet {
 }
 
 impl ModularSet {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> ModularSetBuilder {
-        ModularSetBuilder {
-            coeff: None,
-            base: None,
-        }
-    }
-
     pub fn coeff(&self) -> Result<i64> {
         tvm_ffi::object::get_object_field::<i64, _>(self, ModularSetObj::type_index(), "coeff")
     }
 
     pub fn base(&self) -> Result<i64> {
         tvm_ffi::object::get_object_field::<i64, _>(self, ModularSetObj::type_index(), "base")
-    }
-}
-
-pub struct ModularSetBuilder {
-    coeff: Option<i64>,
-    base: Option<i64>,
-}
-
-impl ModularSetBuilder {
-    pub fn with_coeff(mut self, value: i64) -> Self {
-        self.coeff = Some(value);
-        self
-    }
-
-    pub fn with_base(mut self, value: i64) -> Self {
-        self.base = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<ModularSet> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            ModularSetObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("coeff")));
-        owned_args.push(Any::from(self.coeff.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `coeff` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("base")));
-        owned_args.push(Any::from(self.base.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `base` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -2173,8 +1278,7 @@ impl ModularSetBuilder {
 #[type_key = "arith.PresburgerSet"]
 pub struct PresburgerSetObj {
     base: IntSetObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2199,53 +1303,6 @@ impl From<PresburgerSet> for IntSet {
         <IntSet as tvm_ffi::ObjectRefCore>::from_data(up)
     }
 }
-
-impl PresburgerSet {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> PresburgerSetBuilder {
-        PresburgerSetBuilder {}
-    }
-}
-
-pub struct PresburgerSetBuilder {}
-
-impl PresburgerSetBuilder {
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<PresburgerSet> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            PresburgerSetObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let owned_args: Vec<Any> = Vec::new();
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/arith.RewriteSimplifierStats
@@ -2254,8 +1311,7 @@ impl PresburgerSetBuilder {
 #[type_key = "arith.RewriteSimplifierStats"]
 pub struct RewriteSimplifierStatsObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2266,37 +1322,6 @@ pub struct RewriteSimplifierStats {
 }
 
 impl RewriteSimplifierStats {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> RewriteSimplifierStatsBuilder {
-        RewriteSimplifierStatsBuilder {
-            nodes_visited: None,
-            constraints_entered: None,
-            rewrites_attempted: None,
-            rewrites_performed: None,
-            max_recursive_depth: None,
-            num_recursive_rewrites: None,
-        }
-    }
-
     pub fn nodes_visited(&self) -> Result<i64> {
         tvm_ffi::object::get_object_field::<i64, _>(
             self,
@@ -2345,109 +1370,6 @@ impl RewriteSimplifierStats {
         )
     }
 }
-
-pub struct RewriteSimplifierStatsBuilder {
-    nodes_visited: Option<i64>,
-    constraints_entered: Option<i64>,
-    rewrites_attempted: Option<i64>,
-    rewrites_performed: Option<i64>,
-    max_recursive_depth: Option<i64>,
-    num_recursive_rewrites: Option<i64>,
-}
-
-impl RewriteSimplifierStatsBuilder {
-    pub fn with_nodes_visited(mut self, value: i64) -> Self {
-        self.nodes_visited = Some(value);
-        self
-    }
-
-    pub fn with_constraints_entered(mut self, value: i64) -> Self {
-        self.constraints_entered = Some(value);
-        self
-    }
-
-    pub fn with_rewrites_attempted(mut self, value: i64) -> Self {
-        self.rewrites_attempted = Some(value);
-        self
-    }
-
-    pub fn with_rewrites_performed(mut self, value: i64) -> Self {
-        self.rewrites_performed = Some(value);
-        self
-    }
-
-    pub fn with_max_recursive_depth(mut self, value: i64) -> Self {
-        self.max_recursive_depth = Some(value);
-        self
-    }
-
-    pub fn with_num_recursive_rewrites(mut self, value: i64) -> Self {
-        self.num_recursive_rewrites = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<RewriteSimplifierStats> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            RewriteSimplifierStatsObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("nodes_visited")));
-        owned_args.push(Any::from(self.nodes_visited.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `nodes_visited` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("constraints_entered")));
-        owned_args.push(Any::from(self.constraints_entered.ok_or_else(|| {
-            tvm_ffi::Error::new(
-                tvm_ffi::VALUE_ERROR,
-                "field `constraints_entered` is not set",
-                "",
-            )
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("rewrites_attempted")));
-        owned_args.push(Any::from(self.rewrites_attempted.ok_or_else(|| {
-            tvm_ffi::Error::new(
-                tvm_ffi::VALUE_ERROR,
-                "field `rewrites_attempted` is not set",
-                "",
-            )
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("rewrites_performed")));
-        owned_args.push(Any::from(self.rewrites_performed.ok_or_else(|| {
-            tvm_ffi::Error::new(
-                tvm_ffi::VALUE_ERROR,
-                "field `rewrites_performed` is not set",
-                "",
-            )
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("max_recursive_depth")));
-        owned_args.push(Any::from(self.max_recursive_depth.ok_or_else(|| {
-            tvm_ffi::Error::new(
-                tvm_ffi::VALUE_ERROR,
-                "field `max_recursive_depth` is not set",
-                "",
-            )
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("num_recursive_rewrites")));
-        owned_args.push(Any::from(self.num_recursive_rewrites.ok_or_else(|| {
-            tvm_ffi::Error::new(
-                tvm_ffi::VALUE_ERROR,
-                "field `num_recursive_rewrites` is not set",
-                "",
-            )
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/arith.SplitExpr
@@ -2456,8 +1378,7 @@ impl RewriteSimplifierStatsBuilder {
 #[type_key = "arith.SplitExpr"]
 pub struct SplitExprObj {
     base: CanonicalExprObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2483,24 +1404,6 @@ impl From<SplitExpr> for CanonicalExpr {
         <CanonicalExpr as tvm_ffi::ObjectRefCore>::from_data(up)
     }
 }
-
-impl SplitExpr {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/arith.SumExpr
@@ -2509,8 +1412,7 @@ impl SplitExpr {
 #[type_key = "arith.SumExpr"]
 pub struct SumExprObj {
     base: CanonicalExprObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -2534,24 +1436,6 @@ impl From<SumExpr> for CanonicalExpr {
         let up =
             unsafe { ObjectArc::from_raw(ObjectArc::into_raw(arc) as *const CanonicalExprObj) };
         <CanonicalExpr as tvm_ffi::ObjectRefCore>::from_data(up)
-    }
-}
-
-impl SumExpr {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
     }
 }
 // tvm-ffi-stubgen(end)

@@ -27,8 +27,9 @@ use std::cell::Cell;
 
 use crate::ffi_api::require_defined;
 use crate::generated::arith::{self, Analyzer as RawAnalyzer};
-use crate::generated::ir::{Expr, Range};
+use crate::generated::ir::Range;
 use crate::generated::tirx::Var;
+use crate::PrimExpr;
 use tvm_ffi::{AnyView, Function, Result};
 
 /// Strength used by [`Analyzer::can_prove`].
@@ -74,13 +75,12 @@ impl Analyzer {
         }
     }
 
-    /// Borrow the generated handle for APIs not yet covered by this SDK.
+    /// Consume the wrapper and return its generated handle.
     ///
-    /// Cloning this raw handle aliases the same mutable state. Prefer
-    /// [`Analyzer::fork`] when independent state is intended. Calling raw
-    /// constraint APIs also bypasses this wrapper's LIFO and poison checks.
-    pub fn as_raw(&self) -> &RawAnalyzer {
-        &self.inner
+    /// Raw calls no longer receive this wrapper's scope and poison checks.
+    /// Prefer [`Analyzer::fork`] when independent checked state is intended.
+    pub fn into_raw(self) -> RawAnalyzer {
+        self.inner
     }
 
     /// Deep-copy all accumulated facts into independent analyzer state.
@@ -104,7 +104,7 @@ impl Analyzer {
     }
 
     /// Run TVM's alternating rewrite/canonical simplify pipeline.
-    pub fn simplify(&self, expr: &Expr, steps: i64) -> Result<Expr> {
+    pub fn simplify(&self, expr: &PrimExpr, steps: i64) -> Result<PrimExpr> {
         self.ensure_usable()?;
         require_defined(
             arith::analyzer_simplify(self.inner.clone(), Some(expr.clone()), steps)?,
@@ -113,12 +113,12 @@ impl Analyzer {
     }
 
     /// Simplify with TVM's default two pipeline steps.
-    pub fn simplify_default(&self, expr: &Expr) -> Result<Expr> {
+    pub fn simplify_default(&self, expr: &PrimExpr) -> Result<PrimExpr> {
         self.simplify(expr, 2)
     }
 
     /// Apply rewrite simplification only.
-    pub fn rewrite_simplify(&self, expr: &Expr) -> Result<Expr> {
+    pub fn rewrite_simplify(&self, expr: &PrimExpr) -> Result<PrimExpr> {
         self.ensure_usable()?;
         require_defined(
             arith::analyzer_rewrite_simplify(self.inner.clone(), Some(expr.clone()))?,
@@ -127,7 +127,7 @@ impl Analyzer {
     }
 
     /// Apply canonical simplification only.
-    pub fn canonical_simplify(&self, expr: &Expr) -> Result<Expr> {
+    pub fn canonical_simplify(&self, expr: &PrimExpr) -> Result<PrimExpr> {
         self.ensure_usable()?;
         require_defined(
             arith::analyzer_canonical_simplify(self.inner.clone(), Some(expr.clone()))?,
@@ -136,19 +136,19 @@ impl Analyzer {
     }
 
     /// Return whether TVM can prove `expr` under the accumulated facts.
-    pub fn can_prove(&self, expr: &Expr, strength: ProofStrength) -> Result<bool> {
+    pub fn can_prove(&self, expr: &PrimExpr, strength: ProofStrength) -> Result<bool> {
         self.ensure_usable()?;
         arith::analyzer_can_prove(self.inner.clone(), Some(expr.clone()), strength as i64)
     }
 
     /// Return whether TVM can prove two expressions equal.
-    pub fn can_prove_equal(&self, lhs: &Expr, rhs: &Expr) -> Result<bool> {
+    pub fn can_prove_equal(&self, lhs: &PrimExpr, rhs: &PrimExpr) -> Result<bool> {
         self.ensure_usable()?;
         arith::analyzer_can_prove_equal(self.inner.clone(), Some(lhs.clone()), Some(rhs.clone()))
     }
 
     /// Bind a variable to an expression.
-    pub fn bind_expr(&self, var: &Var, expr: &Expr, allow_override: bool) -> Result<()> {
+    pub fn bind_expr(&self, var: &Var, expr: &PrimExpr, allow_override: bool) -> Result<()> {
         self.ensure_usable()?;
         arith::analyzer_bind_packed(&[
             AnyView::from(&self.inner),
@@ -171,7 +171,7 @@ impl Analyzer {
         Ok(())
     }
 
-    fn constraint_scope<'a>(&'a self, constraint: &Expr) -> Result<ConstraintGuard<'a>> {
+    fn constraint_scope<'a>(&'a self, constraint: &PrimExpr) -> Result<ConstraintGuard<'a>> {
         self.ensure_usable()?;
         let next_depth = self
             .active_constraints
@@ -201,7 +201,7 @@ impl Analyzer {
     /// the C++ scope before the panic continues.
     pub fn with_constraint<T>(
         &self,
-        constraint: &Expr,
+        constraint: &PrimExpr,
         body: impl FnOnce(&Analyzer) -> Result<T>,
     ) -> Result<T> {
         let guard = self.constraint_scope(constraint)?;

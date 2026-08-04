@@ -39,7 +39,6 @@ use tvm_ffi::Module;
 use tvm_ffi::Object;
 use tvm_ffi::ObjectArc;
 use tvm_ffi::ObjectCore;
-use tvm_ffi::ObjectRefCast;
 use tvm_ffi::ObjectRefCore;
 use tvm_ffi::Result;
 use tvm_ffi::String;
@@ -174,8 +173,7 @@ pub fn with_host(_0: Option<Target>, _1: Option<Target>) -> Result<Option<Target
 #[type_key = "target.Target"]
 pub struct TargetObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -186,36 +184,6 @@ pub struct Target {
 }
 
 impl Target {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> TargetBuilder {
-        TargetBuilder {
-            kind: None,
-            tag: None,
-            keys: None,
-            attrs: None,
-            host: None,
-        }
-    }
-
     pub fn kind(&self) -> Result<TargetKind> {
         tvm_ffi::object::get_object_field::<TargetKind, _>(self, TargetObj::type_index(), "kind")
     }
@@ -244,79 +212,6 @@ impl Target {
         )
     }
 }
-
-pub struct TargetBuilder {
-    kind: Option<TargetKind>,
-    tag: Option<String>,
-    keys: Option<Array<String>>,
-    attrs: Option<Map<String, AnyValue>>,
-    host: Option<Option<ObjectRef>>,
-}
-
-impl TargetBuilder {
-    pub fn with_kind(mut self, value: TargetKind) -> Self {
-        self.kind = Some(value);
-        self
-    }
-
-    pub fn with_tag(mut self, value: String) -> Self {
-        self.tag = Some(value);
-        self
-    }
-
-    pub fn with_keys(mut self, value: Array<String>) -> Self {
-        self.keys = Some(value);
-        self
-    }
-
-    pub fn with_attrs(mut self, value: Map<String, AnyValue>) -> Self {
-        self.attrs = Some(value);
-        self
-    }
-
-    pub fn with_host(mut self, value: Option<ObjectRef>) -> Self {
-        self.host = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<Target> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            TargetObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("kind")));
-        owned_args.push(Any::from(self.kind.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `kind` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("tag")));
-        owned_args.push(Any::from(self.tag.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `tag` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("keys")));
-        owned_args.push(Any::from(self.keys.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `keys` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("attrs")));
-        owned_args.push(Any::from(self.attrs.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `attrs` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("host")));
-        owned_args.push(Any::from(self.host.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `host` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/target.TargetKind
@@ -325,8 +220,7 @@ impl TargetBuilder {
 #[type_key = "target.TargetKind"]
 pub struct TargetKindObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -337,34 +231,6 @@ pub struct TargetKind {
 }
 
 impl TargetKind {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> TargetKindBuilder {
-        TargetKindBuilder {
-            name: None,
-            default_device_type: None,
-            default_keys: None,
-        }
-    }
-
     pub fn name(&self) -> Result<String> {
         tvm_ffi::object::get_object_field::<String, _>(self, TargetKindObj::type_index(), "name")
     }
@@ -385,63 +251,6 @@ impl TargetKind {
         )
     }
 }
-
-pub struct TargetKindBuilder {
-    name: Option<String>,
-    default_device_type: Option<i64>,
-    default_keys: Option<Array<String>>,
-}
-
-impl TargetKindBuilder {
-    pub fn with_name(mut self, value: String) -> Self {
-        self.name = Some(value);
-        self
-    }
-
-    pub fn with_default_device_type(mut self, value: i64) -> Self {
-        self.default_device_type = Some(value);
-        self
-    }
-
-    pub fn with_default_keys(mut self, value: Array<String>) -> Self {
-        self.default_keys = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<TargetKind> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            TargetKindObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("name")));
-        owned_args.push(Any::from(self.name.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `name` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("default_device_type")));
-        owned_args.push(Any::from(self.default_device_type.ok_or_else(|| {
-            tvm_ffi::Error::new(
-                tvm_ffi::VALUE_ERROR,
-                "field `default_device_type` is not set",
-                "",
-            )
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("default_keys")));
-        owned_args.push(Any::from(self.default_keys.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `default_keys` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/target.TargetTag
@@ -450,8 +259,7 @@ impl TargetKindBuilder {
 #[type_key = "target.TargetTag"]
 pub struct TargetTagObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -462,33 +270,6 @@ pub struct TargetTag {
 }
 
 impl TargetTag {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> TargetTagBuilder {
-        TargetTagBuilder {
-            name: None,
-            config: None,
-        }
-    }
-
     pub fn name(&self) -> Result<String> {
         tvm_ffi::object::get_object_field::<String, _>(self, TargetTagObj::type_index(), "name")
     }
@@ -501,49 +282,6 @@ impl TargetTag {
         )
     }
 }
-
-pub struct TargetTagBuilder {
-    name: Option<String>,
-    config: Option<Map<String, AnyValue>>,
-}
-
-impl TargetTagBuilder {
-    pub fn with_name(mut self, value: String) -> Self {
-        self.name = Some(value);
-        self
-    }
-
-    pub fn with_config(mut self, value: Map<String, AnyValue>) -> Self {
-        self.config = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<TargetTag> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            TargetTagObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("name")));
-        owned_args.push(Any::from(self.name.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `name` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("config")));
-        owned_args.push(Any::from(self.config.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `config` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/target.VirtualDevice
@@ -552,8 +290,7 @@ impl TargetTagBuilder {
 #[type_key = "target.VirtualDevice"]
 pub struct VirtualDeviceObj {
     base: AttrsObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -580,35 +317,6 @@ impl From<VirtualDevice> for Attrs {
 }
 
 impl VirtualDevice {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> VirtualDeviceBuilder {
-        VirtualDeviceBuilder {
-            device_type_int: None,
-            virtual_device_id: None,
-            target: None,
-            memory_scope: None,
-        }
-    }
-
     pub fn device_type_int(&self) -> Result<i64> {
         tvm_ffi::object::get_object_field::<i64, _>(
             self,
@@ -639,69 +347,6 @@ impl VirtualDevice {
             VirtualDeviceObj::type_index(),
             "memory_scope",
         )
-    }
-}
-
-pub struct VirtualDeviceBuilder {
-    device_type_int: Option<i64>,
-    virtual_device_id: Option<i64>,
-    target: Option<Option<Target>>,
-    memory_scope: Option<String>,
-}
-
-impl VirtualDeviceBuilder {
-    pub fn with_device_type_int(mut self, value: i64) -> Self {
-        self.device_type_int = Some(value);
-        self
-    }
-
-    pub fn with_virtual_device_id(mut self, value: i64) -> Self {
-        self.virtual_device_id = Some(value);
-        self
-    }
-
-    pub fn with_target(mut self, value: Option<Target>) -> Self {
-        self.target = Some(value);
-        self
-    }
-
-    pub fn with_memory_scope(mut self, value: String) -> Self {
-        self.memory_scope = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<VirtualDevice> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            VirtualDeviceObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        if let Some(value) = self.device_type_int {
-            owned_args.push(Any::from(tvm_ffi::String::from("device_type_int")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.virtual_device_id {
-            owned_args.push(Any::from(tvm_ffi::String::from("virtual_device_id")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.target {
-            owned_args.push(Any::from(tvm_ffi::String::from("target")));
-            owned_args.push(Any::from(value));
-        }
-        if let Some(value) = self.memory_scope {
-            owned_args.push(Any::from(tvm_ffi::String::from("memory_scope")));
-            owned_args.push(Any::from(value));
-        }
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)

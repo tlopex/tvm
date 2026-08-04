@@ -37,7 +37,6 @@ use tvm_ffi::Map;
 use tvm_ffi::Object;
 use tvm_ffi::ObjectArc;
 use tvm_ffi::ObjectCore;
-use tvm_ffi::ObjectRefCast;
 use tvm_ffi::ObjectRefCore;
 use tvm_ffi::Result;
 use tvm_ffi::String;
@@ -148,8 +147,7 @@ pub fn sequential_packed(args: &[AnyView<'_>]) -> Result<Any> {
 #[type_key = "transform.Pass"]
 pub struct PassObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -157,24 +155,6 @@ pub struct PassObj {
 #[derive(tvm_ffi::derive::ObjectRef, Clone)]
 pub struct Pass {
     data: ObjectArc<PassObj>,
-}
-
-impl Pass {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
 }
 // tvm-ffi-stubgen(end)
 
@@ -184,8 +164,7 @@ impl Pass {
 #[type_key = "transform.ModulePass"]
 pub struct ModulePassObj {
     base: PassObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -212,69 +191,12 @@ impl From<ModulePass> for Pass {
 }
 
 impl ModulePass {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> ModulePassBuilder {
-        ModulePassBuilder { pass_info: None }
-    }
-
     pub fn pass_info(&self) -> Result<Option<PassInfo>> {
         tvm_ffi::object::get_object_field::<Option<PassInfo>, _>(
             self,
             ModulePassObj::type_index(),
             "pass_info",
         )
-    }
-}
-
-pub struct ModulePassBuilder {
-    pass_info: Option<Option<PassInfo>>,
-}
-
-impl ModulePassBuilder {
-    pub fn with_pass_info(mut self, value: Option<PassInfo>) -> Self {
-        self.pass_info = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<ModulePass> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            ModulePassObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("pass_info")));
-        owned_args.push(Any::from(self.pass_info.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `pass_info` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)
@@ -285,8 +207,7 @@ impl ModulePassBuilder {
 #[type_key = "transform.PassContext"]
 pub struct PassContextObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -297,36 +218,6 @@ pub struct PassContext {
 }
 
 impl PassContext {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> PassContextBuilder {
-        PassContextBuilder {
-            opt_level: None,
-            required_pass: None,
-            disabled_pass: None,
-            instruments: None,
-            config: None,
-        }
-    }
-
     pub fn opt_level(&self) -> Result<i64> {
         tvm_ffi::object::get_object_field::<i64, _>(self, PassContextObj::type_index(), "opt_level")
     }
@@ -363,79 +254,6 @@ impl PassContext {
         )
     }
 }
-
-pub struct PassContextBuilder {
-    opt_level: Option<i64>,
-    required_pass: Option<Array<String>>,
-    disabled_pass: Option<Array<String>>,
-    instruments: Option<Array<Option<PassInstrument>>>,
-    config: Option<Map<String, AnyValue>>,
-}
-
-impl PassContextBuilder {
-    pub fn with_opt_level(mut self, value: i64) -> Self {
-        self.opt_level = Some(value);
-        self
-    }
-
-    pub fn with_required_pass(mut self, value: Array<String>) -> Self {
-        self.required_pass = Some(value);
-        self
-    }
-
-    pub fn with_disabled_pass(mut self, value: Array<String>) -> Self {
-        self.disabled_pass = Some(value);
-        self
-    }
-
-    pub fn with_instruments(mut self, value: Array<Option<PassInstrument>>) -> Self {
-        self.instruments = Some(value);
-        self
-    }
-
-    pub fn with_config(mut self, value: Map<String, AnyValue>) -> Self {
-        self.config = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<PassContext> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            PassContextObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("opt_level")));
-        owned_args.push(Any::from(self.opt_level.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `opt_level` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("required_pass")));
-        owned_args.push(Any::from(self.required_pass.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `required_pass` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("disabled_pass")));
-        owned_args.push(Any::from(self.disabled_pass.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `disabled_pass` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("instruments")));
-        owned_args.push(Any::from(self.instruments.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `instruments` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("config")));
-        owned_args.push(Any::from(self.config.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `config` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/transform.PassInfo
@@ -444,8 +262,7 @@ impl PassContextBuilder {
 #[type_key = "transform.PassInfo"]
 pub struct PassInfoObj {
     base: Object,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -456,35 +273,6 @@ pub struct PassInfo {
 }
 
 impl PassInfo {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> PassInfoBuilder {
-        PassInfoBuilder {
-            opt_level: None,
-            name: None,
-            required: None,
-            traceable: None,
-        }
-    }
-
     pub fn opt_level(&self) -> Result<i64> {
         tvm_ffi::object::get_object_field::<i64, _>(self, PassInfoObj::type_index(), "opt_level")
     }
@@ -505,69 +293,6 @@ impl PassInfo {
         tvm_ffi::object::get_object_field::<bool, _>(self, PassInfoObj::type_index(), "traceable")
     }
 }
-
-pub struct PassInfoBuilder {
-    opt_level: Option<i64>,
-    name: Option<String>,
-    required: Option<Array<String>>,
-    traceable: Option<bool>,
-}
-
-impl PassInfoBuilder {
-    pub fn with_opt_level(mut self, value: i64) -> Self {
-        self.opt_level = Some(value);
-        self
-    }
-
-    pub fn with_name(mut self, value: String) -> Self {
-        self.name = Some(value);
-        self
-    }
-
-    pub fn with_required(mut self, value: Array<String>) -> Self {
-        self.required = Some(value);
-        self
-    }
-
-    pub fn with_traceable(mut self, value: bool) -> Self {
-        self.traceable = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<PassInfo> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            PassInfoObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("opt_level")));
-        owned_args.push(Any::from(self.opt_level.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `opt_level` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("name")));
-        owned_args.push(Any::from(self.name.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `name` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("required")));
-        owned_args.push(Any::from(self.required.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `required` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("traceable")));
-        owned_args.push(Any::from(self.traceable.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `traceable` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
-    }
-}
 // tvm-ffi-stubgen(end)
 
 // tvm-ffi-stubgen(begin): object/transform.Sequential
@@ -576,8 +301,7 @@ impl PassInfoBuilder {
 #[type_key = "transform.Sequential"]
 pub struct SequentialObj {
     base: PassObj,
-    // Reflection does not prove C++ thread safety. Keep handles
-    // !Send + !Sync until the schema can state that contract.
+    // Reflection does not prove C++ thread safety.
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -604,33 +328,6 @@ impl From<Sequential> for Pass {
 }
 
 impl Sequential {
-    /// C++ `ObjectRef::same_as`: pointer identity of the underlying object.
-    pub fn same_as<O: tvm_ffi::ObjectRefCore>(&self, other: &O) -> bool {
-        unsafe {
-            ObjectArc::as_raw(&self.data) as *const u8
-                == ObjectArc::as_raw(<O as tvm_ffi::ObjectRefCore>::data(other)) as *const u8
-        }
-    }
-
-    /// Checked object-ref cast using the runtime inheritance table.
-    pub fn downcast<B>(&self) -> Result<B>
-    where
-        B: tvm_ffi::ObjectRefCore + tvm_ffi::AnyCompatible,
-    {
-        self.clone().try_cast::<B>()
-    }
-
-    /// Start reflection-backed field initialization.
-    ///
-    /// The eventual `build_unchecked` call may bypass semantic checks
-    /// performed by a canonical C++ wrapper constructor.
-    pub fn ffi_new_unchecked() -> SequentialBuilder {
-        SequentialBuilder {
-            pass_info: None,
-            passes: None,
-        }
-    }
-
     pub fn pass_info(&self) -> Result<Option<PassInfo>> {
         tvm_ffi::object::get_object_field::<Option<PassInfo>, _>(
             self,
@@ -645,49 +342,6 @@ impl Sequential {
             SequentialObj::type_index(),
             "passes",
         )
-    }
-}
-
-pub struct SequentialBuilder {
-    pass_info: Option<Option<PassInfo>>,
-    passes: Option<Array<Option<Pass>>>,
-}
-
-impl SequentialBuilder {
-    pub fn with_pass_info(mut self, value: Option<PassInfo>) -> Self {
-        self.pass_info = Some(value);
-        self
-    }
-
-    pub fn with_passes(mut self, value: Array<Option<Pass>>) -> Self {
-        self.passes = Some(value);
-        self
-    }
-
-    /// Allocate through generic reflected field initialization.
-    ///
-    /// # Safety
-    /// The caller must uphold semantic invariants normally enforced by
-    /// the type's canonical C++ constructor.
-    pub unsafe fn build_unchecked(self) -> Result<Sequential> {
-        thread_local!(static F: std::cell::OnceCell<tvm_ffi::Function> = const { std::cell::OnceCell::new() });
-        let f = tvm_ffi::Function::from_type_method_cached(
-            &F,
-            SequentialObj::type_index(),
-            "__ffi_init__",
-        )?;
-        let mut owned_args: Vec<Any> = Vec::new();
-        owned_args.push(Any::from(tvm_ffi::get_kwargs_object()?));
-        owned_args.push(Any::from(tvm_ffi::String::from("pass_info")));
-        owned_args.push(Any::from(self.pass_info.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `pass_info` is not set", "")
-        })?));
-        owned_args.push(Any::from(tvm_ffi::String::from("passes")));
-        owned_args.push(Any::from(self.passes.ok_or_else(|| {
-            tvm_ffi::Error::new(tvm_ffi::VALUE_ERROR, "field `passes` is not set", "")
-        })?));
-        let views: Vec<AnyView<'_>> = owned_args.iter().map(AnyView::from).collect();
-        Ok(f.call_packed(&views)?.try_into()?)
     }
 }
 // tvm-ffi-stubgen(end)

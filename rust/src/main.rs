@@ -62,7 +62,7 @@ fn main() -> Result<()> {
         try_downcast::<_, IntImm>(&forty_two).expect("IntImm constructor must return IntImm");
     println!("IntImm.value = {}", forty_two_value.value()?);
 
-    let condition: Expr = ffi_api::int_imm_from_str("bool", 1, None)?.into();
+    let condition = ffi_api::prim_expr(ffi_api::int_imm_from_str("bool", 1, None)?)?;
     let value: Expr = ffi_api::int_imm_from_str("int32", 7, None)?.into();
     let evaluate: Stmt = ffi_api::evaluate(&value, None)?.into();
     let if_then_else = ffi_api::if_then_else(&condition, &evaluate, None, None)?;

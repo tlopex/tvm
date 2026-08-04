@@ -21,13 +21,13 @@
 //!
 //! Generated object handles are opaque and all field reads are fallible,
 //! reflection-backed getters. Constructors in this module always call the
-//! canonical C++ global rather than the generic unsafe reflected builder.
+//! canonical typed C++ global; generic reflected builders are not exposed.
 
 use std::any::Any as StdAny;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use crate::generated::ir::{
-    self, BaseFunc, DictAttrs, GlobalVar, IRModule, IntImm, Op, Span, Type,
+    self, BaseFunc, DictAttrs, Expr, GlobalVar, IRModule, IntImm, Op, Span, Type,
 };
 use crate::generated::tirx::transform as tirx_transform;
 use crate::generated::tirx::{
@@ -36,9 +36,10 @@ use crate::generated::tirx::{
     TilePrimitiveCall, Var, While,
 };
 use crate::generated::transform::{self as transform, Pass, PassContext, PassInfo};
+use crate::PrimExpr;
 use tvm_ffi::{
     object::ObjectRef, Any, AnyValue, AnyView, Array, DLDataType, DLDataTypeExt, Error, Function,
-    Map, ObjectRefCast, Result, String as FfiString,
+    Map, ObjectRefCast, ObjectRefCore, Result, String as FfiString,
 };
 
 pub(crate) fn require_defined<T>(value: Option<T>, context: &str) -> Result<T> {
@@ -59,6 +60,18 @@ pub fn int_imm(dtype: DLDataType, value: i64, span: Option<&Span>) -> Result<Int
 /// Convenience form of [`int_imm`] for TVM dtype strings such as `"int32"`.
 pub fn int_imm_from_str(dtype: &str, value: i64, span: Option<&Span>) -> Result<IntImm> {
     int_imm(DLDataType::try_from_str(dtype)?, value, span)
+}
+
+/// Add the `PrimExpr` refinement after checking the expression's reflected type.
+///
+/// This accepts generated primitive nodes such as `IntImm` and `Var` through
+/// their ordinary conversion to `Expr`. Passing a non-primitive expression is
+/// a recoverable type error.
+pub fn prim_expr<E>(expr: E) -> Result<PrimExpr>
+where
+    E: Into<Expr>,
+{
+    PrimExpr::try_from_base(expr.into())
 }
 
 /// Construct a `tirx.Evaluate` through the validating C++ constructor.
@@ -92,7 +105,7 @@ pub fn var_from_str(name: &str, dtype: &str, span: Option<&Span>) -> Result<Var>
 
 /// Construct an `AssertStmt` through C++, including its boolean type check.
 pub fn assert_stmt(
-    condition: &crate::generated::ir::Expr,
+    condition: &PrimExpr,
     error_kind: &StringImm,
     message_parts: &[StringImm],
     span: Option<&Span>,
@@ -113,7 +126,7 @@ pub fn assert_stmt(
 pub fn attr_stmt(
     node: &Any,
     attr_key: &FfiString,
-    value: &crate::generated::ir::Expr,
+    value: &PrimExpr,
     body: &Stmt,
     span: Option<&Span>,
 ) -> Result<AttrStmt> {
@@ -131,7 +144,7 @@ pub fn attr_stmt(
 
 /// Rebuild a `tirx.IfThenElse` through the canonical C++ constructor.
 pub fn if_then_else(
-    condition: &crate::generated::ir::Expr,
+    condition: &PrimExpr,
     then_case: &Stmt,
     else_case: Option<&Stmt>,
     span: Option<&Span>,
@@ -151,13 +164,13 @@ pub fn if_then_else(
 #[allow(clippy::too_many_arguments)]
 pub fn for_loop(
     loop_var: &Var,
-    min: &crate::generated::ir::Expr,
-    extent: &crate::generated::ir::Expr,
+    min: &PrimExpr,
+    extent: &PrimExpr,
     kind: i64,
     body: &Stmt,
     thread_binding: Option<&IterVar>,
     annotations: &Map<FfiString, AnyValue>,
-    step: Option<&crate::generated::ir::Expr>,
+    step: Option<&PrimExpr>,
     span: Option<&Span>,
 ) -> Result<For> {
     require_defined(
@@ -177,11 +190,7 @@ pub fn for_loop(
 }
 
 /// Rebuild a `tirx.While` through the canonical C++ constructor.
-pub fn while_loop(
-    condition: &crate::generated::ir::Expr,
-    body: &Stmt,
-    span: Option<&Span>,
-) -> Result<While> {
+pub fn while_loop(condition: &PrimExpr, body: &Stmt, span: Option<&Span>) -> Result<While> {
     require_defined(
         tirx::r#while(Some(condition.clone()), Some(body.clone()), span.cloned())?,
         "tirx.While",
@@ -221,8 +230,8 @@ pub fn sblock(
 
 /// Rebuild a `tirx.SBlockRealize` through the canonical C++ constructor.
 pub fn sblock_realize(
-    iter_values: &Array<Option<crate::generated::ir::Expr>>,
-    predicate: &crate::generated::ir::Expr,
+    iter_values: &Array<Option<PrimExpr>>,
+    predicate: &PrimExpr,
     block: &SBlock,
     span: Option<&Span>,
 ) -> Result<SBlockRealize> {
@@ -294,8 +303,8 @@ fn make_seq_stmt(stmts: Vec<Stmt>, span: Option<&Span>) -> Result<SeqStmt> {
 /// Nested `SeqStmt`s are recursively flattened and `Evaluate(IntImm(0))`
 /// no-ops are discarded.  An empty result becomes `Evaluate(0)`, a singleton
 /// is returned directly, and only two-or-more statements are passed to the C++
-/// `tirx.SeqStmt` constructor.  Thus this function cannot create the invalid
-/// zero- or one-element `SeqStmt`s permitted by the generated native builder.
+/// `tirx.SeqStmt` constructor. Thus this provides a total ergonomic wrapper
+/// around the C++ constructor's strict two-or-more-element invariant.
 /// `span` is used only when a replacement node must be created.
 pub fn normalize_seq<I>(stmts: I, span: Option<&Span>) -> Result<Stmt>
 where
