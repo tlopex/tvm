@@ -17,14 +17,14 @@
  * under the License.
  */
 
-//! Library facade over the stubgen-generated TIRx/IR bindings so downstream
-//! crates (e.g. cpusim-rs) can `use tvm_tirx_bindings::generated::...`.
-//! `src/generated/` is a historical `tvm-ffi-stubgen --target rust` snapshot
-//! with the deterministic safety policy recorded in `generated/STAMP`.
-//! See README.md for the current regeneration limitation and provenance.
+//! Rust-first pass SDK over deterministic, reflection-backed TVM bindings.
+//!
+//! `src/generated/` is reproduced by `regen.sh`; handwritten modules add
+//! invariant-preserving constructors, traversal, mutation, analysis, and pass
+//! callback ergonomics without mirroring C++ object layouts.
 
+pub mod analyzer;
 pub mod ffi_api;
-pub mod ffi_compat;
 pub mod generated;
 pub mod mutator;
 pub mod passes;

@@ -17,62 +17,43 @@
  * under the License.
  */
 
-//! Safe, typed wrappers around TVM global functions used by Rust IR passes.
+//! Ergonomic, invariant-preserving wrappers over stubgen's typed globals.
 //!
-//! The stub generator currently emits layout mirrors and, for some objects,
-//! native all-fields constructors.  Those constructors do not execute the C++
-//! validation/normalization logic and cannot see unreflected trailing state.
-//! This module therefore constructs every TVM IR/pass object through its
-//! registered C++ global function.  In particular, it never calls a
-//! `generated::*::new` function.
+//! Generated object handles are opaque and all field reads are fallible,
+//! reflection-backed getters. Constructors in this module always call the
+//! canonical C++ global rather than the generic unsafe reflected builder.
 
 use std::any::Any as StdAny;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use crate::generated::ir::{
-    BaseFunc, DictAttrs, DictAttrsObj, GlobalVar, IRModule, IntImm, IntImmObj, Span, TupleType,
-    Type,
+    self, BaseFunc, DictAttrs, GlobalVar, IRModule, IntImm, Op, Span, Type,
 };
+use crate::generated::tirx::transform as tirx_transform;
 use crate::generated::tirx::{
-    AssertStmt, AttrStmt, Buffer, BufferRegion, Evaluate, EvaluateObj, For, IfThenElse, IterVar,
-    MatchBufferRegion, PrimFunc, SBlock, SBlockRealize, SeqStmt, SeqStmtObj, Stmt, StringImm, Var,
-    While,
+    self, AssertStmt, AttrStmt, Buffer, BufferRegion, Evaluate, For, IfThenElse, IterVar,
+    MatchBufferRegion, PrimFunc, SBlock, SBlockRealize, SeqStmt, Stmt, StringImm,
+    TilePrimitiveCall, Var, While,
 };
-use crate::generated::transform::{Pass, PassContext, PassInfo};
+use crate::generated::transform::{self as transform, Pass, PassContext, PassInfo};
 use tvm_ffi::{
-    object::ObjectRef, Any, AnyView, Array, DLDataType, DLDataTypeExt, Error, Function, Map,
-    ObjectCore, Optional, Result, String as FfiString,
+    object::ObjectRef, Any, AnyValue, AnyView, Array, DLDataType, DLDataTypeExt, Error, Function,
+    Map, ObjectRefCast, Result, String as FfiString,
 };
 
-/// Look up and call a global function.
-///
-/// Lookup is intentionally retryable instead of being cached in a panicking
-/// `LazyLock`: callers may load `libtvm_compiler` after this Rust crate.  A
-/// successful lookup is cheap relative to constructing an IR node, and this
-/// keeps load-order failures in TVM's normal `Result` error channel.
-fn call_global(name: &str, args: &[AnyView<'_>]) -> Result<Any> {
-    Function::get_global(name)?.call_packed(args)
-}
-
-fn span_view<'a>(span: Option<&'a Span>, none: &'a Any) -> AnyView<'a> {
-    match span {
-        Some(span) => AnyView::from(span),
-        None => AnyView::from(none),
-    }
+pub(crate) fn require_defined<T>(value: Option<T>, context: &str) -> Result<T> {
+    value.ok_or_else(|| {
+        Error::new(
+            tvm_ffi::error::TYPE_ERROR,
+            &format!("{context} unexpectedly returned an undefined ObjectRef"),
+            "",
+        )
+    })
 }
 
 /// Construct an `ir.IntImm` through the validating C++ constructor.
 pub fn int_imm(dtype: DLDataType, value: i64, span: Option<&Span>) -> Result<IntImm> {
-    let none = Any::new();
-    call_global(
-        "ir.IntImm",
-        &[
-            AnyView::from(&dtype),
-            AnyView::from(&value),
-            span_view(span, &none),
-        ],
-    )?
-    .try_into()
+    require_defined(ir::int_imm(dtype, value, span.cloned())?, "ir.IntImm")
 }
 
 /// Convenience form of [`int_imm`] for TVM dtype strings such as `"int32"`.
@@ -82,38 +63,26 @@ pub fn int_imm_from_str(dtype: &str, value: i64, span: Option<&Span>) -> Result<
 
 /// Construct a `tirx.Evaluate` through the validating C++ constructor.
 pub fn evaluate(value: &crate::generated::ir::Expr, span: Option<&Span>) -> Result<Evaluate> {
-    let none = Any::new();
-    call_global(
+    require_defined(
+        tirx::evaluate(Some(value.clone()), span.cloned())?,
         "tirx.Evaluate",
-        &[AnyView::from(value), span_view(span, &none)],
-    )?
-    .try_into()
+    )
 }
 
 /// Construct a TIRx string literal through C++.
 pub fn string_imm(value: &str, span: Option<&Span>) -> Result<StringImm> {
-    let none = Any::new();
-    let value = FfiString::from(value);
-    call_global(
+    require_defined(
+        tirx::string_imm(FfiString::from(value), span.cloned())?,
         "tirx.StringImm",
-        &[AnyView::from(&value), span_view(span, &none)],
-    )?
-    .try_into()
+    )
 }
 
 /// Construct a scalar TIRx variable through C++.
 pub fn var(name: &str, dtype: DLDataType, span: Option<&Span>) -> Result<Var> {
-    let none = Any::new();
-    let name = FfiString::from(name);
-    call_global(
+    require_defined(
+        tirx::var(FfiString::from(name), AnyView::from(&dtype), span.cloned())?,
         "tirx.Var",
-        &[
-            AnyView::from(&name),
-            AnyView::from(&dtype),
-            span_view(span, &none),
-        ],
-    )?
-    .try_into()
+    )
 }
 
 /// Convenience form of [`var`] for a dtype string.
@@ -128,18 +97,16 @@ pub fn assert_stmt(
     message_parts: &[StringImm],
     span: Option<&Span>,
 ) -> Result<AssertStmt> {
-    let none = Any::new();
-    let message_parts = Array::new(message_parts.to_vec());
-    call_global(
+    let message_parts = Array::new(message_parts.iter().cloned().map(Some).collect());
+    require_defined(
+        tirx::assert_stmt(
+            Some(condition.clone()),
+            Some(error_kind.clone()),
+            message_parts,
+            span.cloned(),
+        )?,
         "tirx.AssertStmt",
-        &[
-            AnyView::from(condition),
-            AnyView::from(error_kind),
-            AnyView::from(&message_parts),
-            span_view(span, &none),
-        ],
-    )?
-    .try_into()
+    )
 }
 
 /// Rebuild a `tirx.AttrStmt` through the canonical C++ constructor.
@@ -150,18 +117,16 @@ pub fn attr_stmt(
     body: &Stmt,
     span: Option<&Span>,
 ) -> Result<AttrStmt> {
-    let none = Any::new();
-    call_global(
-        "tirx.AttrStmt",
-        &[
+    require_defined(
+        tirx::attr_stmt(
             AnyView::from(node),
-            AnyView::from(attr_key),
-            AnyView::from(value),
-            AnyView::from(body),
-            span_view(span, &none),
-        ],
-    )?
-    .try_into()
+            attr_key.clone(),
+            Some(value.clone()),
+            Some(body.clone()),
+            span.cloned(),
+        )?,
+        "tirx.AttrStmt",
+    )
 }
 
 /// Rebuild a `tirx.IfThenElse` through the canonical C++ constructor.
@@ -171,66 +136,44 @@ pub fn if_then_else(
     else_case: Option<&Stmt>,
     span: Option<&Span>,
 ) -> Result<IfThenElse> {
-    let none = Any::new();
-    let else_view = else_case
-        .map(AnyView::from)
-        .unwrap_or_else(|| AnyView::from(&none));
-    call_global(
+    require_defined(
+        tirx::if_then_else(
+            Some(condition.clone()),
+            Some(then_case.clone()),
+            else_case.cloned(),
+            span.cloned(),
+        )?,
         "tirx.IfThenElse",
-        &[
-            AnyView::from(condition),
-            AnyView::from(then_case),
-            else_view,
-            span_view(span, &none),
-        ],
-    )?
-    .try_into()
+    )
 }
 
-/// Rebuild a `tirx.For` without interpreting its type-erased annotations.
-///
-/// The generated annotation marker is currently `Map<String, ObjectRef>` even
-/// though C++ declares `Map<String, Any>`.  Passing the unchanged map handle
-/// preserves scalar metadata; reading it through that generated marker is not
-/// safe and is intentionally avoided here.
+/// Rebuild a `tirx.For` through the canonical constructor.
 #[allow(clippy::too_many_arguments)]
 pub fn for_loop(
     loop_var: &Var,
     min: &crate::generated::ir::Expr,
     extent: &crate::generated::ir::Expr,
-    kind: i32,
+    kind: i64,
     body: &Stmt,
-    thread_binding: &Optional<IterVar>,
-    annotations: &Map<FfiString, ObjectRef>,
-    step: &Optional<crate::generated::ir::Expr>,
+    thread_binding: Option<&IterVar>,
+    annotations: &Map<FfiString, AnyValue>,
+    step: Option<&crate::generated::ir::Expr>,
     span: Option<&Span>,
 ) -> Result<For> {
-    let none = Any::new();
-    let thread_binding = thread_binding.get();
-    let thread_binding_view = thread_binding
-        .as_ref()
-        .map(AnyView::from)
-        .unwrap_or_else(|| AnyView::from(&none));
-    let step = step.get();
-    let step_view = step
-        .as_ref()
-        .map(AnyView::from)
-        .unwrap_or_else(|| AnyView::from(&none));
-    call_global(
+    require_defined(
+        tirx::r#for(
+            Some(loop_var.clone()),
+            Some(min.clone()),
+            Some(extent.clone()),
+            kind,
+            Some(body.clone()),
+            thread_binding.cloned(),
+            Some(annotations.clone()),
+            step.cloned(),
+            span.cloned(),
+        )?,
         "tirx.For",
-        &[
-            AnyView::from(loop_var),
-            AnyView::from(min),
-            AnyView::from(extent),
-            AnyView::from(&kind),
-            AnyView::from(body),
-            thread_binding_view,
-            AnyView::from(annotations),
-            step_view,
-            span_view(span, &none),
-        ],
-    )?
-    .try_into()
+    )
 }
 
 /// Rebuild a `tirx.While` through the canonical C++ constructor.
@@ -239,105 +182,111 @@ pub fn while_loop(
     body: &Stmt,
     span: Option<&Span>,
 ) -> Result<While> {
-    let none = Any::new();
-    call_global(
+    require_defined(
+        tirx::r#while(Some(condition.clone()), Some(body.clone()), span.cloned())?,
         "tirx.While",
-        &[
-            AnyView::from(condition),
-            AnyView::from(body),
-            span_view(span, &none),
-        ],
-    )?
-    .try_into()
+    )
 }
 
 /// Rebuild a TIRx block, preserving all non-statement fields verbatim.
 #[allow(clippy::too_many_arguments)]
 pub fn sblock(
-    iter_vars: &Array<IterVar>,
-    reads: &Array<BufferRegion>,
-    writes: &Array<BufferRegion>,
+    iter_vars: &Array<Option<IterVar>>,
+    reads: &Array<Option<BufferRegion>>,
+    writes: &Array<Option<BufferRegion>>,
     name_hint: &FfiString,
     body: &Stmt,
     init: Option<&Stmt>,
-    alloc_buffers: &Array<Buffer>,
-    match_buffers: &Array<MatchBufferRegion>,
-    annotations: &Map<FfiString, ObjectRef>,
+    alloc_buffers: &Array<Option<Buffer>>,
+    match_buffers: &Array<Option<MatchBufferRegion>>,
+    annotations: &Map<FfiString, AnyValue>,
     span: Option<&Span>,
 ) -> Result<SBlock> {
-    let none = Any::new();
-    let init_view = init
-        .map(AnyView::from)
-        .unwrap_or_else(|| AnyView::from(&none));
-    call_global(
+    require_defined(
+        tirx::s_block(
+            iter_vars.clone(),
+            reads.clone(),
+            writes.clone(),
+            name_hint.clone(),
+            Some(body.clone()),
+            init.cloned(),
+            alloc_buffers.clone(),
+            match_buffers.clone(),
+            annotations.clone(),
+            span.cloned(),
+        )?,
         "tirx.SBlock",
-        &[
-            AnyView::from(iter_vars),
-            AnyView::from(reads),
-            AnyView::from(writes),
-            AnyView::from(name_hint),
-            AnyView::from(body),
-            init_view,
-            AnyView::from(alloc_buffers),
-            AnyView::from(match_buffers),
-            AnyView::from(annotations),
-            span_view(span, &none),
-        ],
-    )?
-    .try_into()
+    )
 }
 
 /// Rebuild a `tirx.SBlockRealize` through the canonical C++ constructor.
 pub fn sblock_realize(
-    iter_values: &Array<crate::generated::ir::Expr>,
+    iter_values: &Array<Option<crate::generated::ir::Expr>>,
     predicate: &crate::generated::ir::Expr,
     block: &SBlock,
     span: Option<&Span>,
 ) -> Result<SBlockRealize> {
-    let none = Any::new();
-    call_global(
+    require_defined(
+        tirx::s_block_realize(
+            iter_values.clone(),
+            Some(predicate.clone()),
+            Some(block.clone()),
+            span.cloned(),
+        )?,
         "tirx.SBlockRealize",
-        &[
-            AnyView::from(iter_values),
-            AnyView::from(predicate),
-            AnyView::from(block),
-            span_view(span, &none),
-        ],
-    )?
-    .try_into()
+    )
 }
 
-fn is_evaluate_zero(stmt: &Stmt) -> bool {
-    let Some(evaluate) = stmt.downcast::<EvaluateObj>() else {
-        return false;
+/// Rebuild a tile primitive call while preserving type-erased scalar/config values.
+#[allow(clippy::too_many_arguments)]
+pub fn tile_primitive_call(
+    op: &Op,
+    args: &Array<AnyValue>,
+    workspace: &Map<FfiString, Option<Buffer>>,
+    config: &Map<FfiString, AnyValue>,
+    dispatch_token: Option<&FfiString>,
+    scope: Option<&crate::generated::tirx::ExecScope>,
+) -> Result<TilePrimitiveCall> {
+    require_defined(
+        tirx::tile_primitive_call(
+            op.clone(),
+            args.clone(),
+            workspace.clone(),
+            config.clone(),
+            dispatch_token.cloned(),
+            scope.cloned(),
+        )?,
+        "tirx.TilePrimitiveCall",
+    )
+}
+
+fn is_evaluate_zero(stmt: &Stmt) -> Result<bool> {
+    let Some(evaluate) = crate::visitor::try_downcast::<_, Evaluate>(stmt) else {
+        return Ok(false);
     };
-    evaluate
-        .value
-        .downcast::<IntImmObj>()
-        .is_some_and(|value| value.value == 0)
+    let value = require_defined(evaluate.value()?, "Evaluate::value")?;
+    let Some(value) = crate::visitor::try_downcast::<_, IntImm>(&value) else {
+        return Ok(false);
+    };
+    Ok(value.value()? == 0)
 }
 
-fn append_flattened(stmt: Stmt, output: &mut Vec<Stmt>) {
-    if let Some(sequence) = stmt.downcast::<SeqStmtObj>() {
-        // Clone the children before recursively consuming them; they remain
-        // pointer-identical object references.
-        let children: Vec<Stmt> = sequence.seq.iter().collect();
-        for child in children {
-            append_flattened(child, output);
+fn append_flattened(stmt: Stmt, output: &mut Vec<Stmt>) -> Result<()> {
+    if let Some(sequence) = crate::visitor::try_downcast::<_, SeqStmt>(&stmt) {
+        let children = sequence.seq()?;
+        for (index, child) in (&children).into_iter().enumerate() {
+            let child = require_defined(child, &format!("SeqStmt::seq[{index}]"))?;
+            append_flattened(child, output)?;
         }
-    } else if !is_evaluate_zero(&stmt) {
+    } else if !is_evaluate_zero(&stmt)? {
         output.push(stmt);
     }
+    Ok(())
 }
 
 fn make_seq_stmt(stmts: Vec<Stmt>, span: Option<&Span>) -> Result<SeqStmt> {
-    let none = Any::new();
-    let stmts = Array::new(stmts);
-    call_global(
-        "tirx.SeqStmt",
-        &[AnyView::from(&stmts), span_view(span, &none)],
-    )?
-    .try_into()
+    let stmts = Array::new(stmts.into_iter().map(Some).collect());
+    require_defined(tirx::seq_stmt(stmts, span.cloned())?, "tirx.SeqStmt")
 }
 
 /// Normalize a sequence with the semantics of C++ `SeqStmt::Flatten`.
@@ -353,15 +302,15 @@ where
     I: IntoIterator<Item = Stmt>,
 {
     let roots: Vec<Stmt> = stmts.into_iter().collect();
-    let original_sequence = if roots.len() == 1 && roots[0].downcast::<SeqStmtObj>().is_some() {
-        Some(roots[0].clone())
+    let original_sequence = if roots.len() == 1 {
+        crate::visitor::try_downcast::<_, SeqStmt>(&roots[0])
     } else {
         None
     };
 
     let mut flattened = Vec::new();
     for stmt in roots {
-        append_flattened(stmt, &mut flattened);
+        append_flattened(stmt, &mut flattened)?;
     }
 
     match flattened.len() {
@@ -375,17 +324,21 @@ where
             // Match C++ Flatten's COW behavior for an already-normalized single
             // SeqStmt input.
             if let Some(original) = original_sequence {
-                let original_node = original
-                    .downcast::<SeqStmtObj>()
-                    .expect("candidate checked above");
-                let unchanged = original_node.seq.len() == flattened.len()
-                    && original_node
-                        .seq
-                        .iter()
-                        .zip(flattened.iter())
-                        .all(|(before, after)| before.same_as(after));
+                let children = original.seq()?;
+                let mut unchanged = children.len() == flattened.len();
                 if unchanged {
-                    return Ok(original);
+                    for (index, (before, after)) in
+                        (&children).into_iter().zip(flattened.iter()).enumerate()
+                    {
+                        let before = require_defined(before, &format!("SeqStmt::seq[{index}]"))?;
+                        if !before.same_as(after) {
+                            unchanged = false;
+                            break;
+                        }
+                    }
+                }
+                if unchanged {
+                    return Ok(original.into());
                 }
             }
             Ok(Stmt::from(make_seq_stmt(flattened, span)?))
@@ -393,101 +346,64 @@ where
     }
 }
 
-/// Construct an empty, defined `DictAttrs` through its reflected C++
-/// `__ffi_init__` hook.
-///
-/// A general `Map<String, Any>` wrapper cannot be exposed until stubgen stops
-/// narrowing `Any` container elements to `ObjectRef`, but the empty map needed
-/// by canonical `PrimFunc` construction is unambiguous.
+/// Construct canonical empty attributes through `ir.IRModule` defaults.
 pub fn empty_dict_attrs() -> Result<DictAttrs> {
-    let dict = Map::<FfiString, ObjectRef>::new();
-    let init = crate::ffi_compat::from_type_method(DictAttrsObj::type_index(), "__ffi_init__")?;
-    init.call_packed(&[AnyView::from(&dict)])?.try_into()
+    let module = require_defined(
+        ir::ir_module(Map::new(), None, Map::new())?,
+        "ir.IRModule(empty attrs)",
+    )?;
+    module.attrs()
 }
 
 /// Construct an `ir.GlobalVar` through C++.
 pub fn global_var(name: &str) -> Result<GlobalVar> {
-    let name = FfiString::from(name);
-    call_global("ir.GlobalVar", &[AnyView::from(&name)])?.try_into()
+    require_defined(ir::global_var(FfiString::from(name))?, "ir.GlobalVar")
 }
 
 /// Construct a one-function `IRModule` through the canonical C++ constructor.
 ///
-/// Keeping this focused helper in the prototype is enough to execute Rust pass
-/// callbacks end-to-end without exposing more incorrectly narrowed
-/// `Map<String, Any>` markers.  A generated SDK should eventually provide the
-/// general typed `IRModule` constructor.
 pub fn ir_module_with_prim_func(name: &str, func: &PrimFunc) -> Result<IRModule> {
     let global_var = global_var(name)?;
     let base_func = BaseFunc::from(func.clone());
-    let functions = call_global(
-        "ffi.Map",
-        &[AnyView::from(&global_var), AnyView::from(&base_func)],
-    )?;
-    let global_infos = call_global("ffi.Map", &[])?;
-    let attrs = empty_dict_attrs()?;
-    call_global(
-        "ir.IRModule",
-        &[
-            AnyView::from(&functions),
-            AnyView::from(&attrs),
-            AnyView::from(&global_infos),
-        ],
-    )?
-    .try_into()
+    let functions = Map::from_iter([(Some(global_var), Some(base_func))]);
+    require_defined(ir::ir_module(functions, None, Map::new())?, "ir.IRModule")
 }
 
 /// Construct TVM's canonical void type (`TupleType([])`) through C++.
 pub fn void_type() -> Result<Type> {
-    let none = Any::new();
     let fields = Array::<Type>::new(vec![]);
-    let tuple: TupleType = call_global(
-        "ir.TupleType",
-        &[AnyView::from(&fields), AnyView::from(&none)],
-    )?
-    .try_into()?;
-    Ok(tuple.into())
+    Ok(ir::tuple_type(fields, None)?.into())
 }
 
 /// Construct a `PrimFunc` through C++, allowing the usual missing return type
 /// and attrs while requiring an explicitly typed (possibly empty) buffer map.
 pub fn prim_func(
-    params: &Array<Var>,
+    params: &Array<Option<Var>>,
     body: &Stmt,
     ret_type: Option<&Type>,
-    buffer_map: &Map<Var, Buffer>,
+    buffer_map: &Map<Option<Var>, Option<Buffer>>,
     attrs: Option<&DictAttrs>,
     span: Option<&Span>,
 ) -> Result<PrimFunc> {
-    let none = Any::new();
-    let default_ret_type;
     let ret_type = match ret_type {
-        Some(ret_type) => AnyView::from(ret_type),
-        None => {
-            default_ret_type = void_type()?;
-            AnyView::from(&default_ret_type)
-        }
+        Some(ret_type) => ret_type.clone(),
+        None => void_type()?,
     };
-    let default_attrs;
     let attrs = match attrs {
-        Some(attrs) => AnyView::from(attrs),
-        None => {
-            default_attrs = empty_dict_attrs()?;
-            AnyView::from(&default_attrs)
-        }
+        Some(attrs) => attrs.clone(),
+        None => empty_dict_attrs()?,
     };
-    call_global(
-        "tirx.PrimFunc",
-        &[
-            AnyView::from(params),
-            AnyView::from(body),
+    require_defined(
+        tirx::prim_func(
+            params.clone(),
+            Some(body.clone()),
             ret_type,
-            AnyView::from(buffer_map),
+            buffer_map.clone(),
             attrs,
-            span_view(span, &none),
-        ],
-    )?
-    .try_into()
+            span.cloned(),
+        )?,
+        "tirx.PrimFunc",
+    )
 }
 
 /// Construct a parameterless `PrimFunc` with an empty buffer map.
@@ -496,23 +412,7 @@ pub fn prim_func(
 /// forcing Rust to resolve `tirx.Var` merely to describe the element type of an
 /// empty container, which matters with TVM builds that register types lazily.
 pub fn prim_func_without_params(body: &Stmt, span: Option<&Span>) -> Result<PrimFunc> {
-    let none = Any::new();
-    let params = Array::<Var>::new(vec![]);
-    let buffer_map = call_global("ffi.Map", &[])?;
-    let ret_type = void_type()?;
-    let attrs = empty_dict_attrs()?;
-    call_global(
-        "tirx.PrimFunc",
-        &[
-            AnyView::from(&params),
-            AnyView::from(body),
-            AnyView::from(&ret_type),
-            AnyView::from(&buffer_map),
-            AnyView::from(&attrs),
-            span_view(span, &none),
-        ],
-    )?
-    .try_into()
+    prim_func(&Array::new(vec![]), body, None, &Map::new(), None, span)
 }
 
 /// Rebuild a `PrimFunc` with a replacement body via its C++ constructor.
@@ -521,19 +421,19 @@ pub fn prim_func_without_params(body: &Stmt, span: Option<&Span>) -> Result<Prim
 /// constructor also recomputes the function type, which a field-wise native
 /// Rust allocation would fail to do.
 pub fn prim_func_with_body(func: &PrimFunc, body: &Stmt) -> Result<PrimFunc> {
-    let none = Any::new();
-    call_global(
-        "tirx.PrimFunc",
-        &[
-            AnyView::from(&func.params),
-            AnyView::from(body),
-            AnyView::from(&func.ret_type),
-            AnyView::from(&func.buffer_map),
-            AnyView::from(&func.attrs),
-            span_view(Some(&func.span), &none),
-        ],
-    )?
-    .try_into()
+    let params = func.params()?;
+    let ret_type = func.ret_type()?;
+    let buffer_map = func.buffer_map()?;
+    let attrs = func.attrs()?;
+    let span = func.span()?;
+    prim_func(
+        &params,
+        body,
+        Some(&ret_type),
+        &buffer_map,
+        Some(&attrs),
+        span.as_ref(),
+    )
 }
 
 fn required_array(required: &[&str]) -> Array<FfiString> {
@@ -547,18 +447,15 @@ pub fn pass_info(
     required: &[&str],
     traceable: bool,
 ) -> Result<PassInfo> {
-    let name = FfiString::from(name);
-    let required = required_array(required);
-    call_global(
+    require_defined(
+        transform::pass_info(
+            i64::from(opt_level),
+            FfiString::from(name),
+            required_array(required),
+            traceable,
+        )?,
         "transform.PassInfo",
-        &[
-            AnyView::from(&opt_level),
-            AnyView::from(&name),
-            AnyView::from(&required),
-            AnyView::from(&traceable),
-        ],
-    )?
-    .try_into()
+    )
 }
 
 fn panic_message(payload: Box<dyn StdAny + Send>) -> std::string::String {
@@ -651,11 +548,11 @@ where
         }
     });
 
-    call_global(
+    let pass = require_defined(
+        tirx_transform::create_prim_func_pass(callback, Some(info.clone()))?,
         "tirx.transform.CreatePrimFuncPass",
-        &[AnyView::from(&callback), AnyView::from(info)],
-    )?
-    .try_into()
+    )?;
+    Ok(pass.into())
 }
 
 /// Wrap a typed Rust function as a TVM `ModulePass`.
@@ -685,11 +582,11 @@ where
         }
     });
 
-    call_global(
+    let pass = require_defined(
+        transform::make_module_pass(callback, Some(info))?,
         "transform.MakeModulePass",
-        &[AnyView::from(&callback), AnyView::from(&info)],
-    )?
-    .try_into()
+    )?;
+    Ok(pass.into())
 }
 
 /// Construct a TVM `Sequential` pass through its registered global function.
@@ -700,27 +597,25 @@ pub fn sequential(
     required: &[&str],
     traceable: bool,
 ) -> Result<Pass> {
-    let passes = Array::new(passes);
+    let passes = Array::new(passes.into_iter().map(Some).collect());
     let name = FfiString::from(name);
     let required = required_array(required);
-    call_global(
-        "transform.Sequential",
-        &[
-            AnyView::from(&passes),
-            AnyView::from(&opt_level),
-            AnyView::from(&name),
-            AnyView::from(&required),
-            AnyView::from(&traceable),
-        ],
-    )?
+    let opt_level = i64::from(opt_level);
+    transform::sequential_packed(&[
+        AnyView::from(&passes),
+        AnyView::from(&opt_level),
+        AnyView::from(&name),
+        AnyView::from(&required),
+        AnyView::from(&traceable),
+    ])?
     .try_into()
 }
 
 /// Execute a pass through `transform.RunPass`.
 pub fn run_pass(pass: &Pass, module: &IRModule) -> Result<IRModule> {
-    call_global(
+    let module: ObjectRef = module.clone().try_cast()?;
+    require_defined(
+        transform::run_pass(Some(pass.clone()), module)?,
         "transform.RunPass",
-        &[AnyView::from(pass), AnyView::from(module)],
-    )?
-    .try_into()
+    )
 }

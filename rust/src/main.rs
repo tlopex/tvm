@@ -21,13 +21,14 @@
 
 use std::path::PathBuf;
 
-use tvm_ffi::{AnyView, Function, Module, Result};
+use tvm_ffi::{Module, Result};
 use tvm_tirx_bindings::ffi_api;
-use tvm_tirx_bindings::generated::ir::{Expr, IntImmObj, Op};
-use tvm_tirx_bindings::generated::tirx::{EvaluateObj, Stmt};
+use tvm_tirx_bindings::generated::ir::{self, Expr, IntImm};
+use tvm_tirx_bindings::generated::tirx::{Evaluate, Stmt};
 use tvm_tirx_bindings::passes::{
     remove_no_op_conservative, skip_assert, skip_assert_pass, verify_ssa,
 };
+use tvm_tirx_bindings::visitor::try_downcast;
 
 fn compiler_library() -> PathBuf {
     if let Some(path) = std::env::var_os("TVM_COMPILER_LIB") {
@@ -39,10 +40,17 @@ fn compiler_library() -> PathBuf {
     build_dir.join("lib/libtvm_compiler.so")
 }
 
-fn evaluated_int(stmt: &Stmt) -> Option<i64> {
-    stmt.downcast::<EvaluateObj>()
-        .and_then(|node| node.value.downcast::<IntImmObj>())
-        .map(|node| node.value)
+fn evaluated_int(stmt: &Stmt) -> Result<Option<i64>> {
+    let Some(evaluate) = try_downcast::<_, Evaluate>(stmt) else {
+        return Ok(None);
+    };
+    let Some(value) = evaluate.value()? else {
+        return Ok(None);
+    };
+    let Some(value) = try_downcast::<_, IntImm>(&value) else {
+        return Ok(None);
+    };
+    Ok(Some(value.value()?))
 }
 
 fn main() -> Result<()> {
@@ -50,10 +58,9 @@ fn main() -> Result<()> {
     let _compiler = Module::load_from_file(compiler_library.to_string_lossy())?;
 
     let forty_two: Expr = ffi_api::int_imm_from_str("int64", 42, None)?.into();
-    println!(
-        "IntImm.value = {}",
-        forty_two.downcast::<IntImmObj>().unwrap().value
-    );
+    let forty_two_value =
+        try_downcast::<_, IntImm>(&forty_two).expect("IntImm constructor must return IntImm");
+    println!("IntImm.value = {}", forty_two_value.value()?);
 
     let condition: Expr = ffi_api::int_imm_from_str("bool", 1, None)?.into();
     let value: Expr = ffi_api::int_imm_from_str("int32", 7, None)?.into();
@@ -61,15 +68,11 @@ fn main() -> Result<()> {
     let if_then_else = ffi_api::if_then_else(&condition, &evaluate, None, None)?;
     println!(
         "IfThenElse.else_case.has_value() = {}",
-        if_then_else.else_case.has_value()
+        if_then_else.else_case()?.is_some()
     );
 
-    // One remaining ungenerated global wrapper, kept here to make that UX gap
-    // visible while still reading the generated Op layout safely.
-    let get_op = Function::get_global("ir.GetOp")?;
-    let op_name = tvm_ffi::String::from("tirx.webgpu.subgroup_shuffle");
-    let op: Op = get_op.call_packed(&[AnyView::from(&op_name)])?.try_into()?;
-    println!("Op.num_inputs = {}", op.num_inputs);
+    let op = ir::get_op(tvm_ffi::String::from("tirx.webgpu.subgroup_shuffle"))?;
+    println!("Op.num_inputs = {}", op.num_inputs()?);
 
     let error_kind = ffi_api::string_imm("ValueError", None)?;
     let message = ffi_api::string_imm("expected true", None)?;
@@ -78,12 +81,12 @@ fn main() -> Result<()> {
     let skipped = skip_assert(&body)?;
     println!(
         "SkipAssert result = Evaluate({:?})",
-        evaluated_int(&skipped)
+        evaluated_int(&skipped)?
     );
 
     let pure_evaluate: Stmt = ffi_api::evaluate(&forty_two, None)?.into();
     let no_op = remove_no_op_conservative(&pure_evaluate)?;
-    println!("RemoveNoOp result = Evaluate({:?})", evaluated_int(&no_op));
+    println!("RemoveNoOp result = Evaluate({:?})", evaluated_int(&no_op)?);
 
     let func = ffi_api::prim_func_without_params(&body, None)?;
     println!("VerifySSA = {}", verify_ssa(&func)?);

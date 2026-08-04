@@ -20,7 +20,7 @@
 //! Rust implementation of TIRx's `SkipAssert` transform.
 
 use crate::ffi_api;
-use crate::generated::tirx::{AssertStmtObj, PrimFunc, Stmt};
+use crate::generated::tirx::{AssertStmt, PrimFunc, Stmt};
 use crate::generated::transform::Pass;
 use crate::mutator::StatementMutator;
 use tvm_ffi::Result;
@@ -28,7 +28,7 @@ use tvm_ffi::Result;
 struct AssertSkipper;
 
 impl StatementMutator for AssertSkipper {
-    fn mutate_assert_stmt(&mut self, _original: &Stmt, _node: &AssertStmtObj) -> Result<Stmt> {
+    fn mutate_assert_stmt(&mut self, _original: &Stmt, _node: &AssertStmt) -> Result<Stmt> {
         let zero = ffi_api::int_imm_from_str("int32", 0, None)?;
         let zero = crate::generated::ir::Expr::from(zero);
         Ok(ffi_api::evaluate(&zero, None)?.into())
@@ -36,10 +36,6 @@ impl StatementMutator for AssertSkipper {
 }
 
 /// Replace every `AssertStmt` in a supported statement tree with `Evaluate(0)`.
-///
-/// This fails closed on `TilePrimitiveCall` until stubgen correctly represents
-/// its heterogeneous `Any` containers; otherwise nested statement arguments
-/// could be silently missed.
 pub fn skip_assert(stmt: &Stmt) -> Result<Stmt> {
     AssertSkipper.mutate_stmt(stmt)
 }
@@ -47,8 +43,9 @@ pub fn skip_assert(stmt: &Stmt) -> Result<Stmt> {
 /// Apply [`skip_assert`] to a `PrimFunc` body through the canonical C++
 /// `PrimFunc` constructor.
 pub fn skip_assert_prim_func(func: &PrimFunc) -> Result<PrimFunc> {
-    let body = skip_assert(&func.body)?;
-    if body.same_as(&func.body) {
+    let old_body = ffi_api::require_defined(func.body()?, "PrimFunc::body")?;
+    let body = skip_assert(&old_body)?;
+    if body.same_as(&old_body) {
         Ok(func.clone())
     } else {
         ffi_api::prim_func_with_body(func, &body)

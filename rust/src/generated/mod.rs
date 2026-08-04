@@ -17,14 +17,11 @@
  * under the License.
  */
 
-pub mod ir;
-
-pub mod tirx;
-
-pub mod target;
-
-pub mod transform;
-
-pub mod instrument;
-
+// @tvm-ffi-stubgen-rust-modules(begin)
 pub mod arith;
+pub mod instrument;
+pub mod ir;
+pub mod target;
+pub mod tirx;
+pub mod transform;
+// @tvm-ffi-stubgen-rust-modules(end)

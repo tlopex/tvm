@@ -19,29 +19,39 @@
 
 //! Rust port of TIRx's `VerifySSA` analysis.
 //!
-//! This is intentionally implemented with the generated field bindings and
-//! [`crate::visitor::StmtExprVisitor`], rather than delegating to the existing
-//! C++ pass.  It therefore doubles as an executable test of the generated
-//! inheritance/layout information and of the hand-written semantic traversal.
+//! This is intentionally implemented with reflection-backed generated field
+//! getters and [`crate::visitor::StmtExprVisitor`], rather than delegating to
+//! the existing C++ pass.  It therefore doubles as an executable test of the
+//! generated owning wrappers and the hand-written semantic traversal.
 
 use std::collections::HashMap;
 
 use crate::ffi_api;
 use crate::generated::ir::{Expr, IRModule};
-use crate::generated::tirx::{
-    AllocBufferObj, BindObj, Buffer, ForObj, LetObj, PrimFunc, Var, VarObj,
-};
+use crate::generated::tirx::{analysis, AllocBuffer, Bind, Buffer, For, Let, PrimFunc, Var};
 use crate::generated::transform::Pass;
 use crate::visitor::{try_downcast, walk_expr, walk_stmt, StmtExprVisitor};
-use tvm_ffi::{Any, Function, ObjectArc, ObjectRefCast, ObjectRefCore, Result};
+use tvm_ffi::{Array, Error, ObjectArc, ObjectRefCore, Result};
 
 fn object_identity<R: ObjectRefCore>(value: &R) -> usize {
     unsafe { ObjectArc::as_raw(<R as ObjectRefCore>::data(value)) as *const () as usize }
 }
 
 fn expr_deep_equal(lhs: &Expr, rhs: &Expr) -> Result<bool> {
-    let result = Function::get_global("tirx.analysis.expr_deep_equal")?.call_tuple((lhs, rhs))?;
-    bool::try_from(result)
+    analysis::expr_deep_equal(Some(lhs.clone()), Some(rhs.clone()))
+}
+
+fn type_error(message: impl AsRef<str>) -> Error {
+    Error::new(tvm_ffi::error::TYPE_ERROR, message.as_ref(), "")
+}
+
+fn required_var_item(values: &Array<Option<Var>>, index: usize, path: &str) -> Result<Var> {
+    let value = values.get(index).map_err(|error| {
+        type_error(format!(
+            "cannot decode required IR array element `{path}[{index}]`: {error}"
+        ))
+    })?;
+    ffi_api::require_defined(value, &format!("{path}[{index}]"))
 }
 
 struct SsaVerifier {
@@ -78,27 +88,45 @@ impl SsaVerifier {
     /// separate from the visitor's normal `visit_buffer_def`, matching the C++
     /// `SSAVerifier::DefineBuffer` implementation.
     fn define_buffer(&mut self, buffer: &Buffer) -> Result<()> {
+        let previous_scope = self.in_match_scope;
         self.in_match_scope = true;
-        let data: Expr = buffer.data.clone().into();
-        self.visit_expr(&data)?;
-        self.visit_expr_array(&buffer.shape)?;
-        if buffer.strides.is_defined() {
-            self.visit_expr_array(&buffer.strides)?;
-        }
-        self.visit_expr(&buffer.elem_offset)?;
-        self.in_match_scope = false;
-        Ok(())
+        let result = (|| {
+            let data = ffi_api::require_defined(buffer.data()?, "Buffer::data")?;
+            let shape = buffer.shape()?;
+            let strides = buffer.strides()?;
+            let elem_offset =
+                ffi_api::require_defined(buffer.elem_offset()?, "Buffer::elem_offset")?;
+
+            let data: Expr = data.into();
+            self.visit_expr(&data)?;
+            self.visit_expr_array(&shape, "Buffer::shape")?;
+            if strides.is_defined() {
+                self.visit_expr_array(&strides, "Buffer::strides")?;
+            }
+            self.visit_expr(&elem_offset)
+        })();
+        self.in_match_scope = previous_scope;
+        result
     }
 
     fn run(&mut self, func: &PrimFunc) -> Result<()> {
-        for param in &func.params {
+        let params = func.params()?;
+        let buffer_map = func.buffer_map()?;
+        let body = ffi_api::require_defined(func.body()?, "PrimFunc::body")?;
+
+        for index in 0..params.len() {
+            let param = required_var_item(&params, index, "PrimFunc::params")?;
             let value: Expr = param.clone().into();
             self.mark_definition(&param, value, false);
         }
-        for (_, buffer) in &func.buffer_map {
+        for (index, (var, buffer)) in (&buffer_map).into_iter().enumerate() {
+            let _var =
+                ffi_api::require_defined(var, &format!("PrimFunc::buffer_map[{index}].key"))?;
+            let buffer =
+                ffi_api::require_defined(buffer, &format!("PrimFunc::buffer_map[{index}].value"))?;
             self.define_buffer(&buffer)?;
         }
-        self.visit_stmt(&func.body)
+        self.visit_stmt(&body)
     }
 }
 
@@ -108,12 +136,10 @@ impl StmtExprVisitor for SsaVerifier {
             return Ok(());
         }
 
-        // `visit_var` receives only `&VarObj`, which is sufficient for reading
-        // fields but cannot be cloned into an owning Expr.  Intercepting here
-        // preserves the original object reference for the definition table.
-        if try_downcast::<_, VarObj>(expr).is_some() {
+        // Intercept variables before normal dispatch so the definition table
+        // retains the owning reference and therefore its pointer identity.
+        if let Some(var) = try_downcast::<_, Var>(expr) {
             if self.in_match_scope {
-                let var = expr.clone().try_cast::<Var>()?;
                 self.mark_definition(&var, expr.clone(), true);
             }
             return Ok(());
@@ -129,40 +155,53 @@ impl StmtExprVisitor for SsaVerifier {
         }
     }
 
-    fn visit_let(&mut self, node: &LetObj) -> Result<()> {
-        let identity = object_identity(&node.var);
+    fn visit_let(&mut self, node: &Let) -> Result<()> {
+        let var = ffi_api::require_defined(node.var()?, "Let::var")?;
+        let value = ffi_api::require_defined(node.value()?, "Let::value")?;
+        let body = ffi_api::require_defined(node.body()?, "Let::body")?;
+        let identity = object_identity(&var);
         if let Some(previous) = self.definitions.get(&identity) {
-            if !expr_deep_equal(previous, &node.value)? {
+            if !expr_deep_equal(previous, &value)? {
                 self.is_ssa = false;
                 return Ok(());
             }
         } else {
-            self.definitions.insert(identity, node.value.clone());
+            self.definitions.insert(identity, value.clone());
         }
-        self.visit_expr(&node.value)?;
-        self.visit_expr(&node.body)
+        self.visit_expr(&value)?;
+        self.visit_expr(&body)
     }
 
-    fn visit_bind(&mut self, node: &BindObj) -> Result<()> {
-        self.mark_definition(&node.var, node.value.clone(), false);
-        self.visit_expr(&node.value)
+    fn visit_bind(&mut self, node: &Bind) -> Result<()> {
+        let var = ffi_api::require_defined(node.var()?, "Bind::var")?;
+        let value = ffi_api::require_defined(node.value()?, "Bind::value")?;
+        self.mark_definition(&var, value.clone(), false);
+        self.visit_expr(&value)
     }
 
-    fn visit_for(&mut self, node: &ForObj) -> Result<()> {
-        let value: Expr = node.loop_var.clone().into();
-        self.mark_definition(&node.loop_var, value, false);
-        self.visit_expr(&node.min)?;
-        self.visit_expr(&node.extent)?;
-        if let Some(step) = node.step.get() {
+    fn visit_for(&mut self, node: &For) -> Result<()> {
+        let loop_var = ffi_api::require_defined(node.loop_var()?, "For::loop_var")?;
+        let min = ffi_api::require_defined(node.min()?, "For::min")?;
+        let extent = ffi_api::require_defined(node.extent()?, "For::extent")?;
+        let step = node.step()?;
+        let body = ffi_api::require_defined(node.body()?, "For::body")?;
+
+        let value: Expr = loop_var.clone().into();
+        self.mark_definition(&loop_var, value, false);
+        self.visit_expr(&min)?;
+        self.visit_expr(&extent)?;
+        if let Some(step) = step {
             self.visit_expr(&step)?;
         }
-        self.visit_stmt(&node.body)
+        self.visit_stmt(&body)
     }
 
-    fn visit_alloc_buffer(&mut self, node: &AllocBufferObj) -> Result<()> {
-        let value: Expr = node.buffer.data.clone().into();
-        self.mark_definition(&node.buffer.data, value, false);
-        self.visit_buffer_def(&node.buffer, true)
+    fn visit_alloc_buffer(&mut self, node: &AllocBuffer) -> Result<()> {
+        let buffer = ffi_api::require_defined(node.buffer()?, "AllocBuffer::buffer")?;
+        let data = ffi_api::require_defined(buffer.data()?, "AllocBuffer::buffer.data")?;
+        let value: Expr = data.clone().into();
+        self.mark_definition(&data, value, false);
+        self.visit_buffer_def(&buffer, true)
     }
 }
 
@@ -192,9 +231,13 @@ pub fn verify_ssa_or_error(func: &PrimFunc) -> Result<()> {
 /// Validate every TIRx `PrimFunc` in an IRModule and return the module
 /// pointer-identically on success.
 pub fn verify_ssa_module(module: &IRModule) -> Result<IRModule> {
-    for (_, base_func) in &module.functions {
-        let any = Any::from(base_func);
-        if let Some(func) = any.try_as::<PrimFunc>() {
+    let functions = module.functions()?;
+    for (index, (global_var, base_func)) in (&functions).into_iter().enumerate() {
+        let _global_var =
+            ffi_api::require_defined(global_var, &format!("IRModule::functions[{index}].key"))?;
+        let base_func =
+            ffi_api::require_defined(base_func, &format!("IRModule::functions[{index}].value"))?;
+        if let Some(func) = try_downcast::<_, PrimFunc>(&base_func) {
             verify_ssa_or_error(&func)?;
         }
     }

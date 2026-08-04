@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 #include <tvm/arith/analyzer.h>
 #include <tvm/ffi/extra/structural_equal.h>
+#include <tvm/ffi/function.h>
 #include <tvm/runtime/logging.h>
 #include <tvm/te/operation.h>
 
@@ -83,9 +84,21 @@ TEST(AnalyzerObjectRef, CloneIsIndependent) {
   analyzer->Bind(x, tvm::Range::FromMinExtent(0, 8));
   analyzer->modular_set.Update(x, tvm::arith::ModularSet(4, 0));
 
+  // When Z3 is enabled, Clone must retain its solver assertions, not just the
+  // traditional analyzer facts.  Comparing SMT-LIB text keeps
+  // this test deterministic without depending on a particular proof result.
+  auto get_smtlib2 = tvm::ffi::Function::GetGlobalRequired("arith.AnalyzerGetSMTLIB2");
+  tvm::ffi::String z3_before =
+      get_smtlib2(analyzer, tvm::ffi::Optional<tvm::PrimExpr>()).cast<tvm::ffi::String>();
+
   tvm::arith::Analyzer clone = analyzer->Clone();
   TVM_FFI_ICHECK(clone->CanProve(x < 8));
   TVM_FFI_ICHECK(clone->modular_set(x)->coeff == 4);
+  if (analyzer->z3_prover.IsEnabled()) {
+    tvm::ffi::String z3_after =
+        get_smtlib2(clone, tvm::ffi::Optional<tvm::PrimExpr>()).cast<tvm::ffi::String>();
+    TVM_FFI_ICHECK_EQ(z3_after, z3_before);
+  }
 
   clone->Bind(y, tvm::Range::FromMinExtent(0, 4));
   clone->modular_set.Update(x, tvm::arith::ModularSet(8, 0), true);

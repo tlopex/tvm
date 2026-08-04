@@ -17,4 +17,6 @@
  * under the License.
  */
 
+// @tvm-ffi-stubgen-rust-modules(begin)
 pub mod trn;
+// @tvm-ffi-stubgen-rust-modules(end)

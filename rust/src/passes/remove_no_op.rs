@@ -27,13 +27,11 @@
 //! uses effect metadata, contextual proofs, and buffer-load/store equality.
 
 use crate::ffi_api;
-use crate::generated::ir::{CallObj, Expr, IntImmObj};
-use crate::generated::tirx::{
-    AttrStmtObj, EvaluateObj, ForObj, IfThenElseObj, PrimFunc, Stmt, WhileObj,
-};
+use crate::generated::ir::{Call, Expr, IntImm};
+use crate::generated::tirx::{AttrStmt, Evaluate, For, IfThenElse, PrimFunc, Stmt, While};
 use crate::generated::transform::Pass;
 use crate::mutator::StatementMutator;
-use crate::visitor::StmtExprVisitor;
+use crate::visitor::{try_downcast, StmtExprVisitor};
 use tvm_ffi::Result;
 
 struct UnknownCallFinder {
@@ -41,7 +39,7 @@ struct UnknownCallFinder {
 }
 
 impl StmtExprVisitor for UnknownCallFinder {
-    fn visit_call(&mut self, _node: &CallObj) -> Result<()> {
+    fn visit_call(&mut self, _node: &Call) -> Result<()> {
         // Without a generated Op effect-kind wrapper, retaining every Call is
         // the only conservative choice.  Its arguments need not be inspected
         // once the enclosing expression is known to contain a Call.
@@ -61,14 +59,19 @@ fn contains_unknown_call(expr: &Expr) -> bool {
     }
 }
 
-fn literal_int(expr: &Expr) -> Option<i64> {
-    expr.downcast::<IntImmObj>().map(|node| node.value)
+fn literal_int(expr: &Expr) -> Result<Option<i64>> {
+    let Some(node) = try_downcast::<_, IntImm>(expr) else {
+        return Ok(None);
+    };
+    Ok(Some(node.value()?))
 }
 
-fn is_no_op(stmt: &Stmt) -> bool {
-    stmt.downcast::<EvaluateObj>()
-        .and_then(|node| literal_int(&node.value))
-        == Some(0)
+fn is_no_op(stmt: &Stmt) -> Result<bool> {
+    let Some(node) = try_downcast::<_, Evaluate>(stmt) else {
+        return Ok(false);
+    };
+    let value = ffi_api::require_defined(node.value()?, "Evaluate::value")?;
+    Ok(literal_int(&value)? == Some(0))
 }
 
 fn make_no_op() -> Result<Stmt> {
@@ -91,57 +94,64 @@ impl ConservativeNoOpRemover {
 }
 
 impl StatementMutator for ConservativeNoOpRemover {
-    fn mutate_evaluate(&mut self, original: &Stmt, node: &EvaluateObj) -> Result<Stmt> {
-        if contains_unknown_call(&node.value) {
+    fn mutate_evaluate(&mut self, original: &Stmt, node: &Evaluate) -> Result<Stmt> {
+        let value = ffi_api::require_defined(node.value()?, "Evaluate::value")?;
+        if contains_unknown_call(&value) {
             Ok(original.clone())
         } else {
             make_no_op()
         }
     }
 
-    fn mutate_attr_stmt(&mut self, original: &Stmt, node: &AttrStmtObj) -> Result<Stmt> {
-        if node.attr_key.as_str() == "pragma_debug_skip_region" {
+    fn mutate_attr_stmt(&mut self, original: &Stmt, node: &AttrStmt) -> Result<Stmt> {
+        let attr_node = node.node()?;
+        let attr_key = node.attr_key()?;
+        let value = ffi_api::require_defined(node.value()?, "AttrStmt::value")?;
+        let old_body = ffi_api::require_defined(node.body()?, "AttrStmt::body")?;
+        let span = node.span()?;
+
+        if attr_key.as_str() == "pragma_debug_skip_region" {
             return make_no_op();
         }
 
-        let body = self.mutate_stmt(&node.body)?;
-        if is_no_op(&body) {
-            self.preserve_expr_effects(&[&node.value])
-        } else if body.same_as(&node.body) {
+        let body = self.mutate_stmt(&old_body)?;
+        if is_no_op(&body)? {
+            self.preserve_expr_effects(&[&value])
+        } else if body.same_as(&old_body) {
             Ok(original.clone())
         } else {
-            Ok(ffi_api::attr_stmt(
-                &node.node,
-                &node.attr_key,
-                &node.value,
-                &body,
-                Some(&node.span),
-            )?
-            .into())
+            Ok(ffi_api::attr_stmt(&attr_node, &attr_key, &value, &body, span.as_ref())?.into())
         }
     }
 
-    fn mutate_if_then_else(&mut self, original: &Stmt, node: &IfThenElseObj) -> Result<Stmt> {
-        if let Some(condition) = literal_int(&node.condition) {
-            return if condition != 0 {
-                self.mutate_stmt(&node.then_case)
-            } else if let Some(else_case) = node.else_case.get() {
-                self.mutate_stmt(&else_case)
+    fn mutate_if_then_else(&mut self, original: &Stmt, node: &IfThenElse) -> Result<Stmt> {
+        let condition = ffi_api::require_defined(node.condition()?, "IfThenElse::condition")?;
+        let old_then = ffi_api::require_defined(node.then_case()?, "IfThenElse::then_case")?;
+        let old_else = node.else_case()?;
+        let span = node.span()?;
+
+        if let Some(condition_value) = literal_int(&condition)? {
+            return if condition_value != 0 {
+                self.mutate_stmt(&old_then)
+            } else if let Some(else_case) = old_else.as_ref() {
+                self.mutate_stmt(else_case)
             } else {
                 make_no_op()
             };
         }
 
-        let then_case = self.mutate_stmt(&node.then_case)?;
-        let old_else = node.else_case.get();
+        let then_case = self.mutate_stmt(&old_then)?;
         let else_case = match old_else.as_ref() {
             Some(stmt) => Some(self.mutate_stmt(stmt)?),
             None => None,
         };
-        let no_op_then = is_no_op(&then_case);
-        let no_op_else = else_case.as_ref().is_none_or(is_no_op);
+        let no_op_then = is_no_op(&then_case)?;
+        let no_op_else = match else_case.as_ref() {
+            Some(stmt) => is_no_op(stmt)?,
+            None => true,
+        };
         if no_op_then && no_op_else {
-            return self.preserve_expr_effects(&[&node.condition]);
+            return self.preserve_expr_effects(&[&condition]);
         }
 
         let else_unchanged = match (old_else.as_ref(), else_case.as_ref()) {
@@ -149,55 +159,75 @@ impl StatementMutator for ConservativeNoOpRemover {
             (Some(before), Some(after)) => before.same_as(after),
             _ => false,
         };
-        if then_case.same_as(&node.then_case) && else_unchanged {
+        if then_case.same_as(&old_then) && else_unchanged {
             Ok(original.clone())
         } else {
-            Ok(ffi_api::if_then_else(
-                &node.condition,
-                &then_case,
-                else_case.as_ref(),
-                Some(&node.span),
-            )?
-            .into())
+            Ok(
+                ffi_api::if_then_else(&condition, &then_case, else_case.as_ref(), span.as_ref())?
+                    .into(),
+            )
         }
     }
 
-    fn mutate_for(&mut self, original: &Stmt, node: &ForObj) -> Result<Stmt> {
-        if literal_int(&node.extent).is_some_and(|extent| extent <= 0) {
-            return make_no_op();
+    fn mutate_for(&mut self, original: &Stmt, node: &For) -> Result<Stmt> {
+        let loop_var = ffi_api::require_defined(node.loop_var()?, "For::loop_var")?;
+        let min = ffi_api::require_defined(node.min()?, "For::min")?;
+        let extent = ffi_api::require_defined(node.extent()?, "For::extent")?;
+        let kind = node.kind()?;
+        let old_body = ffi_api::require_defined(node.body()?, "For::body")?;
+        let thread_binding = node.thread_binding()?;
+        let annotations = node.annotations()?;
+        let step = node.step()?;
+        let span = node.span()?;
+
+        // An explicit step participates in loop execution rather than being a
+        // one-time bound. If it may call unknown code, extracting it into one
+        // Evaluate would change its execution count. Keep the loop unchanged.
+        if step.as_ref().is_some_and(contains_unknown_call) {
+            return Ok(original.clone());
         }
 
-        let body = self.mutate_stmt(&node.body)?;
-        if is_no_op(&body) {
-            return self.preserve_expr_effects(&[&node.min, &node.extent]);
+        if literal_int(&extent)?.is_some_and(|extent| extent <= 0) {
+            // The loop body is dead, but evaluating its bounds may still
+            // contain an unknown call. Preserve those effects conservatively.
+            return self.preserve_expr_effects(&[&min, &extent]);
         }
-        if body.same_as(&node.body) {
+
+        let body = self.mutate_stmt(&old_body)?;
+        if is_no_op(&body)? {
+            return self.preserve_expr_effects(&[&min, &extent]);
+        }
+        if body.same_as(&old_body) {
             Ok(original.clone())
         } else {
             Ok(ffi_api::for_loop(
-                &node.loop_var,
-                &node.min,
-                &node.extent,
-                node.kind,
+                &loop_var,
+                &min,
+                &extent,
+                kind,
                 &body,
-                &node.thread_binding,
-                &node.annotations,
-                &node.step,
-                Some(&node.span),
+                thread_binding.as_ref(),
+                &annotations,
+                step.as_ref(),
+                span.as_ref(),
             )?
             .into())
         }
     }
 
-    fn mutate_while(&mut self, original: &Stmt, node: &WhileObj) -> Result<Stmt> {
-        if literal_int(&node.condition) == Some(0) {
+    fn mutate_while(&mut self, original: &Stmt, node: &While) -> Result<Stmt> {
+        let condition = ffi_api::require_defined(node.condition()?, "While::condition")?;
+        let old_body = ffi_api::require_defined(node.body()?, "While::body")?;
+        let span = node.span()?;
+
+        if literal_int(&condition)? == Some(0) {
             return make_no_op();
         }
-        let body = self.mutate_stmt(&node.body)?;
-        if body.same_as(&node.body) {
+        let body = self.mutate_stmt(&old_body)?;
+        if body.same_as(&old_body) {
             Ok(original.clone())
         } else {
-            Ok(ffi_api::while_loop(&node.condition, &body, Some(&node.span))?.into())
+            Ok(ffi_api::while_loop(&condition, &body, span.as_ref())?.into())
         }
     }
 }
@@ -209,8 +239,9 @@ pub fn remove_no_op_conservative(stmt: &Stmt) -> Result<Stmt> {
 
 /// Apply [`remove_no_op_conservative`] to a `PrimFunc` body.
 pub fn remove_no_op_conservative_prim_func(func: &PrimFunc) -> Result<PrimFunc> {
-    let body = remove_no_op_conservative(&func.body)?;
-    if body.same_as(&func.body) {
+    let old_body = ffi_api::require_defined(func.body()?, "PrimFunc::body")?;
+    let body = remove_no_op_conservative(&old_body)?;
+    if body.same_as(&old_body) {
         Ok(func.clone())
     } else {
         ffi_api::prim_func_with_body(func, &body)

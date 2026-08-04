@@ -19,22 +19,19 @@
 
 //! Typed, fail-closed traversal over the stubgen-generated TIRx bindings.
 //!
-//! This module is deliberately hand-written on top of `generated`: it is a
-//! prototype for code that the Rust stub generator should eventually emit from
-//! the reflected inheritance graph.  Keeping it here lets real passes exercise
-//! the generated layouts while making the missing generator functionality
-//! concrete and testable.
+//! Generated object structs are opaque C++ object-layout prefixes.  This
+//! visitor therefore operates only on owning generated reference wrappers and
+//! reads children through their fallible reflection-backed getters.
 
-use crate::generated::ir::{CallObj, Expr, FloatImmObj, IntImmObj, Range};
+use crate::generated::ir::{Call, Expr, FloatImm, IntImm, Range};
 use crate::generated::tirx::{
-    AddObj, AllocBufferObj, AndObj, AssertStmtObj, AttrStmtObj, BindObj, BreakObj, BroadcastObj,
-    Buffer, BufferLoadObj, BufferRegion, BufferStoreObj, CastObj, ContinueObj, DeclBufferObj,
-    DivObj, EQObj, EvaluateObj, FloorDivObj, FloorModObj, ForObj, GEObj, GTObj, IfThenElseObj,
-    IterVar, LEObj, LTObj, LetObj, MaxObj, MinObj, ModObj, MulObj, NEObj, NotObj, OrObj,
-    ProducerLoadObj, RampObj, ReduceObj, SBlockObj, SBlockRealizeObj, ScopeIdDefStmtObj, SelectObj,
-    SeqStmtObj, ShuffleObj, Stmt, StringImmObj, SubObj, TilePrimitiveCallObj, VarObj, WhileObj,
+    Add, AllocBuffer, And, AssertStmt, AttrStmt, Bind, Break, Broadcast, Buffer, BufferLoad,
+    BufferRegion, BufferStore, Cast, Continue, DeclBuffer, Div, Evaluate, FloorDiv, FloorMod, For,
+    IfThenElse, IterVar, Let, Max, Min, Mod, Mul, Not, Or, ProducerLoad, Ramp, Reduce, SBlock,
+    SBlockRealize, ScopeIdDefStmt, Select, SeqStmt, Shuffle, Stmt, StringImm, Sub,
+    TilePrimitiveCall, Var, While, EQ, GE, GT, LE, LT, NE,
 };
-use tvm_ffi::{Error, ObjectArc, ObjectRefCore, Result};
+use tvm_ffi::{AnyCompatible, AnyValue, Array, Error, ObjectArc, ObjectRefCore, Result};
 
 fn lookup_type_index(type_key: &str) -> Option<i32> {
     unsafe {
@@ -52,49 +49,38 @@ fn lookup_type_index(type_key: &str) -> Option<i32> {
     }
 }
 
-fn is_instance_index(runtime_type_index: i32, target_type_index: i32) -> bool {
-    if runtime_type_index == target_type_index {
-        return true;
-    }
-    unsafe {
-        let runtime = tvm_ffi::tvm_ffi_sys::TVMFFIGetTypeInfo(runtime_type_index);
-        let target = tvm_ffi::tvm_ffi_sys::TVMFFIGetTypeInfo(target_type_index);
-        if runtime.is_null() || target.is_null() || (*runtime).type_depth <= (*target).type_depth {
-            return false;
-        }
-        let ancestors = (*runtime).type_acenstors;
-        if ancestors.is_null() {
-            return false;
-        }
-        let ancestor = *ancestors.add((*target).type_depth as usize);
-        !ancestor.is_null() && (*ancestor).type_index == target_type_index
-    }
-}
-
-/// Borrowed, subtype-aware downcast that tolerates a generated type absent
-/// from the loaded runtime.
+/// Owning, subtype-aware downcast that tolerates a generated type absent from
+/// the loaded runtime.
 ///
-/// Generated `downcast` currently calls `N::type_index()`, whose cached lookup
-/// panics forever when bindings and the loaded `.so` differ.  Visitor dispatch
-/// must instead fail closed and continue checking the runtime's available
-/// types; a complete ABI guard can then report a useful mismatch separately.
-pub fn try_downcast<R, N>(value: &R) -> Option<&N>
+/// Generated `downcast` uses the target container's cached `type_index()`.
+/// A missing type can therefore panic and poison that cache forever.  Visitor
+/// dispatch resolves the type key without that cache, checks the runtime
+/// hierarchy, then clones and re-wraps the source handle.
+pub fn try_downcast<R, N>(value: &R) -> Option<N>
 where
     R: ObjectRefCore,
-    N: tvm_ffi::ObjectCore,
+    N: ObjectRefCore,
 {
     unsafe {
-        let raw = ObjectArc::as_raw(<R as ObjectRefCore>::data(value));
+        let source = <R as ObjectRefCore>::data(value);
+        let raw = ObjectArc::as_raw(source);
         if raw.is_null() {
             return None;
         }
+
         let header = raw as *const tvm_ffi::tvm_ffi_sys::TVMFFIObject;
-        let target_type_index = lookup_type_index(N::TYPE_KEY)?;
-        if is_instance_index((*header).type_index, target_type_index) {
-            Some(&*(raw as *const N))
-        } else {
-            None
+        let target_type_index =
+            lookup_type_index(<N::ContainerType as tvm_ffi::ObjectCore>::TYPE_KEY)?;
+        if !tvm_ffi::object::is_instance_of_index((*header).type_index, target_type_index) {
+            return None;
         }
+
+        // `ObjectRefCore` wrappers are transparent owners of ObjectArc.  Clone
+        // first to retain one strong reference, then transfer that ownership to
+        // the target wrapper after the runtime subtype check above.
+        let retained = source.clone();
+        let target_raw = ObjectArc::into_raw(retained) as *const N::ContainerType;
+        Some(N::from_data(ObjectArc::from_raw(target_raw)))
     }
 }
 
@@ -106,29 +92,49 @@ fn runtime_type_index<R: ObjectRefCore>(value: &R) -> Option<i32> {
     }
 }
 
+fn type_error(message: impl AsRef<str>) -> Error {
+    Error::new(tvm_ffi::error::TYPE_ERROR, message.as_ref(), "")
+}
+
 fn null_node(family: &str) -> Error {
-    Error::new(
-        tvm_ffi::error::TYPE_ERROR,
-        &format!("cannot visit a null {family} ObjectRef"),
-        "",
-    )
+    type_error(format!("cannot visit a null {family} ObjectRef"))
 }
 
 fn unsupported_node(family: &str, type_index: i32) -> Error {
-    Error::new(
-        tvm_ffi::error::TYPE_ERROR,
-        &format!(
-            "generated Rust {family} visitor has no dispatch entry for runtime type index {type_index}; regenerate or extend visitor.rs"
-        ),
-        "",
-    )
+    type_error(format!(
+        "generated Rust {family} visitor has no dispatch entry for runtime type index {type_index}; regenerate or extend visitor.rs"
+    ))
+}
+
+fn required<T>(value: Option<T>, path: &str) -> Result<T> {
+    value.ok_or_else(|| type_error(format!("required IR field `{path}` is null")))
+}
+
+fn required_array_item<T>(values: &Array<Option<T>>, index: usize, path: &str) -> Result<T>
+where
+    T: AnyCompatible + Clone,
+{
+    let item = values.get(index).map_err(|error| {
+        type_error(format!(
+            "cannot decode required IR array element `{path}[{index}]`: {error}"
+        ))
+    })?;
+    required(item, &format!("{path}[{index}]"))
+}
+
+fn any_array_item(values: &Array<AnyValue>, index: usize, path: &str) -> Result<AnyValue> {
+    values.get(index).map_err(|error| {
+        type_error(format!(
+            "cannot decode heterogeneous IR array element `{path}[{index}]`: {error}"
+        ))
+    })
 }
 
 macro_rules! dispatch {
     ($visitor:expr, $value:expr, $( $node:ty => $method:ident ),+ $(,)?) => {
         $(
             if let Some(node) = $crate::visitor::try_downcast::<_, $node>($value) {
-                return $visitor.$method(node);
+                return $visitor.$method(&node);
             }
         )+
     };
@@ -137,44 +143,42 @@ macro_rules! dispatch {
 /// Dispatch an expression to a typed [`StmtExprVisitor`] method.
 ///
 /// Unknown node kinds are errors instead of silently truncating traversal.
-/// This makes a newly added C++ IR node visible immediately to Rust pass
-/// authors, but the list currently has to be maintained by hand.
 pub fn walk_expr<V: StmtExprVisitor + ?Sized>(visitor: &mut V, expr: &Expr) -> Result<()> {
     dispatch!(
         visitor,
         expr,
-        VarObj => visit_var,
-        BufferLoadObj => visit_buffer_load,
-        ProducerLoadObj => visit_producer_load,
-        LetObj => visit_let,
-        CallObj => visit_call,
-        AddObj => visit_add,
-        SubObj => visit_sub,
-        MulObj => visit_mul,
-        DivObj => visit_div,
-        ModObj => visit_mod,
-        FloorDivObj => visit_floor_div,
-        FloorModObj => visit_floor_mod,
-        MinObj => visit_min,
-        MaxObj => visit_max,
-        EQObj => visit_eq,
-        NEObj => visit_ne,
-        LTObj => visit_lt,
-        LEObj => visit_le,
-        GTObj => visit_gt,
-        GEObj => visit_ge,
-        AndObj => visit_and,
-        OrObj => visit_or,
-        ReduceObj => visit_reduce,
-        CastObj => visit_cast,
-        NotObj => visit_not,
-        SelectObj => visit_select,
-        RampObj => visit_ramp,
-        BroadcastObj => visit_broadcast,
-        ShuffleObj => visit_shuffle,
-        IntImmObj => visit_int_imm,
-        FloatImmObj => visit_float_imm,
-        StringImmObj => visit_string_imm,
+        Var => visit_var,
+        BufferLoad => visit_buffer_load,
+        ProducerLoad => visit_producer_load,
+        Let => visit_let,
+        Call => visit_call,
+        Add => visit_add,
+        Sub => visit_sub,
+        Mul => visit_mul,
+        Div => visit_div,
+        Mod => visit_mod,
+        FloorDiv => visit_floor_div,
+        FloorMod => visit_floor_mod,
+        Min => visit_min,
+        Max => visit_max,
+        EQ => visit_eq,
+        NE => visit_ne,
+        LT => visit_lt,
+        LE => visit_le,
+        GT => visit_gt,
+        GE => visit_ge,
+        And => visit_and,
+        Or => visit_or,
+        Reduce => visit_reduce,
+        Cast => visit_cast,
+        Not => visit_not,
+        Select => visit_select,
+        Ramp => visit_ramp,
+        Broadcast => visit_broadcast,
+        Shuffle => visit_shuffle,
+        IntImm => visit_int_imm,
+        FloatImm => visit_float_imm,
+        StringImm => visit_string_imm,
     );
     let type_index = runtime_type_index(expr).ok_or_else(|| null_node("expression"))?;
     Err(unsupported_node("expression", type_index))
@@ -185,34 +189,36 @@ pub fn walk_stmt<V: StmtExprVisitor + ?Sized>(visitor: &mut V, stmt: &Stmt) -> R
     dispatch!(
         visitor,
         stmt,
-        BindObj => visit_bind,
-        AttrStmtObj => visit_attr_stmt,
-        IfThenElseObj => visit_if_then_else,
-        ForObj => visit_for,
-        WhileObj => visit_while,
-        BreakObj => visit_break,
-        ContinueObj => visit_continue,
-        AllocBufferObj => visit_alloc_buffer,
-        DeclBufferObj => visit_decl_buffer,
-        BufferStoreObj => visit_buffer_store,
-        AssertStmtObj => visit_assert_stmt,
-        SeqStmtObj => visit_seq_stmt,
-        EvaluateObj => visit_evaluate,
-        SBlockObj => visit_sblock,
-        SBlockRealizeObj => visit_sblock_realize,
-        ScopeIdDefStmtObj => visit_scope_id_def_stmt,
-        TilePrimitiveCallObj => visit_tile_primitive_call,
+        Bind => visit_bind,
+        AttrStmt => visit_attr_stmt,
+        IfThenElse => visit_if_then_else,
+        For => visit_for,
+        While => visit_while,
+        Break => visit_break,
+        Continue => visit_continue,
+        AllocBuffer => visit_alloc_buffer,
+        DeclBuffer => visit_decl_buffer,
+        BufferStore => visit_buffer_store,
+        AssertStmt => visit_assert_stmt,
+        SeqStmt => visit_seq_stmt,
+        Evaluate => visit_evaluate,
+        SBlock => visit_sblock,
+        SBlockRealize => visit_sblock_realize,
+        ScopeIdDefStmt => visit_scope_id_def_stmt,
+        TilePrimitiveCall => visit_tile_primitive_call,
     );
     let type_index = runtime_type_index(stmt).ok_or_else(|| null_node("statement"))?;
     Err(unsupported_node("statement", type_index))
 }
 
 macro_rules! binary_visit_methods {
-    ($( $method:ident($node:ty) ),+ $(,)?) => {
+    ($( $method:ident($node:ty, $name:literal) ),+ $(,)?) => {
         $(
             fn $method(&mut self, node: &$node) -> Result<()> {
-                self.visit_expr(&node.a)?;
-                self.visit_expr(&node.b)
+                let a = required(node.a()?, concat!($name, "::a"))?;
+                let b = required(node.b()?, concat!($name, "::b"))?;
+                self.visit_expr(&a)?;
+                self.visit_expr(&b)
             }
         )+
     };
@@ -221,8 +227,8 @@ macro_rules! binary_visit_methods {
 /// Recursive visitor for TIRx statements and expressions.
 ///
 /// Override only the typed methods a pass cares about.  An override controls
-/// recursion for that node, while the default implementation follows the same
-/// semantic children and ordering as TVM's C++ `StmtExprVisitor`.
+/// recursion for that node, while the defaults preserve the child order of
+/// TVM's C++ `StmtExprVisitor`.
 pub trait StmtExprVisitor {
     fn visit_expr(&mut self, expr: &Expr) -> Result<()> {
         walk_expr(self, expr)
@@ -232,19 +238,23 @@ pub trait StmtExprVisitor {
         walk_stmt(self, stmt)
     }
 
-    fn visit_expr_array(&mut self, values: &tvm_ffi::Array<Expr>) -> Result<()> {
-        for value in values {
+    fn visit_expr_array(&mut self, values: &Array<Option<Expr>>, path: &str) -> Result<()> {
+        for index in 0..values.len() {
+            let value = required_array_item(values, index, path)?;
             self.visit_expr(&value)?;
         }
         Ok(())
     }
 
     fn visit_buffer_def(&mut self, buffer: &Buffer, _alloc_data: bool) -> Result<()> {
-        self.visit_expr_array(&buffer.shape)?;
-        if buffer.strides.is_defined() {
-            self.visit_expr_array(&buffer.strides)?;
-        }
-        self.visit_expr(&buffer.elem_offset)
+        let shape = buffer.shape()?;
+        self.visit_expr_array(&shape, "Buffer::shape")?;
+
+        let strides = buffer.strides()?;
+        self.visit_expr_array(&strides, "Buffer::strides")?;
+
+        let elem_offset = required(buffer.elem_offset()?, "Buffer::elem_offset")?;
+        self.visit_expr(&elem_offset)
     }
 
     fn visit_buffer_use(&mut self, _buffer: &Buffer) -> Result<()> {
@@ -252,253 +262,357 @@ pub trait StmtExprVisitor {
     }
 
     fn visit_buffer_region(&mut self, region: &BufferRegion) -> Result<()> {
-        self.visit_buffer_use(&region.buffer)?;
-        for range in &region.region {
-            self.visit_range(&range, "BufferRegion::region")?;
+        let buffer = required(region.buffer()?, "BufferRegion::buffer")?;
+        self.visit_buffer_use(&buffer)?;
+
+        let ranges = region.region()?;
+        for index in 0..ranges.len() {
+            let range = required_array_item(&ranges, index, "BufferRegion::region")?;
+            self.visit_range(&range, &format!("BufferRegion::region[{index}]"))?;
         }
         Ok(())
     }
 
-    /// Visit a range while diagnosing C++'s nullable `ObjectRef` state.
-    ///
-    /// `Range` is not an `Option` in generated layouts, but some C++ fields
-    /// (notably `IterVar::dom`) may contain an undefined handle.  Checking here
-    /// keeps the visitor's `Result` contract instead of triggering a surprising
-    /// null-dereference panic through `Deref`.
-    fn visit_range(&mut self, range: &Range, context: &str) -> Result<()> {
-        if range.is_null() {
-            return Err(Error::new(
-                tvm_ffi::error::TYPE_ERROR,
-                &format!("cannot visit {context}: Range ObjectRef is undefined"),
-                "",
-            ));
-        }
-        self.visit_expr(&range.min)?;
-        self.visit_expr(&range.extent)
+    fn visit_range(&mut self, range: &Range, path: &str) -> Result<()> {
+        let min = required(range.min()?, &format!("{path}.min"))?;
+        let extent = required(range.extent()?, &format!("{path}.extent"))?;
+        self.visit_expr(&min)?;
+        self.visit_expr(&extent)
     }
 
-    fn visit_iter_var_domain(&mut self, iter_var: &IterVar, context: &str) -> Result<()> {
-        self.visit_range(&iter_var.dom, context)
+    fn visit_iter_var_domain(&mut self, iter_var: &IterVar, path: &str) -> Result<()> {
+        let domain = required(iter_var.dom()?, path)?;
+        self.visit_range(&domain, path)
     }
 
-    fn visit_var(&mut self, _node: &VarObj) -> Result<()> {
+    fn visit_var(&mut self, _node: &Var) -> Result<()> {
         Ok(())
     }
 
-    fn visit_buffer_load(&mut self, node: &BufferLoadObj) -> Result<()> {
-        self.visit_buffer_use(&node.buffer)?;
-        self.visit_expr_array(&node.indices)
+    fn visit_buffer_load(&mut self, node: &BufferLoad) -> Result<()> {
+        let buffer = required(node.buffer()?, "BufferLoad::buffer")?;
+        self.visit_buffer_use(&buffer)?;
+
+        let indices = node.indices()?;
+        self.visit_expr_array(&indices, "BufferLoad::indices")
     }
 
-    fn visit_producer_load(&mut self, node: &ProducerLoadObj) -> Result<()> {
-        self.visit_expr_array(&node.indices)
+    fn visit_producer_load(&mut self, node: &ProducerLoad) -> Result<()> {
+        let indices = node.indices()?;
+        self.visit_expr_array(&indices, "ProducerLoad::indices")
     }
 
-    fn visit_let(&mut self, node: &LetObj) -> Result<()> {
-        self.visit_expr(&node.value)?;
-        self.visit_expr(&node.body)
+    fn visit_let(&mut self, node: &Let) -> Result<()> {
+        let value = required(node.value()?, "Let::value")?;
+        let body = required(node.body()?, "Let::body")?;
+        self.visit_expr(&value)?;
+        self.visit_expr(&body)
     }
 
-    fn visit_call(&mut self, node: &CallObj) -> Result<()> {
-        self.visit_expr_array(&node.args)
+    fn visit_call(&mut self, node: &Call) -> Result<()> {
+        let args = node.args()?;
+        self.visit_expr_array(&args, "Call::args")
     }
 
     binary_visit_methods!(
-        visit_add(AddObj),
-        visit_sub(SubObj),
-        visit_mul(MulObj),
-        visit_div(DivObj),
-        visit_mod(ModObj),
-        visit_floor_div(FloorDivObj),
-        visit_floor_mod(FloorModObj),
-        visit_min(MinObj),
-        visit_max(MaxObj),
-        visit_eq(EQObj),
-        visit_ne(NEObj),
-        visit_lt(LTObj),
-        visit_le(LEObj),
-        visit_gt(GTObj),
-        visit_ge(GEObj),
-        visit_and(AndObj),
-        visit_or(OrObj),
+        visit_add(Add, "Add"),
+        visit_sub(Sub, "Sub"),
+        visit_mul(Mul, "Mul"),
+        visit_div(Div, "Div"),
+        visit_mod(Mod, "Mod"),
+        visit_floor_div(FloorDiv, "FloorDiv"),
+        visit_floor_mod(FloorMod, "FloorMod"),
+        visit_min(Min, "Min"),
+        visit_max(Max, "Max"),
+        visit_eq(EQ, "EQ"),
+        visit_ne(NE, "NE"),
+        visit_lt(LT, "LT"),
+        visit_le(LE, "LE"),
+        visit_gt(GT, "GT"),
+        visit_ge(GE, "GE"),
+        visit_and(And, "And"),
+        visit_or(Or, "Or"),
     );
 
-    fn visit_reduce(&mut self, node: &ReduceObj) -> Result<()> {
-        for axis in &node.axis {
-            self.visit_iter_var_domain(&axis, "Reduce::axis.dom")?;
+    fn visit_reduce(&mut self, node: &Reduce) -> Result<()> {
+        let axis = node.axis()?;
+        for index in 0..axis.len() {
+            let iter_var = required_array_item(&axis, index, "Reduce::axis")?;
+            self.visit_iter_var_domain(&iter_var, &format!("Reduce::axis[{index}].dom"))?;
         }
-        self.visit_expr_array(&node.source)?;
-        self.visit_expr_array(&node.init)?;
-        self.visit_expr(&node.condition)
+
+        let source = node.source()?;
+        self.visit_expr_array(&source, "Reduce::source")?;
+
+        let init = node.init()?;
+        self.visit_expr_array(&init, "Reduce::init")?;
+
+        let condition = required(node.condition()?, "Reduce::condition")?;
+        self.visit_expr(&condition)
     }
 
-    fn visit_cast(&mut self, node: &CastObj) -> Result<()> {
-        self.visit_expr(&node.value)
+    fn visit_cast(&mut self, node: &Cast) -> Result<()> {
+        let value = required(node.value()?, "Cast::value")?;
+        self.visit_expr(&value)
     }
 
-    fn visit_not(&mut self, node: &NotObj) -> Result<()> {
-        self.visit_expr(&node.a)
+    fn visit_not(&mut self, node: &Not) -> Result<()> {
+        let a = required(node.a()?, "Not::a")?;
+        self.visit_expr(&a)
     }
 
-    fn visit_select(&mut self, node: &SelectObj) -> Result<()> {
-        self.visit_expr(&node.condition)?;
-        self.visit_expr(&node.true_value)?;
-        self.visit_expr(&node.false_value)
+    fn visit_select(&mut self, node: &Select) -> Result<()> {
+        let condition = required(node.condition()?, "Select::condition")?;
+        let true_value = required(node.true_value()?, "Select::true_value")?;
+        let false_value = required(node.false_value()?, "Select::false_value")?;
+        self.visit_expr(&condition)?;
+        self.visit_expr(&true_value)?;
+        self.visit_expr(&false_value)
     }
 
-    fn visit_ramp(&mut self, node: &RampObj) -> Result<()> {
-        self.visit_expr(&node.base)?;
-        self.visit_expr(&node.stride)
+    fn visit_ramp(&mut self, node: &Ramp) -> Result<()> {
+        let base = required(node.base()?, "Ramp::base")?;
+        let stride = required(node.stride()?, "Ramp::stride")?;
+        self.visit_expr(&base)?;
+        self.visit_expr(&stride)
     }
 
-    fn visit_broadcast(&mut self, node: &BroadcastObj) -> Result<()> {
-        self.visit_expr(&node.value)
+    fn visit_broadcast(&mut self, node: &Broadcast) -> Result<()> {
+        let value = required(node.value()?, "Broadcast::value")?;
+        self.visit_expr(&value)
     }
 
-    fn visit_shuffle(&mut self, node: &ShuffleObj) -> Result<()> {
-        self.visit_expr_array(&node.indices)?;
-        self.visit_expr_array(&node.vectors)
+    fn visit_shuffle(&mut self, node: &Shuffle) -> Result<()> {
+        let indices = node.indices()?;
+        self.visit_expr_array(&indices, "Shuffle::indices")?;
+
+        let vectors = node.vectors()?;
+        self.visit_expr_array(&vectors, "Shuffle::vectors")
     }
 
-    fn visit_int_imm(&mut self, _node: &IntImmObj) -> Result<()> {
+    fn visit_int_imm(&mut self, _node: &IntImm) -> Result<()> {
         Ok(())
     }
 
-    fn visit_float_imm(&mut self, _node: &FloatImmObj) -> Result<()> {
+    fn visit_float_imm(&mut self, _node: &FloatImm) -> Result<()> {
         Ok(())
     }
 
-    fn visit_string_imm(&mut self, _node: &StringImmObj) -> Result<()> {
+    fn visit_string_imm(&mut self, _node: &StringImm) -> Result<()> {
         Ok(())
     }
 
-    fn visit_bind(&mut self, node: &BindObj) -> Result<()> {
-        self.visit_expr(&node.value)
+    fn visit_bind(&mut self, node: &Bind) -> Result<()> {
+        let value = required(node.value()?, "Bind::value")?;
+        self.visit_expr(&value)
     }
 
-    fn visit_attr_stmt(&mut self, node: &AttrStmtObj) -> Result<()> {
-        self.visit_expr(&node.value)?;
-        self.visit_stmt(&node.body)
+    fn visit_attr_stmt(&mut self, node: &AttrStmt) -> Result<()> {
+        let value = required(node.value()?, "AttrStmt::value")?;
+        let body = required(node.body()?, "AttrStmt::body")?;
+        self.visit_expr(&value)?;
+        self.visit_stmt(&body)
     }
 
-    fn visit_if_then_else(&mut self, node: &IfThenElseObj) -> Result<()> {
-        self.visit_expr(&node.condition)?;
-        self.visit_stmt(&node.then_case)?;
-        if let Some(else_case) = node.else_case.get() {
+    fn visit_if_then_else(&mut self, node: &IfThenElse) -> Result<()> {
+        let condition = required(node.condition()?, "IfThenElse::condition")?;
+        let then_case = required(node.then_case()?, "IfThenElse::then_case")?;
+        let else_case = node.else_case()?;
+        self.visit_expr(&condition)?;
+        self.visit_stmt(&then_case)?;
+        if let Some(else_case) = else_case {
             self.visit_stmt(&else_case)?;
         }
         Ok(())
     }
 
-    fn visit_for(&mut self, node: &ForObj) -> Result<()> {
-        self.visit_expr(&node.min)?;
-        self.visit_expr(&node.extent)?;
-        if let Some(step) = node.step.get() {
+    fn visit_for(&mut self, node: &For) -> Result<()> {
+        let min = required(node.min()?, "For::min")?;
+        let extent = required(node.extent()?, "For::extent")?;
+        let step = node.step()?;
+        let body = required(node.body()?, "For::body")?;
+        self.visit_expr(&min)?;
+        self.visit_expr(&extent)?;
+        if let Some(step) = step {
             self.visit_expr(&step)?;
         }
-        self.visit_stmt(&node.body)
+        self.visit_stmt(&body)
     }
 
-    fn visit_while(&mut self, node: &WhileObj) -> Result<()> {
-        self.visit_expr(&node.condition)?;
-        self.visit_stmt(&node.body)
+    fn visit_while(&mut self, node: &While) -> Result<()> {
+        let condition = required(node.condition()?, "While::condition")?;
+        let body = required(node.body()?, "While::body")?;
+        self.visit_expr(&condition)?;
+        self.visit_stmt(&body)
     }
 
-    fn visit_break(&mut self, _node: &BreakObj) -> Result<()> {
+    fn visit_break(&mut self, _node: &Break) -> Result<()> {
         Ok(())
     }
 
-    fn visit_continue(&mut self, _node: &ContinueObj) -> Result<()> {
+    fn visit_continue(&mut self, _node: &Continue) -> Result<()> {
         Ok(())
     }
 
-    fn visit_alloc_buffer(&mut self, node: &AllocBufferObj) -> Result<()> {
-        self.visit_buffer_def(&node.buffer, true)
+    fn visit_alloc_buffer(&mut self, node: &AllocBuffer) -> Result<()> {
+        let buffer = required(node.buffer()?, "AllocBuffer::buffer")?;
+        self.visit_buffer_def(&buffer, true)
     }
 
-    fn visit_decl_buffer(&mut self, node: &DeclBufferObj) -> Result<()> {
-        self.visit_buffer_def(&node.buffer, false)
+    fn visit_decl_buffer(&mut self, node: &DeclBuffer) -> Result<()> {
+        let buffer = required(node.buffer()?, "DeclBuffer::buffer")?;
+        self.visit_buffer_def(&buffer, false)
     }
 
-    fn visit_buffer_store(&mut self, node: &BufferStoreObj) -> Result<()> {
-        self.visit_buffer_use(&node.buffer)?;
-        self.visit_expr(&node.value)?;
-        self.visit_expr_array(&node.indices)
+    fn visit_buffer_store(&mut self, node: &BufferStore) -> Result<()> {
+        let buffer = required(node.buffer()?, "BufferStore::buffer")?;
+        let value = required(node.value()?, "BufferStore::value")?;
+        let indices = node.indices()?;
+        self.visit_buffer_use(&buffer)?;
+        self.visit_expr(&value)?;
+        self.visit_expr_array(&indices, "BufferStore::indices")
     }
 
-    fn visit_assert_stmt(&mut self, node: &AssertStmtObj) -> Result<()> {
-        self.visit_expr(&node.condition)?;
-        let error_kind: Expr = node.error_kind.clone().into();
+    fn visit_assert_stmt(&mut self, node: &AssertStmt) -> Result<()> {
+        let condition = required(node.condition()?, "AssertStmt::condition")?;
+        let error_kind = required(node.error_kind()?, "AssertStmt::error_kind")?;
+        let message_parts = node.message_parts()?;
+
+        self.visit_expr(&condition)?;
+        let error_kind: Expr = error_kind.into();
         self.visit_expr(&error_kind)?;
-        for part in &node.message_parts {
+        for index in 0..message_parts.len() {
+            let part = required_array_item(&message_parts, index, "AssertStmt::message_parts")?;
             let part: Expr = part.into();
             self.visit_expr(&part)?;
         }
         Ok(())
     }
 
-    fn visit_seq_stmt(&mut self, node: &SeqStmtObj) -> Result<()> {
-        for stmt in &node.seq {
+    fn visit_seq_stmt(&mut self, node: &SeqStmt) -> Result<()> {
+        let seq = node.seq()?;
+        for index in 0..seq.len() {
+            let stmt = required_array_item(&seq, index, "SeqStmt::seq")?;
             self.visit_stmt(&stmt)?;
         }
         Ok(())
     }
 
-    fn visit_evaluate(&mut self, node: &EvaluateObj) -> Result<()> {
-        self.visit_expr(&node.value)
+    fn visit_evaluate(&mut self, node: &Evaluate) -> Result<()> {
+        let value = required(node.value()?, "Evaluate::value")?;
+        self.visit_expr(&value)
     }
 
-    fn visit_sblock(&mut self, node: &SBlockObj) -> Result<()> {
-        for iter_var in &node.iter_vars {
-            self.visit_iter_var_domain(&iter_var, "SBlock::iter_vars.dom")?;
+    fn visit_sblock(&mut self, node: &SBlock) -> Result<()> {
+        let iter_vars = node.iter_vars()?;
+        for index in 0..iter_vars.len() {
+            let iter_var = required_array_item(&iter_vars, index, "SBlock::iter_vars")?;
+            self.visit_iter_var_domain(&iter_var, &format!("SBlock::iter_vars[{index}].dom"))?;
         }
-        for buffer in &node.alloc_buffers {
+
+        let alloc_buffers = node.alloc_buffers()?;
+        for index in 0..alloc_buffers.len() {
+            let buffer = required_array_item(&alloc_buffers, index, "SBlock::alloc_buffers")?;
             self.visit_buffer_def(&buffer, true)?;
         }
-        for region in &node.reads {
+
+        let reads = node.reads()?;
+        for index in 0..reads.len() {
+            let region = required_array_item(&reads, index, "SBlock::reads")?;
             self.visit_buffer_region(&region)?;
         }
-        for region in &node.writes {
+
+        let writes = node.writes()?;
+        for index in 0..writes.len() {
+            let region = required_array_item(&writes, index, "SBlock::writes")?;
             self.visit_buffer_region(&region)?;
         }
-        for match_buffer in &node.match_buffers {
-            self.visit_buffer_def(&match_buffer.buffer, true)?;
-            self.visit_buffer_region(&match_buffer.source)?;
+
+        let match_buffers = node.match_buffers()?;
+        for index in 0..match_buffers.len() {
+            let match_buffer = required_array_item(&match_buffers, index, "SBlock::match_buffers")?;
+            let buffer = required(
+                match_buffer.buffer()?,
+                &format!("SBlock::match_buffers[{index}].buffer"),
+            )?;
+            let source = required(
+                match_buffer.source()?,
+                &format!("SBlock::match_buffers[{index}].source"),
+            )?;
+            self.visit_buffer_def(&buffer, true)?;
+            self.visit_buffer_region(&source)?;
         }
-        if let Some(init) = node.init.get() {
+
+        let init = node.init()?;
+        if let Some(init) = init {
             self.visit_stmt(&init)?;
         }
-        self.visit_stmt(&node.body)
+
+        let body = required(node.body()?, "SBlock::body")?;
+        self.visit_stmt(&body)
     }
 
-    fn visit_sblock_realize(&mut self, node: &SBlockRealizeObj) -> Result<()> {
-        self.visit_expr_array(&node.iter_values)?;
-        self.visit_expr(&node.predicate)?;
-        let block: Stmt = node.block.clone().into();
+    fn visit_sblock_realize(&mut self, node: &SBlockRealize) -> Result<()> {
+        let iter_values = node.iter_values()?;
+        let predicate = required(node.predicate()?, "SBlockRealize::predicate")?;
+        let block = required(node.block()?, "SBlockRealize::block")?;
+        self.visit_expr_array(&iter_values, "SBlockRealize::iter_values")?;
+        self.visit_expr(&predicate)?;
+        let block: Stmt = block.into();
         self.visit_stmt(&block)
     }
 
-    fn visit_scope_id_def_stmt(&mut self, node: &ScopeIdDefStmtObj) -> Result<()> {
-        if let Some(extents) = node.def.extents.get() {
-            self.visit_expr_array(&extents)?;
+    fn visit_scope_id_def_stmt(&mut self, node: &ScopeIdDefStmt) -> Result<()> {
+        let definition = required(node.def()?, "ScopeIdDefStmt::def")?;
+        let extents = definition.extents()?;
+        if let Some(extents) = extents {
+            self.visit_expr_array(&extents, "ScopeIdDefStmt::def.extents")?;
         }
-        if let Some(extents) = node.def.preferred_extents.get() {
-            self.visit_expr_array(&extents)?;
+
+        let preferred_extents = definition.preferred_extents()?;
+        if let Some(preferred_extents) = preferred_extents {
+            self.visit_expr_array(&preferred_extents, "ScopeIdDefStmt::def.preferred_extents")?;
         }
         Ok(())
     }
 
-    fn visit_tile_primitive_call(&mut self, _node: &TilePrimitiveCallObj) -> Result<()> {
-        // C++ declares args/config as heterogeneous Any containers, but the
-        // generated markers incorrectly narrow them to ObjectRef.  Iterating
-        // those markers can silently stop on a scalar Array item or panic on a
-        // scalar Map value.  Refuse the node until stubgen emits real Any
-        // container support; an explicit pass override may handle it through a
-        // dedicated FFI helper in the meantime.
-        Err(Error::new(
-            tvm_ffi::error::TYPE_ERROR,
-            "TilePrimitiveCall traversal requires Array<Any>/Map<String, Any>; generated bindings currently narrow these fields to ObjectRef",
-            "",
-        ))
+    fn visit_tile_primitive_any(&mut self, value: &AnyValue) -> Result<()> {
+        // Scalars and None are valid configuration values and have no IR
+        // children.  Convert object-valued entries to the generic root handle,
+        // then use the same cache-independent checked downcast as dispatch.
+        let Some(object) = value.try_as::<tvm_ffi::object::ObjectRef>() else {
+            return Ok(());
+        };
+
+        // Match C++ exactly: BufferRegion is deliberately recognized and
+        // skipped; its ranges are not children of a TilePrimitiveCall.
+        if try_downcast::<_, BufferRegion>(&object).is_some() {
+            return Ok(());
+        }
+        if let Some(expr) = try_downcast::<_, Expr>(&object) {
+            return self.visit_expr(&expr);
+        }
+        if let Some(stmt) = try_downcast::<_, Stmt>(&object) {
+            return self.visit_stmt(&stmt);
+        }
+
+        // Other object-valued config entries are metadata in the C++ visitor,
+        // not IR children.  Expression/statement subtypes still fail closed in
+        // walk_expr/walk_stmt when their concrete node kind is unknown.
+        Ok(())
+    }
+
+    fn visit_tile_primitive_call(&mut self, node: &TilePrimitiveCall) -> Result<()> {
+        let args = node.args()?;
+        for index in 0..args.len() {
+            let value = any_array_item(&args, index, "TilePrimitiveCall::args")?;
+            self.visit_tile_primitive_any(&value)?;
+        }
+
+        let config = node.config()?;
+        for (_key, value) in &config {
+            self.visit_tile_primitive_any(&value)?;
+        }
+        Ok(())
     }
 }

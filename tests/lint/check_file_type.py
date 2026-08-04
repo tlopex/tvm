@@ -93,7 +93,13 @@ ALLOW_FILE_NAME = {
 }
 
 # List of specific files allowed in relpath to <proj_root>
-ALLOW_SPECIFIC_FILE = {"LICENSE", "NOTICE", "KEYS"}
+ALLOW_SPECIFIC_FILE = {
+    "LICENSE",
+    "NOTICE",
+    "KEYS",
+    "rust/Cargo.lock",
+    "rust/src/generated/STAMP",
+}
 
 
 def filename_allowed(name: str) -> bool:

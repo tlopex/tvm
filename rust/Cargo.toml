@@ -25,7 +25,7 @@ publish = false
 # Pinned git dep: it must stay in lockstep with the tvm-ffi submodule and the
 # linked C++ runtime. Downstream crates must use the same source/revision or
 # Cargo will compile incompatible duplicate crate identities.
-tvm-ffi = { git = "https://github.com/tlopex/tvm-ffi.git", rev = "4bee9f37ea23c8503bdbe49d79a596e8621de826" }
+tvm-ffi = { git = "https://github.com/tlopex/tvm-ffi.git", rev = "0bc872fe530d83a610511ed18079f4f2e62bda3c" }
 
 [lib]
 name = "tvm_tirx_bindings"

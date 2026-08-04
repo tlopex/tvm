@@ -274,6 +274,7 @@ Analyzer AnalyzerObj::Clone() const {
   cloned->canonical_simplify.CopyFrom(this->canonical_simplify);
   cloned->int_set.CopyFrom(this->int_set);
   cloned->transitive_comparisons.CopyFrom(this->transitive_comparisons);
+  cloned->z3_prover.CopyFrom(this->z3_prover);
   return cloned;
 }
 

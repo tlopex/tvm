@@ -15,114 +15,119 @@
 <!--- specific language governing permissions and limitations -->
 <!--- under the License. -->
 
-# Rust bindings and TIRx pass prototype
+# Rust bindings and pass SDK
 
-这个 crate 用 stubgen 生成的 131 个 `#[repr(C)]` IR 镜像读取 TIRx，并在其上增加一层
-手写、可测试的 pass API。当前定位是“验证并推动 stubgen 设计”的原型，不是已经稳定的
-Rust SDK；完整审计见 [STUBGEN_PASS_EVALUATION.md](STUBGEN_PASS_EVALUATION.md)。
+这个 crate 是 TVM IR 的纯 Rust 使用层。Rust 代码通过 `tvm-ffi` ABI 持有对象、读取字段、
+调用 global function 和实现 pass callback；使用者不需要写 C++。C++ 在这里仍然重要，但职责
+只有两项：它是反射 schema 的权威来源，也是 TVM 对象和 pass 的 ABI/runtime 实现。
 
-## 已实现
+stubgen v2 **不再逐字段复制 C++ struct layout**。每个 generated `*Obj` 只保存对象头前缀和
+`!Send + !Sync` marker；字段方法通过运行时 reflection getter 返回拥有所有权的 Rust 值。
+因此 C++ 的隐藏字段、padding、非平凡 constructor/destructor 不会被 Rust 假装成可本地分配的
+结构体。
 
-- `src/ffi_api.rs`：C++ constructor/global 的 typed wrapper，包含 IR、`PassInfo`、
-  `PrimFuncPass`、`ModulePass`、`Sequential` 和 `RunPass`；callback panic 会转成 TVM Error。
-- `src/visitor.rs`：按 TIRx 语义遍历的 fail-closed `StmtExprVisitor`，不是把反射到的所有字段
-  都当 child；支持 subtype，并能恢复地处理 bindings/runtime schema 不一致。
-- `src/mutator.rs`：statement-structural mutator。发生变化时走 C++ constructor，保留校验和
-  `SeqStmt::Flatten` 规范化；不调用 generated native allocation。
-- `src/passes/verify_ssa.rs`：Rust `VerifySSA`，包括 Let 的弱 SSA 规则、buffer definition 和
-  match-buffer scope。
-- `src/passes/skip_assert.rs`：Rust `SkipAssert`，可包装成普通 `PrimFuncPass`。
-- `src/passes/remove_no_op.rs`：保守的第一阶段 RemoveNoOp；未知 Call 一律保留，名称明确为
-  `RustRemoveNoOpConservative`，不冒充依赖 Analyzer 的完整 C++ 实现。
-- `tests/passes.rs`：真实加载 `libtvm_compiler.so` 的端到端测试。
+详细设计、原始问题和验收依据见
+[STUBGEN_PASS_EVALUATION.md](STUBGEN_PASS_EVALUATION.md)。
 
-端到端测试不是只构造 Pass 对象：它把三个 pass 都交给 C++ `RunPass`，覆盖 C++ 传入
-`RValueRef`、Rust callback 解码、返回值所有权以及 panic 转 TVM Error 的完整边界。
+## Generated API 的约定
 
-## 构建和运行
+- 131 个反射对象生成 typed ObjectRef，目标 prefix 的 395 个 globals 全部生成；对象继承通过
+  transparent handle upcast/downcast 表达。
+- 反射字段生成 `value.field() -> tvm_ffi::Result<T>`，不会公开可变镜像字段。
+- C++ nullable ObjectRef 生成 `Option<T>`。FFI `None` 的入站、出站和容器 round-trip 使用同一
+  nullable 语义。
+- `Array<Any>`/`Map<K, Any>` 使用 owning `AnyValue`，不会把标量错误收窄成 ObjectRef。
+- 可精确表达的 global 生成 cached typed wrapper。没有函数 schema 的 callable 生成
+  `*_packed(&[AnyView<'_>]) -> Result<Any>`；复杂 union/tuple/list/dict 边界也安全地类型擦除，
+  不伪造错误的 Rust 签名。
+- generic reflection builder 入口叫 `ffi_new_unchecked`，最终分配只能通过
+  `pub unsafe fn build_unchecked`。它可能绕过类型专用 constructor 的语义检查；pass 应优先调用
+  generated canonical global constructor。
+- reflection 没有证明 C++ 类型线程安全，所以 generated handle 默认 `!Send + !Sync`。以后只有
+  schema 明确给出线程安全契约，才能逐类型放宽。
 
-纯静态检查不要求 TVM build：
+## Pass 层
+
+generated globals 已覆盖 Analyzer、结构化辅助函数和 pass factory 的底层调用。`visitor.rs`、
+`mutator.rs` 和 `passes/` 在其上提供 compiler-pass 语义：child role、definition scope、重建和
+panic containment 都属于 pass SDK，而不是 object binding generator 猜出来的规则。
+
+高层 `analyzer::Analyzer` 不实现 `Clone`：`as_raw().clone()` 会共享可变 C++ 状态，真正的独立副本
+必须显式调用 `fork()`。约束只通过 `with_constraint` closure 暴露，保证 native recovery callback
+严格 LIFO；active scope 中禁止 fork，exit 失败后 wrapper 会 poison 并拒绝继续使用。C++ `Clone`
+同时复制传统分析器和 Z3 prover 状态。
+
+这一区分很关键：generic reflection walk 适合调试、统计和序列化，但 compiler visitor 需要知道
+哪些字段是 child、definition、annotation 或 source span，不能把“所有 ObjectRef 字段”都当作
+语义子节点。
+
+## 构建和测试
+
+开发时让 TVM、Python extension 和 Rust 链接同一套 `libtvm_ffi`：
 
 ```bash
 cd rust
-cargo check --all-targets
-```
-
-运行 demo/test 时，让 C++、Python runtime 和 Rust 使用同一份 `libtvm_ffi`：
-
-```bash
 export TVM_BUILD_DIR=/path/to/tvm/build
-# 仅当 TVM 使用了非系统 libstdc++ 时设置：
+# 仅在 TVM 使用非系统 libstdc++ 时设置：
 export TVM_TOOLCHAIN_LIB_DIR=/path/to/toolchain/lib
 
+cargo check --all-targets
 cargo test --all-targets
 cargo run --bin tirx_demo
 ```
 
-也可以用 `TVM_COMPILER_LIB=/absolute/path/libtvm_compiler.so` 代替
-`TVM_BUILD_DIR`。不要把另一套 Python 环境中的 `libtvm_ffi.so` 放到 TVM build 前面，
-否则同一 SONAME 会产生 ABI/undefined-symbol 错误。
+也可以用 `TVM_COMPILER_LIB=/absolute/path/libtvm_compiler.so` 代替 `TVM_BUILD_DIR`。
+不要把另一 Python 环境的 `libtvm_ffi.so` 放到 TVM build 前面，否则相同 SONAME 可能对应不同
+ABI。
 
-## 安全策略
+## 确定性重新生成
 
-审计确认原 generator 不能从“已反射字段之间没有 padding”推断对象可由 Rust 原生分配。
-`Analyzer`、`Target`、`UniqueNameSupply` 和 Python visitor/mutator 都有未反射的尾部状态或
-非平凡构造逻辑。
+`regen.sh` 始终从空的、同文件系统 staging tree 生成六组 prefix：
+`ir,tirx,target,transform,instrument,arith`。之后依次执行 `rustfmt`、安全 gate 和一个只包含
+candidate generated modules 的独立 Cargo check。任何一步失败都不会改动 checked-in tree。
 
-本分支因此做了以下阻断：
-
-- 删除五个已确定会少分配/漏构造的 API。
-- 其余实验性本地构造从安全 `new` 改为 `unsafe new_unchecked`；pass 代码禁止调用它们。
-- 删除所有 generated `DerefMut`，避免 cloned `ObjectRef` 在 safe Rust 中制造别名 `&mut`。
-- generated `downcast` 改为 subtype-aware；visitor/mutator 另有不会因缺 type key 而 panic 的
-  dispatch。
-- C++ nullable `ObjectRef` 由 tvm-ffi fork `4bee9f37` 原位表示；提供 `is_defined/is_null`，null
-  clone/drop/Any 输出安全，null `Array/Map` 访问会先诊断，不能形成 Rust null reference。
-- `Function::register_global` 拒绝 undefined Function，避免把 null handle 存入 C++ 全局表。
-- 删除会泄漏 `AnyView<'static>` 的 `Array` 索引 API，改成 `get_any(&self) -> AnyView<'_>`；
-  undefined Array/Map 的 `len/is_empty` 与 C++ 一样按空容器处理。
-- `check_generated_safety.sh` 固化上述最低要求。
-
-长期方案仍应在 stubgen 中默认不生成 native allocation：命名 builder 可以保留，但
-`build()` 必须调用 C++ `__ffi_init__` 或公开 constructor global。
-
-nullable 支持目前是验证性 core 改动，不是最终 API：`ObjectArc<T>` 从 `NonNull<T>` 改成 raw
-pointer 后，`Option<ObjectArc<T>>` 不再有单指针 niche 布局保证。更适合 upstream 的方案是区分
-non-null 与 nullable handle，并让 generator 从 C++ `_type_is_nullable` 生成正确类型。当前 derive
-也还不能让 `kTVMFFINone` 按“nullable/non-nullable”分别做入站 Any 转换；因此 null 字段读取与
-出站传参已覆盖，但 `Any(None) -> nullable ObjectRef` round-trip 仍是明确的 P1 缺口。
-
-## 重新生成
-
-当前 Rust backend 只存在于历史 tvm-ffi fork，官方 `tvm-ffi-stubgen` 尚不支持
-`--target rust`。原脚本还会原地分六次覆盖，失败后留下半生成树；现在 `regen.sh` 改为：
-
-1. 在同一文件系统的临时目录生成全部六个 prefix。
-2. 先执行安全检查。
-3. `--check` 比较；只有 `--write` 才替换原树，安装失败会恢复旧树。
-4. 写入 TVM/generator/compiler provenance。
+推荐直接使用本仓库的 tvm-ffi source/build。脚本通过绝对路径加载指定 Python source 和已构建
+Cython extension，避免环境里同名包劫持 import：
 
 ```bash
-export TVM_FFI_STUBGEN=/path/to/fork/bin/tvm-ffi-stubgen
-export TVM_FFI_SOURCE_DIR=/path/to/fork
-export TVM_COMPILER_LIB=/path/to/build/lib/libtvm_compiler.so
+export TVM_FFI_SOURCE_DIR="$PWD/../3rdparty/tvm-ffi"
+export TVM_FFI_BUILD_DIR="$TVM_FFI_SOURCE_DIR/build"
+export TVM_FFI_PYTHON=/path/to/python
+export TVM_COMPILER_LIB="$PWD/../build/lib/libtvm_compiler.so"
 ./regen.sh --check
 ```
 
-当前 `src/generated` 是有 provenance 的历史 snapshot，并应用了批量安全 postprocess；旧
-generator 仍会重新生成 safe native builder，且不会重放 null guard/subtype 等变换，因此
-`regen.sh` 会主动拒绝它，`--write` 目前也不应作为可用工作流。应先把这些规则移入 generator
-模板并 rebase 到 `4bee9f37`，再把 regeneration 变成 CI source of truth。历史生成版本、当前
-runtime pin 和 postprocess 清单记录在 `src/generated/STAMP`。
+也支持已安装的 CLI。wheel/console script 通常不携带可验证的 git provenance，所以必须显式给出
+精确的 40 位 commit：
 
-## 仍然阻塞完整 pass SDK 的问题
+```bash
+export TVM_FFI_STUBGEN=/path/to/tvm-ffi-stubgen
+export TVM_FFI_GENERATOR_COMMIT=<exact-40-hex-commit>
+export TVM_COMPILER_LIB=/path/to/libtvm_compiler.so
+./regen.sh --check
+```
 
-- `Map<String, Any>`/`Optional<Any>` 被错误收窄成 `ObjectRef`，标量 metadata 无法可靠读取。
-- generator 不知道 C++ ObjectRef wrapper 的 nullable 标记，`kTVMFFINone` 入站转换仍不对称。
-- global functions、Analyzer、effect-kind、structural helpers 没有自动生成 typed wrapper。
-- enum 仍是裸 `i32`，缺 Rust 文档、默认参数和 kw-only builder 语义。
-- 没有全量 size/alignment/offset ABI manifest；当前测试只覆盖实际使用到的路径。
-- 完整 `RemoveNoOp` 还需要 Analyzer、side-effect metadata、PassContext config 和 buffer
-  等价证明。
+不要对 TVM 或 tvm-ffi 执行 `pip install -e`。editable install 会让一个 worktree 静默导入另一个
+worktree；TVM 开发使用 `PYTHONPATH`，本脚本的 local-source 模式则完全绕过 editable redirector。
 
-这些问题的优先级和推荐实现顺序见详细评估文档。
+`--check` 对包含 `STAMP` 的完整目录做逐字节比较。`--write` 只安装已验证的 candidate，并在
+rename 或 signal 失败时恢复原树。`STAMP` 只包含确定性输入：format/schema version、generator
+exact commit、runtime exact commit、prefix 集合和 rustfmt version。它特意不记录当前 TVM HEAD
+或 compiler ELF hash；这两者会让相同 schema 的输出随本地 build 改变，真实 schema 变化已经由
+generated 内容的字节差异捕获。
+
+## “10/10”的含义
+
+这里的 10/10 是一组可以在 clean checkout 重放的验收门槛，不是“所有未来 TVM pass 已自动
+实现”的宣传语。只有同时满足以下条件，生成层才记为 10/10：
+
+1. 全量对象和目标 globals 严格生成；不支持的 schema 必须 fail closed 或明确 packed fallback。
+2. 无 `DerefMut`、`ObjectArc::new`、公开 mirrored data field 或 safe native builder。
+3. 所有对象默认 `!Send + !Sync`，字段读取走 owning reflection getter，generic builder 只能
+   `unsafe build_unchecked`。
+4. nullable、heterogeneous Any container、subtype cast 和无签名 callable 有明确且可测试的表示。
+5. fresh generation 确定、格式化、安全检查通过，并可作为独立 Cargo crate 零 warning 编译。
+6. `--check` 不写文件；`--write` staged、可恢复，且 generator/runtime provenance 精确。
+
+`check_generated_safety.sh` 和 `regen.sh --check` 把这些生成层约束固化为 CI 可执行检查。某个具体
+pass 是否与 C++ 实现语义等价，仍需该 pass 自己的端到端测试证明。
