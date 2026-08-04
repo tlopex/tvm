@@ -15,22 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-[package]
-name = "tvm-tirx-bindings"
-version = "0.1.0"
-edition = "2021"
-publish = false
-
-[dependencies]
-# Pinned git dep: it must stay in lockstep with the tvm-ffi submodule and the
-# linked C++ runtime. Downstream crates must use the same source/revision or
-# Cargo will compile incompatible duplicate crate identities.
-tvm-ffi = { git = "https://github.com/tlopex/tvm-ffi.git", rev = "4bee9f37ea23c8503bdbe49d79a596e8621de826" }
-
-[lib]
-name = "tvm_tirx_bindings"
-path = "src/lib.rs"
-
-[[bin]]
-name = "tirx_demo"
-path = "src/main.rs"
+[toolchain]
+channel = "stable"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

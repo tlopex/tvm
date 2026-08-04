@@ -66,8 +66,11 @@ impl RemoveNoOpConfig {
     pub fn downcast<N: tvm_ffi::ObjectCore>(&self) -> Option<&N> {
         unsafe {
             let raw = ObjectArc::as_raw(&self.data) as *const N;
+            if raw.is_null() {
+                return None;
+            }
             let header = raw as *const tvm_ffi::tvm_ffi_sys::TVMFFIObject;
-            if (*header).type_index == <N as tvm_ffi::ObjectCore>::type_index() {
+            if tvm_ffi::object::is_instance_of::<N>((*header).type_index) {
                 Some(&*raw)
             } else {
                 None
@@ -75,7 +78,9 @@ impl RemoveNoOpConfig {
         }
     }
 
-    pub fn new(max_simplification_steps: i64, ignore_profiler_call: bool) -> Self {
+    /// # Safety
+    /// Bypasses C++ construction and validation; use only for explicit ABI experiments.
+    pub unsafe fn new_unchecked(max_simplification_steps: i64, ignore_profiler_call: bool) -> Self {
         Self {
             data: ObjectArc::new(RemoveNoOpConfigObj {
                 base: Object::new(),
@@ -125,8 +130,11 @@ impl StmtSimplifyConfig {
     pub fn downcast<N: tvm_ffi::ObjectCore>(&self) -> Option<&N> {
         unsafe {
             let raw = ObjectArc::as_raw(&self.data) as *const N;
+            if raw.is_null() {
+                return None;
+            }
             let header = raw as *const tvm_ffi::tvm_ffi_sys::TVMFFIObject;
-            if (*header).type_index == <N as tvm_ffi::ObjectCore>::type_index() {
+            if tvm_ffi::object::is_instance_of::<N>((*header).type_index) {
                 Some(&*raw)
             } else {
                 None
@@ -134,7 +142,13 @@ impl StmtSimplifyConfig {
         }
     }
 
-    pub fn new(transitively_prove_inequalities: bool, convert_boolean_to_and_of_ors: bool, apply_constraints_to_boolean_branches: bool) -> Self {
+    /// # Safety
+    /// Bypasses C++ construction and validation; use only for explicit ABI experiments.
+    pub unsafe fn new_unchecked(
+        transitively_prove_inequalities: bool,
+        convert_boolean_to_and_of_ors: bool,
+        apply_constraints_to_boolean_branches: bool,
+    ) -> Self {
         Self {
             data: ObjectArc::new(StmtSimplifyConfigObj {
                 base: Object::new(),
@@ -187,8 +201,11 @@ impl UnrollLoopConfig {
     pub fn downcast<N: tvm_ffi::ObjectCore>(&self) -> Option<&N> {
         unsafe {
             let raw = ObjectArc::as_raw(&self.data) as *const N;
+            if raw.is_null() {
+                return None;
+            }
             let header = raw as *const tvm_ffi::tvm_ffi_sys::TVMFFIObject;
-            if (*header).type_index == <N as tvm_ffi::ObjectCore>::type_index() {
+            if tvm_ffi::object::is_instance_of::<N>((*header).type_index) {
                 Some(&*raw)
             } else {
                 None
@@ -196,7 +213,15 @@ impl UnrollLoopConfig {
         }
     }
 
-    pub fn new(auto_max_step: i32, auto_max_depth: i32, auto_max_extent: i32, explicit_unroll: i32, unroll_local_access: i32) -> Self {
+    /// # Safety
+    /// Bypasses C++ construction and validation; use only for explicit ABI experiments.
+    pub unsafe fn new_unchecked(
+        auto_max_step: i32,
+        auto_max_depth: i32,
+        auto_max_extent: i32,
+        explicit_unroll: i32,
+        unroll_local_access: i32,
+    ) -> Self {
         Self {
             data: ObjectArc::new(UnrollLoopConfigObj {
                 base: Object::new(),

@@ -1,5 +1,5 @@
 /target
-Cargo.lock
+!Cargo.lock
 
 # Re-include the stubgen-generated target/build module — the repo-root
 # unanchored `build/` pattern otherwise swallows it (this is how the module

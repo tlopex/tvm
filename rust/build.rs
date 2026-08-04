@@ -17,40 +17,106 @@
  * under the License.
  */
 
-//! Re-emit loader paths so plain `cargo run` finds libtvm_ffi (from the
-//! tvm-ffi python install) and the conda libstdc++ that ~/tvm's libraries
-//! were built against (CXXABI_1.3.15).
+//! Configure link and loader paths from the TVM build itself, so the Rust
+//! bindings and `libtvm_compiler` use the same `libtvm_ffi`.
 use std::env;
-use std::process::Command;
+use std::path::{Path, PathBuf};
+
+fn resolve_from_manifest(manifest_dir: &Path, path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else {
+        manifest_dir.join(path)
+    }
+}
+
+fn push_unique(dirs: &mut Vec<PathBuf>, dir: PathBuf) {
+    if !dirs.contains(&dir) {
+        dirs.push(dir);
+    }
+}
 
 fn main() {
-    let mut dirs: Vec<String> = Vec::new();
+    println!("cargo:rerun-if-env-changed=TVM_BUILD_DIR");
+    println!("cargo:rerun-if-env-changed=TVM_COMPILER_LIB");
+    println!("cargo:rerun-if-env-changed=TVM_TOOLCHAIN_LIB_DIR");
 
-    // libtvm_ffi from the active tvm-ffi install (needs the venv activated).
-    if let Ok(out) = Command::new("tvm-ffi-config").arg("--libdir").output() {
-        if out.status.success() {
-            dirs.push(String::from_utf8(out.stdout).unwrap().trim().to_string());
+    let manifest_dir = PathBuf::from(
+        env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by Cargo"),
+    );
+    let compiler_lib = env::var_os("TVM_COMPILER_LIB")
+        .map(PathBuf::from)
+        .map(|path| resolve_from_manifest(&manifest_dir, path));
+    let build_lib_dir = if let Some(compiler_lib) = compiler_lib.as_ref() {
+        compiler_lib
+            .parent()
+            .expect("TVM_COMPILER_LIB must include a parent directory")
+            .to_path_buf()
+    } else {
+        let build_dir = env::var_os("TVM_BUILD_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("../build"));
+        resolve_from_manifest(&manifest_dir, build_dir).join("lib")
+    };
+
+    let mut dirs = Vec::new();
+    if build_lib_dir.is_dir() {
+        println!("cargo:rustc-link-search=native={}", build_lib_dir.display());
+        push_unique(&mut dirs, build_lib_dir.clone());
+    } else {
+        println!(
+            "cargo:warning=TVM library directory `{}` does not exist; cargo check can proceed, but linking or running requires a configured TVM build (set TVM_BUILD_DIR)",
+            build_lib_dir.display()
+        );
+    }
+    if let Some(compiler_lib) = compiler_lib {
+        if !compiler_lib.is_file() {
+            println!(
+                "cargo:warning=TVM_COMPILER_LIB `{}` does not exist",
+                compiler_lib.display()
+            );
         }
     }
-    // conda toolchain's libstdc++ (gcc-15) used to build ~/tvm.
-    let home = env::var("HOME").unwrap_or_default();
-    let conda_lib = format!("{home}/miniforge3/envs/tvm-build-venv/lib");
-    if std::path::Path::new(&conda_lib).exists() {
-        dirs.push(conda_lib);
+
+    if let Some(toolchain_lib_dir) = env::var_os("TVM_TOOLCHAIN_LIB_DIR") {
+        let toolchain_lib_dir =
+            resolve_from_manifest(&manifest_dir, PathBuf::from(toolchain_lib_dir));
+        if toolchain_lib_dir.is_dir() {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                toolchain_lib_dir.display()
+            );
+            push_unique(&mut dirs, toolchain_lib_dir);
+        } else {
+            println!(
+                "cargo:warning=TVM_TOOLCHAIN_LIB_DIR `{}` does not exist and will be ignored",
+                toolchain_lib_dir.display()
+            );
+        }
     }
-    // ~/tvm/build/lib itself (libtvm_compiler.so and friends).
-    let manifest = env::var("CARGO_MANIFEST_DIR").unwrap();
-    dirs.push(format!("{manifest}/../build/lib"));
 
     let loader_var = match env::var("CARGO_CFG_TARGET_OS").as_deref() {
         Ok("windows") => "PATH",
         Ok("macos") => "DYLD_LIBRARY_PATH",
         _ => "LD_LIBRARY_PATH",
     };
-    let sep = if loader_var == "PATH" { ";" } else { ":" };
-    let prev = env::var(loader_var).unwrap_or_default();
-    if !prev.is_empty() {
-        dirs.push(prev);
+    println!("cargo:rerun-if-env-changed={loader_var}");
+
+    if let Some(previous) = env::var_os(loader_var) {
+        for dir in env::split_paths(&previous) {
+            push_unique(&mut dirs, dir);
+        }
     }
-    println!("cargo:rustc-env={loader_var}={}", dirs.join(sep));
+
+    if !dirs.is_empty() {
+        match env::join_paths(&dirs) {
+            Ok(paths) => println!(
+                "cargo:rustc-env={loader_var}={}",
+                paths.to_string_lossy()
+            ),
+            Err(err) => println!(
+                "cargo:warning=failed to construct {loader_var} from configured library paths: {err}"
+            ),
+        }
+    }
 }

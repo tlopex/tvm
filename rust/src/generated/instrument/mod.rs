@@ -65,8 +65,11 @@ impl PassInstrument {
     pub fn downcast<N: tvm_ffi::ObjectCore>(&self) -> Option<&N> {
         unsafe {
             let raw = ObjectArc::as_raw(&self.data) as *const N;
+            if raw.is_null() {
+                return None;
+            }
             let header = raw as *const tvm_ffi::tvm_ffi_sys::TVMFFIObject;
-            if (*header).type_index == <N as tvm_ffi::ObjectCore>::type_index() {
+            if tvm_ffi::object::is_instance_of::<N>((*header).type_index) {
                 Some(&*raw)
             } else {
                 None

@@ -1,0 +1,12 @@
+# Historical provenance recovered from the deleted generation stamp.
+generated_from_tvm=a6b50b1f6
+generated_with_tvm_ffi=317fd81032e51d5caa17aab32a361b98daf98c95
+
+# Runtime combination exercised by rust/tests/passes.rs on 2026-08-03.
+validated_tvm=b831b1ae429b2f56ce4d7ba6631e389dd19af50b
+validated_tvm_ffi=4bee9f37ea23c8503bdbe49d79a596e8621de826
+
+# Deterministic policy applied to this historical snapshot after generation.
+# The 317fd810 generator does not yet reproduce these transformations; see
+# rust/regen.sh and STUBGEN_PASS_EVALUATION.md before replacing this tree.
+postprocess=no_deref_mut,native_new_unchecked,unsafe_ctor_removal,subtype_downcast,null_downcast_guard,ffi_init_compat

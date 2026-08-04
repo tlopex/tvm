@@ -17,13 +17,14 @@
  * under the License.
  */
 
-//! Compat shims for fork-only tvm-ffi APIs that the stubgen output relies
-//! on but that were not upstreamed to apache/tvm-ffi (the crate pin moved
-//! from the Seven-Streams rust_stubgen fork to official main; the rust
-//! stubgen itself has not landed upstream yet, so the generated call site
-//! in `generated/ir/mod.rs` is patched to call here instead).
+//! Compat shims for APIs emitted by the historical Rust stub generator but
+//! absent from the current tvm-ffi runtime fork. The generated call site in
+//! `generated/ir/mod.rs` is postprocessed to call here; the long-term fix is
+//! to move the method/TypeAttr fallback into the rebased generator/runtime.
 
-use tvm_ffi::tvm_ffi_sys::TVMFFIGetTypeInfo;
+use tvm_ffi::tvm_ffi_sys::{
+    TVMFFIByteArray, TVMFFIGetTypeAttrColumn, TVMFFIGetTypeInfo, TVMFFITypeIndex,
+};
 use tvm_ffi::{AnyCompatible, Error, Function, Result};
 
 /// Fork `Function::from_type_method_cached`: look up a reflected type method
@@ -43,8 +44,13 @@ pub fn from_type_method_cached(
     })
 }
 
-/// Fork `Function::from_type_method`: fetch a method from the type's
+/// Fork `Function::from_type_method`: fetch a constructor hook from the type's
 /// reflection table as an `ffi::Function`.
+///
+/// Explicit type methods take precedence.  Auto-generated dataclass
+/// constructors such as `__ffi_init__`, however, are registered only in a
+/// `TypeAttrColumn`, so that column is the required fallback (matching the
+/// Python binding's lookup order).
 pub fn from_type_method(type_index: i32, method_name: &str) -> Result<Function> {
     let type_error = |msg: String| Error::new(tvm_ffi::error::TYPE_ERROR, &msg, "");
     unsafe {
@@ -66,6 +72,26 @@ pub fn from_type_method(type_index: i32, method_name: &str) -> Result<Function> 
                 return Ok(<Function as AnyCompatible>::copy_from_any_view_after_check(
                     &mi.method,
                 ));
+            }
+        }
+
+        let attr_name = TVMFFIByteArray::from_str(method_name);
+        let column = TVMFFIGetTypeAttrColumn(&attr_name);
+        if !column.is_null() {
+            let column = &*column;
+            let index = type_index - column.begin_index;
+            if index >= 0 && index < column.size && !column.data.is_null() {
+                let attr = &*column.data.add(index as usize);
+                if attr.type_index != TVMFFITypeIndex::kTVMFFINone as i32 {
+                    if !<Function as AnyCompatible>::check_any_strict(attr) {
+                        return Err(type_error(format!(
+                            "type attribute `{method_name}` on type_index `{type_index}` is not a Function"
+                        )));
+                    }
+                    return Ok(<Function as AnyCompatible>::copy_from_any_view_after_check(
+                        attr,
+                    ));
+                }
             }
         }
     }
