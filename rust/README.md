@@ -17,53 +17,49 @@
 
 # Rust bindings and pass SDK
 
-这个 crate 是 TVM IR 的纯 Rust 使用层。Rust 代码通过 `tvm-ffi` ABI 持有对象、读取字段、
-调用 global function 和实现 pass callback；使用者不需要写 C++。C++ 在这里仍然重要，但职责
-只有两项：它是反射 schema 的权威来源，也是 TVM 对象和 pass 的 ABI/runtime 实现。
+这个 crate 让 Rust 代码通过 `tvm-ffi` 使用 TVM IR。它包含两个边界不同的部分：
 
-stubgen v3 **不再逐字段复制 C++ struct layout**。每个 generated `*Obj` 只保存继承前缀和
-`!Send + !Sync` marker。每个节点都保留 marker，因此单独生成继承自外部 parent 的类型时也不会
-错误获得 `Send/Sync`。字段方法通过运行时 reflection getter 返回拥有所有权的 Rust 值。
-因此 C++ 的隐藏字段、padding、非平凡 constructor/destructor 不会被 Rust 假装成可本地分配的
-结构体。
+- `src/generated/` 是 stubgen 根据 TVM reflection schema 生成的绑定。
+- `visitor.rs`、`mutator.rs`、`analyzer.rs`、`passes/` 和相关辅助代码是手写 pass SDK。
 
-详细设计、原始问题和验收依据见
+stubgen 只负责把已有 ABI 暴露成 Rust API。visitor 的 child role、definition scope、重写规则、
+Analyzer 的状态约束和具体 pass 算法都不是 reflection 可以推导的内容，也不应算作 stubgen 的能力。
+
+Rust 使用者不需要编写 C++，但这不是一套脱离 native TVM 的 IR 实现。TVM 的 reflection schema、
+对象生命周期、constructor invariant、global function 和 pass runtime 仍由 C++/tvm-ffi 提供。
+
+## Stubgen 生成什么
+
+- 每个 IR 类型生成 opaque typed handle，而不是可由 Rust 分配的 C++ struct 镜像。
+- reflected field 生成 `value.field() -> tvm_ffi::Result<T>` getter。getter 通过 runtime reflection
+  返回 owning Rust 值，不公开可变字段。
+- nullable ObjectRef 映射成 `Option<T>`；异构容器保留 owning `AnyValue`，不会把 scalar 强行
+  转成 ObjectRef。
+- 有可表达 schema 的 global 生成 typed wrapper；无法静态表达的 callable 使用明确的 packed
+  fallback，而不是伪造函数签名。
+- generated handle 默认不声称 `Send` 或 `Sync`。reflection 没有提供足够的线程安全证明。
+
+stubgen 不生成 Rust-side object allocation、逐字段 builder、visitor、mutator、Analyzer 语义或
+pass 算法。创建和重建 IR 必须调用 TVM 已注册的 native global，不能写 reflected field 来冒充
+native constructor。
+
+`src/prim_expr.rs` 也是手写 bridge：`PrimExpr` 是带 `PrimType` 约束的 `Expr` view，不是一个独立
+runtime node。它被生成 API 引用，但它本身不属于 stubgen 输出。
+
+详细的边界和验收说明见
 [STUBGEN_PASS_EVALUATION.md](STUBGEN_PASS_EVALUATION.md)。
 
-## Generated API 的约定
+## 手写 pass SDK
 
-- 131 个反射对象生成 typed ObjectRef，目标 prefix 的 395 个 globals 全部生成；对象继承通过
-  transparent handle upcast/downcast 表达。
-- 反射字段生成 `value.field() -> tvm_ffi::Result<T>`，不会公开可变镜像字段。
-- C++ nullable ObjectRef 生成 `Option<T>`。FFI `None` 的入站、出站和容器 round-trip 使用同一
-  nullable 语义。
-- `Array<Any>`/`Map<K, Any>` 使用 owning `AnyValue`，不会把标量错误收窄成 ObjectRef。
-- 可精确表达的 global 生成 cached typed wrapper。没有函数 schema 的 callable 生成
-  `*_packed(&[AnyView<'_>]) -> Result<Any>`；复杂 union/tuple/list/dict 边界也安全地类型擦除，
-  不伪造错误的 Rust 签名。
-- generic reflection builder 完全不生成：字段 metadata 不能证明 constructor invariant。只有明确
-  注册为 static `__ffi_init__` 的 canonical factory，或 typed global constructor，才生成构造入口。
-- reflection 没有证明 C++ 类型线程安全，所以 generated handle 默认 `!Send + !Sync`。以后只有
-  schema 明确给出线程安全契约，才能逐类型放宽。runtime 的通用 `Object`/`ObjectRef` 擦除入口
-  也保持这个限制；注册到 C++ registry 的 Rust callback 则反向要求 closure 为 `Send + Sync`。
+pass SDK 在 generated bindings 之上提供可审查的编译器语义：
 
-## Pass 层
+- visitor 明确列出要遍历的 Expr/Stmt child，而不是递归所有 ObjectRef 字段；
+- mutator 把 Rust rewrite policy 接到 TVM 的 canonical transform/global；
+- Analyzer wrapper 约束共享状态、constraint scope 和错误恢复；
+- pass wrapper 负责 callback ownership、panic 转换和 native pass 调用。
 
-generated globals 已覆盖 Analyzer、结构化辅助函数和 pass factory 的底层调用。`visitor.rs`、
-`mutator.rs` 和 `passes/` 在其上提供 compiler-pass 语义：child role、definition scope、重建和
-panic containment 都属于 pass SDK，而不是 object binding generator 猜出来的规则。当前 visitor
-覆盖 Expr/Stmt；mutator 是 statement-structural 层，表达式和 Buffer descriptor 只读保留，还不
-声称是完整的 `StmtExprMutator`。
-
-高层 `analyzer::Analyzer` 不实现 `Clone`；真正的独立副本必须显式调用 `fork()`。需要逃离高层契约
-时只能消费 wrapper 调用 `into_raw()`，不能借用后 clone 出共享的可变状态。约束只通过
-`with_constraint` closure 暴露，保证 native recovery callback
-严格 LIFO；active scope 中禁止 fork，exit 失败后 wrapper 会 poison 并拒绝继续使用。C++ `Clone`
-同时复制传统分析器和 Z3 prover 状态。
-
-这一区分很关键：generic reflection walk 适合调试、统计和序列化，但 compiler visitor 需要知道
-哪些字段是 child、definition、annotation 或 source span，不能把“所有 ObjectRef 字段”都当作
-语义子节点。
+这些能力要靠各自的行为测试证明。generated bindings 可以编译或 getter 可以读取，不等于某个
+Rust pass 已与 C++ pass 语义等价。
 
 ## 构建和测试
 
@@ -80,20 +76,20 @@ cargo test --all-targets
 cargo run --bin tirx_demo
 ```
 
-也可以用 `TVM_COMPILER_LIB=/absolute/path/libtvm_compiler.so` 代替 `TVM_BUILD_DIR`。
-不要把另一 Python 环境的 `libtvm_ffi.so` 放到 TVM build 前面，否则相同 SONAME 可能对应不同
-ABI。
+也可以用 `TVM_COMPILER_LIB=/absolute/path/libtvm_compiler.so` 代替 `TVM_BUILD_DIR`。不要把另一
+Python 环境的 `libtvm_ffi.so` 放到 TVM build 前面；相同 SONAME 不代表相同 ABI。
 
-## 确定性重新生成
+## 重新生成
 
-`regen.sh` 始终从空的、同文件系统 staging tree 生成六组 prefix：
-`ir,tirx,target,transform,instrument,arith`。之后依次执行 `rustfmt`、安全 gate 和一个只包含
-candidate generated modules 的独立 Cargo check。验证阶段的任何失败都不会改动 checked-in tree。
+`regen.sh` 从空的、同文件系统 staging 目录开始，在一次 Rust stubgen 调用中选择六个 schema
+root：`ir`、`tirx`、`target`、`transform`、`instrument` 和 `arith`。Rust generator 的 schema
+选择只需要这些 `--init-prefix`，不需要额外的初始化配置。
 
-推荐直接使用本仓库的 tvm-ffi source/build。脚本通过绝对路径加载指定 Python source 和已构建
-Cython extension，避免环境里同名包劫持 import：
+脚本默认使用仓库内的 tvm-ffi source/build，并通过绝对路径加载 Python package、
+`libtvm_ffi.so` 和已构建的 extension：
 
 ```bash
+cd rust
 export TVM_FFI_SOURCE_DIR="$PWD/../3rdparty/tvm-ffi"
 export TVM_FFI_BUILD_DIR="$TVM_FFI_SOURCE_DIR/build"
 export TVM_FFI_PYTHON=/path/to/python
@@ -101,42 +97,22 @@ export TVM_COMPILER_LIB="$PWD/../build/lib/libtvm_compiler.so"
 ./regen.sh --check
 ```
 
-也支持已安装的 CLI。wheel/console script 通常不携带可独立验证的 git provenance，所以调用者
-必须显式声明一个 40 位 source commit；脚本会把它记录下来，但不能反向证明该 binary 来自此
-commit：
+生成后的唯一完整 E2E gate 是：
 
-```bash
-export TVM_FFI_STUBGEN=/path/to/tvm-ffi-stubgen
-export TVM_FFI_GENERATOR_COMMIT=<exact-40-hex-commit>
-export TVM_COMPILER_LIB=/path/to/libtvm_compiler.so
-./regen.sh --check
-```
+1. 对 fresh candidate 执行 `rustfmt` 和 generated-source safety scan。
+2. 创建 fresh Cargo crate，放入 candidate generated tree 和实际必需的手写 `prim_expr.rs` bridge。
+3. 以 `RUSTFLAGS=-D warnings` 对该 crate 执行 `cargo check --all-targets`。
+4. 加载真实 `libtvm_compiler`，创建 `IntImm(int32, 37)`，并读取三类 reflected field：scalar
+   `value()`、object `ty()`（再读取 `PrimType::dtype()`）和 `Array` `SeqStmt::seq()`。
 
-不要对 TVM 或 tvm-ffi 执行 `pip install -e`。editable install 会让一个 worktree 静默导入另一个
-worktree；TVM 开发使用 `PYTHONPATH`，本脚本的 local-source 模式则完全绕过 editable redirector。
+这个 smoke 的目的很窄：证明当前生成的 scalar、object 和 `Array` getter 能通过真实 runtime
+工作。它不证明所有字段、所有类型或任何 pass 算法正确。
 
-`--check` 对包含 `STAMP` 的完整目录做逐字节比较。`--write` 只安装已验证的 candidate，并在
-handled error、`INT` 或 `TERM` 时尝试恢复原树；进程被 `SIGKILL` 或机器掉电不在这个恢复保证内。
-`STAMP` 记录 format/schema version、generator/runtime source commit、prefix 集合和 rustfmt
-version。本地 source 模式验证 source worktree clean，但没有独立证明已构建的 `.so` 正好来自该
-commit；installed CLI 的 commit 是调用者声明。它特意不记录当前 TVM HEAD 或 compiler ELF
-hash；这两者会让相同 schema 的输出随本地 build 改变，真实 schema 变化仍由 generated 内容的
-字节差异捕获。
+`--check` 比较包含 `STAMP` 的完整目录，不写 checked-in tree；`--write` 只安装通过上述 gate 的
+candidate，并对脚本可处理的错误和信号保留恢复路径。`STAMP` 记录 generator/runtime commit、
+dirty 状态、generated Rust source hash、prefix 和 rustfmt 版本。dirty worktree 会被如实记录，
+但不会被脚本强制拒绝。
 
-## “10/10”的含义
-
-这里的 10/10 是一组可以在 clean checkout 重放的验收门槛，不是“所有未来 TVM pass 已自动
-实现”的宣传语。只有同时满足以下条件，生成层才记为 10/10：
-
-1. 全量对象和目标 globals 严格生成；不支持的 schema 必须 fail closed 或明确 packed fallback。
-2. 无 `DerefMut`、`ObjectArc::new`、公开 mirrored data field 或 generic reflection builder。
-3. 每个对象都显式建立 `!Send + !Sync`，字段读取走 owning reflection getter。
-4. nullable、heterogeneous Any container、subtype cast 和无签名 callable 有明确且可测试的表示。
-5. fresh generation 确定、格式化、policy safety gate 通过，并可作为独立 Cargo crate 零 warning
-   编译。
-6. `--check` 不改 checked-in source tree；`--write` staged，并对 handled error/signal 提供恢复。
-   本地 source/runtime commit 被验证，installed CLI commit 明确标为调用者声明。
-
-`check_generated_safety.sh` 是可执行的源码 policy scan，不是形式化内存安全证明；它和独立编译、
-runtime/compile-fail 测试及 `regen.sh --check` 一起固化生成层约束。某个具体 pass 是否与 C++ 实现
-语义等价，仍需该 pass 自己的端到端测试证明。
+不要对 TVM 或 tvm-ffi 执行 `pip install -e`。多 worktree 开发时，editable redirector 可能让
+命令从另一 checkout 导入同名 package；`regen.sh` 会绕过该 redirector，但普通开发环境仍应避免
+这种混用。

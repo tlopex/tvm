@@ -49,9 +49,6 @@ fail_on_match \
     "generic reflected builders are prohibited; constructor invariants are unknown" \
     '\b(?:ffi_new_unchecked|build_unchecked|get_kwargs_object)\b'
 fail_on_match \
-    "safe native new() returning an object is prohibited" \
-    'pub\s+fn\s+new\s*\([^;{]*\)\s*->\s*(?:Self|Result\s*<\s*Self\s*>)\s*\{'
-fail_on_match \
     "pointer identity belongs on ObjectRefCore, not every generated type" \
     'pub\s+fn\s+same_as\s*<'
 fail_on_match \

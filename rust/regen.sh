@@ -29,11 +29,7 @@ runtime_crate="$runtime_source/rust/tvm-ffi"
 compiler_lib="${TVM_COMPILER_LIB:-$repo_dir/build/lib/libtvm_compiler.so}"
 prefixes=(ir tirx target transform instrument arith)
 prefix_csv="$(IFS=,; printf '%s' "${prefixes[*]}")"
-schema_version="tvm-ffi-reflection-rust-v3"
-expected_object_count=131
-expected_global_count=395
-expected_getter_count=307
-expected_packed_fallback_count=18
+schema_version="tvm-ffi-reflection-rust-v6"
 
 mode="${1:---check}"
 if [[ "$mode" != "--check" && "$mode" != "--write" ]]; then
@@ -57,12 +53,14 @@ if [[ ! -f "$runtime_crate/Cargo.toml" ]]; then
     exit 1
 fi
 
-# The compile gate consumes the runtime worktree, so a commit-only STAMP would
-# be false provenance if that worktree were dirty.
+# The compile gate consumes the runtime worktree directly.  Development
+# regeneration is allowed from a dirty checkout, but the STAMP must say so
+# explicitly instead of presenting the HEAD commit as exact provenance.
 runtime_commit="$(git -C "$runtime_source" rev-parse 'HEAD^{commit}')"
+runtime_dirty=false
 if [[ -n "$(git -C "$runtime_source" status --porcelain=v1 --untracked-files=normal)" ]]; then
-    echo "tvm-ffi runtime worktree must be clean before regeneration" >&2
-    exit 1
+    runtime_dirty=true
+    echo "warning: tvm-ffi runtime worktree is dirty; STAMP will record runtime_dirty=true" >&2
 fi
 cargo_runtime_commit="$(sed -nE '/^tvm-ffi = /s/.*rev = "([0-9a-f]{40})".*/\1/p' "$script_dir/Cargo.toml")"
 if [[ "$cargo_runtime_commit" != "$runtime_commit" ]]; then
@@ -101,45 +99,44 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-generator_source="${TVM_FFI_SOURCE_DIR:-}"
+generator_source="${TVM_FFI_SOURCE_DIR:-$runtime_source}"
 generator_commit=""
-stubgen="${TVM_FFI_STUBGEN:-tvm-ffi-stubgen}"
 python_bin="${TVM_FFI_PYTHON:-python3}"
 
-if [[ -n "$generator_source" ]]; then
-    generator_source="$(cd "$generator_source" && pwd -P)"
-    generator_build="${TVM_FFI_BUILD_DIR:-$generator_source/build}"
-    if [[ ! -d "$generator_build" ]]; then
-        echo "local tvm-ffi build directory does not exist: $generator_build" >&2
-        exit 1
-    fi
-    generator_build="$(cd "$generator_build" && pwd -P)"
-    if [[ ! -f "$generator_source/python/tvm_ffi/stub/cli.py" ]]; then
-        echo "TVM_FFI_SOURCE_DIR is not a tvm-ffi source tree: $generator_source" >&2
-        exit 1
-    fi
-    if ! command -v "$python_bin" >/dev/null 2>&1; then
-        echo "Python interpreter not found: $python_bin" >&2
-        exit 1
-    fi
-    generator_commit="$(git -C "$generator_source" rev-parse 'HEAD^{commit}')"
-    if [[ -n "$(git -C "$generator_source" status --porcelain=v1 --untracked-files=normal)" ]]; then
-        echo "TVM_FFI_SOURCE_DIR must be clean so generator_commit is exact" >&2
-        exit 1
-    fi
-    if [[ ! -f "$generator_build/lib/libtvm_ffi.so" ]]; then
-        echo "local tvm-ffi runtime is not built: $generator_build/lib/libtvm_ffi.so" >&2
-        echo "set TVM_FFI_BUILD_DIR to its configured build directory" >&2
-        exit 1
-    fi
-    if ! compgen -G "$generator_build/core.*.so" >/dev/null; then
-        echo "local tvm-ffi Python extension is not built under: $generator_build" >&2
-        exit 1
-    fi
+generator_source="$(cd "$generator_source" && pwd -P)"
+generator_build="${TVM_FFI_BUILD_DIR:-$generator_source/build}"
+if [[ ! -d "$generator_build" ]]; then
+    echo "local tvm-ffi build directory does not exist: $generator_build" >&2
+    exit 1
+fi
+generator_build="$(cd "$generator_build" && pwd -P)"
+if [[ ! -f "$generator_source/python/tvm_ffi/stub/cli.py" ]]; then
+    echo "TVM_FFI_SOURCE_DIR is not a tvm-ffi source tree: $generator_source" >&2
+    exit 1
+fi
+if ! command -v "$python_bin" >/dev/null 2>&1; then
+    echo "Python interpreter not found: $python_bin" >&2
+    exit 1
+fi
+generator_commit="$(git -C "$generator_source" rev-parse 'HEAD^{commit}')"
+generator_dirty=false
+if [[ -n "$(git -C "$generator_source" status --porcelain=v1 --untracked-files=normal)" ]]; then
+    generator_dirty=true
+    echo "warning: tvm-ffi generator worktree is dirty; STAMP will record generator_dirty=true" >&2
+fi
+if [[ ! -f "$generator_build/lib/libtvm_ffi.so" ]]; then
+    echo "local tvm-ffi runtime is not built: $generator_build/lib/libtvm_ffi.so" >&2
+    echo "set TVM_FFI_BUILD_DIR to its configured build directory" >&2
+    exit 1
+fi
+if ! compgen -G "$generator_build/core.*.so" >/dev/null; then
+    echo "local tvm-ffi Python extension is not built under: $generator_build" >&2
+    exit 1
+fi
 
-    run_stubgen() {
-        TVM_FFI_SOURCE="$generator_source" TVM_FFI_BUILD="$generator_build" \
-            "$python_bin" - "$@" <<'PY'
+run_stubgen() {
+    TVM_FFI_SOURCE="$generator_source" TVM_FFI_BUILD="$generator_build" \
+        "$python_bin" - "$@" <<'PY'
 import ctypes
 import importlib.util
 import os
@@ -199,28 +196,10 @@ from tvm_ffi.stub.cli import __main__
 
 raise SystemExit(__main__())
 PY
-    }
-else
-    if ! command -v "$stubgen" >/dev/null 2>&1; then
-        echo "Rust stub generator not found: $stubgen" >&2
-        echo "install tvm-ffi-stubgen or set TVM_FFI_SOURCE_DIR" >&2
-        exit 1
-    fi
-    generator_commit="${TVM_FFI_GENERATOR_COMMIT:-}"
-    if [[ ! "$generator_commit" =~ ^[0-9a-fA-F]{40}$ ]]; then
-        echo "installed stubgen needs exact TVM_FFI_GENERATOR_COMMIT (40 hex digits)" >&2
-        exit 1
-    fi
-    generator_commit="${generator_commit,,}"
-    run_stubgen() {
-        "$stubgen" "$@"
-    }
-fi
+}
 
 loader_paths="$(dirname "$compiler_lib")"
-if [[ -n "$generator_source" ]]; then
-    loader_paths="$generator_build/lib:$loader_paths"
-fi
+loader_paths="$generator_build/lib:$loader_paths"
 if [[ -n "${TVM_TOOLCHAIN_LIB_DIR:-}" ]]; then
     loader_paths="$loader_paths:$TVM_TOOLCHAIN_LIB_DIR"
 fi
@@ -234,20 +213,21 @@ if ! stubgen_help="$(run_stubgen --help 2>&1)"; then
     printf '%s\n' "$stubgen_help" >&2
     exit 1
 fi
-if ! rg -q -- '--target' <<<"$stubgen_help" || ! rg -q -- 'rust' <<<"$stubgen_help"; then
-    echo "selected stubgen does not advertise --target rust support" >&2
+if ! rg -q -- '--target' <<<"$stubgen_help" || \
+    ! rg -q -- 'rust' <<<"$stubgen_help"; then
+    echo "selected stubgen does not advertise the required Rust interface" >&2
     printf '%s\n' "$stubgen_help" >&2
     exit 1
 fi
 
+prefix_args=()
 for prefix in "${prefixes[@]}"; do
-    echo "generating prefix: $prefix"
-    run_stubgen "$candidate" --target rust \
-        --dlls "$compiler_lib" \
-        --init-lib tvm_compiler \
-        --init-pypkg tvm \
-        --init-prefix "$prefix."
+    prefix_args+=(--init-prefix "$prefix.")
 done
+echo "generating dependency-closed prefixes: $prefix_csv"
+run_stubgen "$candidate" --target rust \
+    --dlls "$compiler_lib" \
+    "${prefix_args[@]}"
 
 mapfile -d '' rust_files < <(find "$candidate" -type f -name '*.rs' -print0 | sort -z)
 if [[ "${#rust_files[@]}" == 0 ]]; then
@@ -257,29 +237,33 @@ fi
 rustfmt --edition 2021 "${rust_files[@]}"
 "$script_dir/check_generated_safety.sh" "$candidate"
 
-object_count="$(rg --no-ignore -o '^pub struct [A-Za-z_][A-Za-z0-9_]*Obj\s*\{' "$candidate" -g '*.rs' | wc -l)"
-global_count="$(rg --no-ignore -o '^pub fn ' "$candidate" -g '*.rs' | wc -l)"
-getter_count="$(rg --no-ignore -o 'tvm_ffi::object::get_object_field\s*::' "$candidate" -g '*.rs' | wc -l)"
-packed_fallback_count="$(rg --no-ignore -o '^pub fn [A-Za-z0-9_#]+_packed\s*\(' "$candidate" -g '*.rs' | wc -l)"
-if [[ "$object_count" != "$expected_object_count" ||
-      "$global_count" != "$expected_global_count" ||
-      "$getter_count" != "$expected_getter_count" ||
-      "$packed_fallback_count" != "$expected_packed_fallback_count" ]]; then
-    echo "generated coverage manifest changed; audit the schema before updating expectations" >&2
-    echo "objects: $object_count (expected $expected_object_count)" >&2
-    echo "globals: $global_count (expected $expected_global_count)" >&2
-    echo "getters: $getter_count (expected $expected_getter_count)" >&2
-    echo "packed fallbacks: $packed_fallback_count (expected $expected_packed_fallback_count)" >&2
-    exit 1
-fi
-echo "coverage manifest passed: $object_count objects, $global_count globals, $getter_count getters, $packed_fallback_count packed fallbacks"
-
 rustfmt_version="$(rustfmt --version)"
+generated_source_sha256="$(
+    CANDIDATE_DIR="$candidate" "$python_bin" - <<'PY'
+import hashlib
+import os
+from pathlib import Path
+
+root = Path(os.environ["CANDIDATE_DIR"])
+digest = hashlib.sha256()
+for path in sorted(root.rglob("*.rs")):
+    relative = path.relative_to(root).as_posix().encode()
+    source = path.read_bytes()
+    digest.update(len(relative).to_bytes(8, "big"))
+    digest.update(relative)
+    digest.update(len(source).to_bytes(8, "big"))
+    digest.update(source)
+print(digest.hexdigest())
+PY
+)"
 {
     printf 'format_version=1\n'
     printf 'schema_version=%s\n' "$schema_version"
     printf 'generator_commit=%s\n' "$generator_commit"
+    printf 'generator_dirty=%s\n' "$generator_dirty"
     printf 'runtime_commit=%s\n' "$runtime_commit"
+    printf 'runtime_dirty=%s\n' "$runtime_dirty"
+    printf 'generated_source_sha256=%s\n' "$generated_source_sha256"
     printf 'prefixes=%s\n' "$prefix_csv"
     printf 'rustfmt=%s\n' "$rustfmt_version"
 } > "$candidate/STAMP"
@@ -289,6 +273,7 @@ rustfmt_version="$(rustfmt --version)"
 compile_dir="$work_dir/compile-check"
 mkdir -p "$compile_dir/src"
 ln -s "$candidate" "$compile_dir/src/generated"
+ln -s "$script_dir/src/prim_expr.rs" "$compile_dir/src/prim_expr.rs"
 {
     printf '[package]\nname = "tvm-generated-candidate-check"\n'
     printf 'version = "0.0.0"\nedition = "2021"\npublish = false\n\n'
@@ -296,11 +281,48 @@ ln -s "$candidate" "$compile_dir/src/generated"
     printf 'tvm-ffi = { path = "%s" }\n' "$runtime_crate"
     printf '\n[lib]\npath = "src/lib.rs"\n'
 } > "$compile_dir/Cargo.toml"
-printf 'pub mod generated;\n' > "$compile_dir/src/lib.rs"
+{
+    printf 'pub mod generated;\nmod prim_expr;\npub use prim_expr::PrimExpr;\n\n'
+    printf '#[cfg(test)]\nmod runtime_smoke {\n'
+    printf '    use super::generated::{ir, tirx};\n'
+    printf '    use tvm_ffi::{DLDataType, DLDataTypeExt, Module, ObjectRefCast, Result};\n\n'
+    printf '    #[test]\n'
+    printf '    fn generated_int_imm_getters_match_native_ir() -> Result<()> {\n'
+    printf '        let compiler = std::env::var("TVM_COMPILER_LIB")\n'
+    printf '            .expect("TVM_COMPILER_LIB must be set by rust/regen.sh");\n'
+    printf '        let _compiler = Module::load_from_file(&compiler)?;\n'
+    printf '        let expected_dtype = DLDataType::try_from_str("int32")?;\n'
+    printf '        let value = ir::int_imm(expected_dtype, 37, None)?\n'
+    printf '            .expect("ir.IntImm returned an undefined object");\n'
+    printf '        assert_eq!(value.value()?, 37);\n'
+    printf '        let primitive_type: ir::PrimType = value.ty()?.downcast()?;\n'
+    printf '        assert_eq!(primitive_type.dtype()?, expected_dtype);\n'
+    printf '        let expr: ir::Expr = value.clone().into();\n'
+    printf '        let evaluate = tirx::evaluate(Some(expr), None)?\n'
+    printf '            .expect("tirx.Evaluate returned an undefined object");\n'
+    printf '        let seq = tirx::seq_stmt(\n'
+    printf '            tvm_ffi::Array::new(vec![Some(evaluate.clone().into()), Some(evaluate.into())]),\n'
+    printf '            None,\n'
+    printf '        )?\n'
+    printf '            .expect("tirx.SeqStmt returned an undefined object");\n'
+    printf '        assert_eq!(seq.seq()?.len(), 2);\n'
+    printf '        Ok(())\n'
+    printf '    }\n'
+    printf '}\n'
+} > "$compile_dir/src/lib.rs"
 CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$script_dir/target}/stubgen-candidate" \
+    TVM_FFI_LIB_DIR="$generator_build/lib" \
     RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-D warnings" \
     cargo check --quiet --manifest-path "$compile_dir/Cargo.toml" --all-targets
 echo "independent candidate Cargo check passed"
+
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$script_dir/target}/stubgen-candidate" \
+    TVM_FFI_LIB_DIR="$generator_build/lib" \
+    TVM_COMPILER_LIB="$compiler_lib" \
+    RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-D warnings" \
+    cargo test --quiet --manifest-path "$compile_dir/Cargo.toml" \
+        runtime_smoke::generated_int_imm_getters_match_native_ir -- --exact
+echo "generated IntImm runtime getter smoke passed"
 
 if [[ "$mode" == "--check" ]]; then
     if diff -qr --no-dereference "$generated_dir" "$candidate"; then

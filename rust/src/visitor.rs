@@ -32,59 +32,18 @@ use crate::generated::tirx::{
     TilePrimitiveCall, Var, While, EQ, GE, GT, LE, LT, NE,
 };
 use crate::PrimExpr;
-use tvm_ffi::{AnyCompatible, AnyValue, Array, Error, ObjectArc, ObjectRefCore, Result, TypeIndex};
+use tvm_ffi::{
+    AnyCompatible, AnyValue, Array, Error, ObjectArc, ObjectRefCast, ObjectRefCore, Result,
+    TypeIndex,
+};
 
-fn lookup_type_index(type_key: &str) -> Option<i32> {
-    unsafe {
-        let type_key = tvm_ffi::tvm_ffi_sys::TVMFFIByteArray::from_str(type_key);
-        let mut type_index = 0;
-        let status = tvm_ffi::tvm_ffi_sys::TVMFFITypeKeyToIndex(&type_key, &mut type_index);
-        if status == 0 {
-            Some(type_index)
-        } else {
-            // A failed safe call owns an Error in the thread-local raised slot.
-            // Consume it before trying the next generated type key.
-            drop(Error::from_raised());
-            None
-        }
-    }
-}
-
-/// Owning, subtype-aware downcast that tolerates a generated target container
-/// type absent from the loaded runtime.
-///
-/// Generated `downcast` uses the target container's cached `type_index()`.
-/// A missing container type can therefore panic and poison that cache forever.
-/// Visitor dispatch resolves the container type key without that cache, then
-/// applies the target's full (possibly refined) compatibility check.
+/// Borrowing, subtype-aware downcast using the runtime's canonical object cast.
 pub fn try_downcast<R, N>(value: &R) -> Option<N>
 where
     R: ObjectRefCore + AnyCompatible,
-    N: ObjectRefCore + AnyCompatible,
+    N: AnyCompatible,
 {
-    unsafe {
-        let source = <R as ObjectRefCore>::data(value);
-        let raw = ObjectArc::as_raw(source);
-        if raw.is_null() {
-            return None;
-        }
-
-        let header = raw as *const tvm_ffi::tvm_ffi_sys::TVMFFIObject;
-        let target_type_index =
-            lookup_type_index(<N::ContainerType as tvm_ffi::ObjectCore>::TYPE_KEY)?;
-        if !tvm_ffi::object::is_instance_of_index((*header).type_index, target_type_index) {
-            return None;
-        }
-
-        // Container ancestry alone is insufficient for refined handles such
-        // as PrimExpr and parameterized containers. Run the target's complete
-        // AnyCompatible check before constructing the owning result. The
-        // direct type-key lookup above ensures a missing generated container
-        // never reaches (and poisons) its cached `type_index()` initializer.
-        let mut any = tvm_ffi::tvm_ffi_sys::TVMFFIAny::new();
-        R::copy_to_any_view(value, &mut any);
-        N::check_any_strict(&any).then(|| N::copy_from_any_view_after_check(&any))
-    }
+    value.downcast().ok()
 }
 
 /// Return whether an `Expr` satisfies TVM's `PrimExpr` type refinement.

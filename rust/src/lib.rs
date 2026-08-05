@@ -22,6 +22,19 @@
 //! `src/generated/` is reproduced by `regen.sh`; handwritten modules add
 //! invariant-preserving constructors, traversal, mutation, analysis, and pass
 //! callback ergonomics without mirroring C++ object layouts.
+//!
+//! Reflection does not publish a thread-safety contract, so generated handles
+//! are thread-bound by default:
+//!
+//! ```compile_fail
+//! fn require_send<T: Send>() {}
+//! require_send::<tvm_tirx_bindings::generated::ir::Expr>();
+//! ```
+//!
+//! ```compile_fail
+//! fn require_sync<T: Sync>() {}
+//! require_sync::<tvm_tirx_bindings::generated::ir::Expr>();
+//! ```
 
 pub mod analyzer;
 pub mod ffi_api;
@@ -30,9 +43,11 @@ pub mod mutator;
 pub mod passes;
 pub mod visitor;
 
+mod prim_expr;
+
 /// An IR expression whose reflected result type is a primitive scalar/vector type.
 ///
 /// Unlike an ordinary [`generated::ir::Expr`], this refinement is checked when
 /// the value crosses the FFI boundary or is created with
 /// [`tvm_ffi::TypedExpr::try_from_base`].
-pub type PrimExpr = tvm_ffi::TypedExpr<generated::ir::Expr, generated::ir::PrimType>;
+pub use prim_expr::PrimExpr;
