@@ -30,7 +30,7 @@ use crate::ffi_api;
 use crate::generated::ir::{Expr, IRModule};
 use crate::generated::tirx::{analysis, AllocBuffer, Bind, Buffer, For, Let, PrimFunc, Var};
 use crate::generated::transform::Pass;
-use crate::visitor::{try_downcast, walk_expr, walk_stmt, StmtExprVisitor};
+use crate::visitor::{try_downcast, try_downcast_exact, walk_expr, walk_stmt, StmtExprVisitor};
 use crate::PrimExpr;
 use tvm_ffi::{Array, Error, ObjectArc, ObjectRefCore, Result};
 
@@ -142,7 +142,7 @@ impl StmtExprVisitor for SsaVerifier {
 
         // Intercept variables before normal dispatch so the definition table
         // retains the owning reference and therefore its pointer identity.
-        if let Some(var) = try_downcast::<_, Var>(expr) {
+        if let Some(var) = try_downcast_exact::<_, Var>(expr) {
             if self.in_match_scope {
                 self.mark_definition(&var, expr.clone(), true);
             }

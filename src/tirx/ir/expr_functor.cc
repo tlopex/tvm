@@ -31,6 +31,9 @@ void ExprVisitor::VisitExpr_(const VarNode* op) {}
 
 void ExprVisitor::VisitExpr_(const BufferLoadNode* op) {
   VisitArray(op->indices, [this](const PrimExpr& e) { this->VisitExpr(e); });
+  if (op->predicate.has_value()) {
+    this->VisitExpr(op->predicate.value());
+  }
 }
 
 void ExprVisitor::VisitExpr_(const ProducerLoadNode* op) {
@@ -99,6 +102,7 @@ void ExprVisitor::VisitExpr_(const SelectNode* op) {
 void ExprVisitor::VisitExpr_(const RampNode* op) {
   this->VisitExpr(op->base);
   this->VisitExpr(op->stride);
+  this->VisitExpr(op->lanes);
 }
 
 void ExprVisitor::VisitExpr_(const ShuffleNode* op) {
@@ -106,17 +110,24 @@ void ExprVisitor::VisitExpr_(const ShuffleNode* op) {
   VisitArray(op->vectors, [this](const PrimExpr& e) { this->VisitExpr(e); });
 }
 
-void ExprVisitor::VisitExpr_(const BroadcastNode* op) { this->VisitExpr(op->value); }
+void ExprVisitor::VisitExpr_(const BroadcastNode* op) {
+  this->VisitExpr(op->value);
+  this->VisitExpr(op->lanes);
+}
 
 Expr ExprMutator::VisitExpr_(const VarNode* op) { return ffi::GetRef<Var>(op); }
 
 Expr ExprMutator::VisitExpr_(const BufferLoadNode* op) {
   auto fmutate = [this](const PrimExpr& e) { return this->VisitPrimExpr(e); };
   ffi::Array<PrimExpr> indices = op->indices.Map(fmutate);
-  if (indices.same_as(op->indices)) {
+  ffi::Optional<PrimExpr> predicate = std::nullopt;
+  if (op->predicate.has_value()) {
+    predicate = this->VisitPrimExpr(op->predicate.value());
+  }
+  if (indices.same_as(op->indices) && predicate.same_as(op->predicate)) {
     return ffi::GetRef<PrimExpr>(op);
   } else {
-    return BufferLoad(op->buffer, indices, op->predicate);
+    return BufferLoad(op->buffer, indices, predicate, op->span);
   }
 }
 
@@ -251,7 +262,7 @@ Expr ExprMutator::VisitExpr_(const RampNode* op) {
   if (base.same_as(op->base) && stride.same_as(op->stride) && lanes.same_as(op->lanes)) {
     return ffi::GetRef<PrimExpr>(op);
   } else {
-    return Ramp(base, stride, lanes);
+    return Ramp(base, stride, lanes, op->span);
   }
 }
 
@@ -261,7 +272,7 @@ Expr ExprMutator::VisitExpr_(const BroadcastNode* op) {
   if (value.same_as(op->value) && lanes.same_as(op->lanes)) {
     return ffi::GetRef<PrimExpr>(op);
   } else {
-    return Broadcast(value, lanes);
+    return Broadcast(value, lanes, op->span);
   }
 }
 

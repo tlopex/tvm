@@ -22,22 +22,26 @@
 use crate::ffi_api;
 use crate::generated::tirx::{AssertStmt, PrimFunc, Stmt};
 use crate::generated::transform::Pass;
-use crate::mutator::StatementMutator;
+use crate::mutator::{rewrite_stmt, StmtExprRewriter};
+use crate::visitor::try_downcast_exact;
 use tvm_ffi::{ObjectRefCore, Result};
 
 struct AssertSkipper;
 
-impl StatementMutator for AssertSkipper {
-    fn mutate_assert_stmt(&mut self, _original: &Stmt, _node: &AssertStmt) -> Result<Stmt> {
+impl StmtExprRewriter for AssertSkipper {
+    fn rewrite_stmt(&mut self, stmt: Stmt) -> Result<Option<Stmt>> {
+        if try_downcast_exact::<_, AssertStmt>(&stmt).is_none() {
+            return Ok(None);
+        }
         let zero = ffi_api::int_imm_from_str("int32", 0, None)?;
         let zero = crate::generated::ir::Expr::from(zero);
-        Ok(ffi_api::evaluate(&zero, None)?.into())
+        Ok(Some(ffi_api::evaluate(&zero, None)?.into()))
     }
 }
 
 /// Replace every `AssertStmt` in a supported statement tree with `Evaluate(0)`.
 pub fn skip_assert(stmt: &Stmt) -> Result<Stmt> {
-    AssertSkipper.mutate_stmt(stmt)
+    rewrite_stmt(stmt, &mut AssertSkipper)
 }
 
 /// Apply [`skip_assert`] to a `PrimFunc` body through the canonical C++

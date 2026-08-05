@@ -19,12 +19,10 @@
 
 //! Passes implemented in Rust on top of the generated TIRx bindings.
 
-mod remove_no_op;
+mod simplify;
 mod skip_assert;
 mod verify_ssa;
 
-pub use remove_no_op::{
-    remove_no_op_conservative, remove_no_op_conservative_pass, remove_no_op_conservative_prim_func,
-};
+pub use simplify::{simplify_pass, simplify_prim_func, simplify_stmt_expressions};
 pub use skip_assert::{skip_assert, skip_assert_pass, skip_assert_prim_func};
 pub use verify_ssa::{verify_ssa, verify_ssa_module, verify_ssa_or_error, verify_ssa_pass};

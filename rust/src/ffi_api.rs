@@ -23,17 +23,13 @@
 //! reflection-backed getters. Constructors in this module always call the
 //! canonical typed C++ global; generic reflected builders are not exposed.
 
-use std::any::Any as StdAny;
-use std::panic::{catch_unwind, AssertUnwindSafe};
-
 use crate::generated::ir::{
     self, BaseFunc, DictAttrs, Expr, GlobalVar, IRModule, IntImm, Op, Span, Type,
 };
 use crate::generated::tirx::transform as tirx_transform;
 use crate::generated::tirx::{
-    self, AssertStmt, AttrStmt, Buffer, BufferRegion, Evaluate, For, IfThenElse, IterVar,
-    MatchBufferRegion, PrimFunc, SBlock, SBlockRealize, SeqStmt, Stmt, StringImm,
-    TilePrimitiveCall, Var, While,
+    self, AssertStmt, Buffer, Evaluate, For, IfThenElse, IterVar, PrimFunc, SeqStmt, Stmt,
+    StringImm, TilePrimitiveCall, Var,
 };
 use crate::generated::transform::{self as transform, Pass, PassContext, PassInfo};
 use crate::PrimExpr;
@@ -122,26 +118,6 @@ pub fn assert_stmt(
     )
 }
 
-/// Rebuild a `tirx.AttrStmt` through the canonical C++ constructor.
-pub fn attr_stmt(
-    node: &Any,
-    attr_key: &FfiString,
-    value: &PrimExpr,
-    body: &Stmt,
-    span: Option<&Span>,
-) -> Result<AttrStmt> {
-    require_defined(
-        tirx::attr_stmt(
-            AnyView::from(node),
-            attr_key.clone(),
-            Some(value.clone()),
-            Some(body.clone()),
-            span.cloned(),
-        )?,
-        "tirx.AttrStmt",
-    )
-}
-
 /// Rebuild a `tirx.IfThenElse` through the canonical C++ constructor.
 pub fn if_then_else(
     condition: &PrimExpr,
@@ -186,63 +162,6 @@ pub fn for_loop(
             span.cloned(),
         )?,
         "tirx.For",
-    )
-}
-
-/// Rebuild a `tirx.While` through the canonical C++ constructor.
-pub fn while_loop(condition: &PrimExpr, body: &Stmt, span: Option<&Span>) -> Result<While> {
-    require_defined(
-        tirx::r#while(Some(condition.clone()), Some(body.clone()), span.cloned())?,
-        "tirx.While",
-    )
-}
-
-/// Rebuild a TIRx block, preserving all non-statement fields verbatim.
-#[allow(clippy::too_many_arguments)]
-pub fn sblock(
-    iter_vars: &Array<Option<IterVar>>,
-    reads: &Array<Option<BufferRegion>>,
-    writes: &Array<Option<BufferRegion>>,
-    name_hint: &FfiString,
-    body: &Stmt,
-    init: Option<&Stmt>,
-    alloc_buffers: &Array<Option<Buffer>>,
-    match_buffers: &Array<Option<MatchBufferRegion>>,
-    annotations: &Map<FfiString, AnyValue>,
-    span: Option<&Span>,
-) -> Result<SBlock> {
-    require_defined(
-        tirx::s_block(
-            iter_vars.clone(),
-            reads.clone(),
-            writes.clone(),
-            name_hint.clone(),
-            Some(body.clone()),
-            init.cloned(),
-            alloc_buffers.clone(),
-            match_buffers.clone(),
-            annotations.clone(),
-            span.cloned(),
-        )?,
-        "tirx.SBlock",
-    )
-}
-
-/// Rebuild a `tirx.SBlockRealize` through the canonical C++ constructor.
-pub fn sblock_realize(
-    iter_values: &Array<Option<PrimExpr>>,
-    predicate: &PrimExpr,
-    block: &SBlock,
-    span: Option<&Span>,
-) -> Result<SBlockRealize> {
-    require_defined(
-        tirx::s_block_realize(
-            iter_values.clone(),
-            Some(predicate.clone()),
-            Some(block.clone()),
-            span.cloned(),
-        )?,
-        "tirx.SBlockRealize",
     )
 }
 
@@ -467,24 +386,6 @@ pub fn pass_info(
     )
 }
 
-fn panic_message(payload: Box<dyn StdAny + Send>) -> std::string::String {
-    if let Some(message) = payload.downcast_ref::<&str>() {
-        (*message).to_owned()
-    } else if let Some(message) = payload.downcast_ref::<std::string::String>() {
-        message.clone()
-    } else {
-        "non-string panic payload".to_owned()
-    }
-}
-
-fn callback_panic(kind: &str, payload: Box<dyn StdAny + Send>) -> Error {
-    Error::new(
-        tvm_ffi::error::RUNTIME_ERROR,
-        &format!("panic in Rust {kind} callback: {}", panic_message(payload)),
-        "",
-    )
-}
-
 fn callback_arity(args: &[AnyView<'_>], expected: usize) -> Result<()> {
     if args.len() == expected {
         Ok(())
@@ -516,8 +417,8 @@ where
 
 /// Wrap a typed Rust function as a TVM `PrimFuncPass`.
 ///
-/// The callback is panic-contained before entering tvm-ffi's `extern "C"`
-/// trampoline, so both ordinary Rust errors and panics reach C++ as TVM errors.
+/// tvm-ffi's shared `extern "C"` trampoline converts both ordinary Rust errors
+/// and panics into TVM errors before control returns to C++.
 pub fn create_prim_func_pass<F>(
     transform: F,
     opt_level: i32,
@@ -542,19 +443,14 @@ where
     // special kTVMFFIObjectRValueRef type index.  Converting its AnyView to an
     // owned Any uses TVMFFIAnyViewToOwnedAny, which consumes that rvalue (or
     // copies a normal lvalue), after which the ordinary typed conversion is
-    // correct.  Keep decoding inside catch_unwind as the conversion shim in
-    // the current runtime can panic on an already-consumed rvalue.
+    // correct.  The shared callback trampoline also contains any panic raised
+    // while decoding an already-consumed or malformed rvalue.
     let callback = Function::from_packed(move |args| {
-        match catch_unwind(AssertUnwindSafe(|| -> Result<Any> {
-            callback_arity(args, 3)?;
-            let func = callback_arg::<PrimFunc>(args, 0)?;
-            let module = callback_arg::<IRModule>(args, 1)?;
-            let context = callback_arg::<PassContext>(args, 2)?;
-            transform(func, module, context).map(Any::from)
-        })) {
-            Ok(result) => result,
-            Err(payload) => Err(callback_panic("PrimFuncPass", payload)),
-        }
+        callback_arity(args, 3)?;
+        let func = callback_arg::<PrimFunc>(args, 0)?;
+        let module = callback_arg::<IRModule>(args, 1)?;
+        let context = callback_arg::<PassContext>(args, 2)?;
+        transform(func, module, context).map(Any::from)
     });
 
     let pass = require_defined(
@@ -580,15 +476,10 @@ where
 {
     let info = pass_info(opt_level, name, required, traceable)?;
     let callback = Function::from_packed(move |args| {
-        match catch_unwind(AssertUnwindSafe(|| -> Result<Any> {
-            callback_arity(args, 2)?;
-            let module = callback_arg::<IRModule>(args, 0)?;
-            let context = callback_arg::<PassContext>(args, 1)?;
-            transform(module, context).map(Any::from)
-        })) {
-            Ok(result) => result,
-            Err(payload) => Err(callback_panic("ModulePass", payload)),
-        }
+        callback_arity(args, 2)?;
+        let module = callback_arg::<IRModule>(args, 0)?;
+        let context = callback_arg::<PassContext>(args, 1)?;
+        transform(module, context).map(Any::from)
     });
 
     let pass = require_defined(

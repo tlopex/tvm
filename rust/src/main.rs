@@ -25,9 +25,7 @@ use tvm_ffi::{Module, Result};
 use tvm_tirx_bindings::ffi_api;
 use tvm_tirx_bindings::generated::ir::{self, Expr, IntImm};
 use tvm_tirx_bindings::generated::tirx::{Evaluate, Stmt};
-use tvm_tirx_bindings::passes::{
-    remove_no_op_conservative, skip_assert, skip_assert_pass, verify_ssa,
-};
+use tvm_tirx_bindings::passes::{skip_assert, skip_assert_pass, verify_ssa};
 use tvm_tirx_bindings::visitor::try_downcast;
 
 fn compiler_library() -> PathBuf {
@@ -84,14 +82,10 @@ fn main() -> Result<()> {
         evaluated_int(&skipped)?
     );
 
-    let pure_evaluate: Stmt = ffi_api::evaluate(&forty_two, None)?.into();
-    let no_op = remove_no_op_conservative(&pure_evaluate)?;
-    println!("RemoveNoOp result = Evaluate({:?})", evaluated_int(&no_op)?);
-
     let func = ffi_api::prim_func_without_params(&body, None)?;
     println!("VerifySSA = {}", verify_ssa(&func)?);
     let _pass = skip_assert_pass()?;
 
-    println!("OK: safe C++ construction + Rust visitor/mutator/pass callback");
+    println!("OK: native-validated IR construction + Rust visitor/mutator/pass callback");
     Ok(())
 }

@@ -23,7 +23,7 @@
 //! visitor therefore operates only on owning generated reference wrappers and
 //! reads children through their fallible reflection-backed getters.
 
-use crate::generated::ir::{Call, Expr, FloatImm, IntImm, PrimType, Range};
+use crate::generated::ir::{Call, Expr, FloatImm, IntImm, Range};
 use crate::generated::tirx::{
     Add, AllocBuffer, And, AssertStmt, AttrStmt, Bind, Break, Broadcast, Buffer, BufferLoad,
     BufferRegion, BufferStore, Cast, Continue, DeclBuffer, Div, Evaluate, FloorDiv, FloorMod, For,
@@ -33,8 +33,7 @@ use crate::generated::tirx::{
 };
 use crate::PrimExpr;
 use tvm_ffi::{
-    AnyCompatible, AnyValue, Array, Error, ObjectArc, ObjectRefCast, ObjectRefCore, Result,
-    TypeIndex,
+    AnyCompatible, AnyValue, Array, Error, ObjectRefCast, ObjectRefCore, Result, TypeIndex,
 };
 
 /// Borrowing, subtype-aware downcast using the runtime's canonical object cast.
@@ -46,21 +45,26 @@ where
     value.downcast().ok()
 }
 
-/// Return whether an `Expr` satisfies TVM's `PrimExpr` type refinement.
-///
-/// `PrimExpr` is not a runtime object subtype: C++ defines it as an `Expr`
-/// whose `ty` is `PrimType`. Heterogeneous `AnyValue` entries do not carry the
-/// static [`PrimExpr`] wrapper, so their refinement must be checked here.
-pub fn is_prim_expr(expr: &Expr) -> Result<bool> {
-    Ok(try_downcast::<_, PrimType>(&expr.ty()?).is_some())
+pub(crate) fn is_exact_runtime_type<N: ObjectRefCore>(type_index: i32) -> bool {
+    <<N as ObjectRefCore>::ContainerType as tvm_ffi::ObjectCore>::try_type_index()
+        .is_ok_and(|target_type_index| type_index == target_type_index)
 }
 
-fn runtime_type_index<R: ObjectRefCore>(value: &R) -> Option<i32> {
-    unsafe {
-        let ptr = ObjectArc::as_raw(<R as ObjectRefCore>::data(value))
-            as *const tvm_ffi::tvm_ffi_sys::TVMFFIObject;
-        (!ptr.is_null()).then(|| (*ptr).type_index)
+/// Borrowing downcast that requires the exact dynamic object type.
+///
+/// Unlike [`try_downcast`], this does not accept a runtime subtype of `N`.
+/// Compiler visitors use exact dispatch so a newly registered node kind cannot
+/// silently inherit traversal rules that do not know about its extra fields.
+pub fn try_downcast_exact<R, N>(value: &R) -> Option<N>
+where
+    R: ObjectRefCore + AnyCompatible,
+    N: ObjectRefCore + AnyCompatible,
+{
+    let type_index = value.runtime_type_index()?;
+    if !is_exact_runtime_type::<N>(type_index) {
+        return None;
     }
+    value.downcast().ok()
 }
 
 fn type_error(message: impl AsRef<str>) -> Error {
@@ -102,9 +106,10 @@ fn any_array_item(values: &Array<AnyValue>, index: usize, path: &str) -> Result<
 }
 
 macro_rules! dispatch {
-    ($visitor:expr, $value:expr, $( $node:ty => $method:ident ),+ $(,)?) => {
+    ($visitor:expr, $value:expr, $type_index:expr, $( $node:ty => $method:ident ),+ $(,)?) => {
         $(
-            if let Some(node) = $crate::visitor::try_downcast::<_, $node>($value) {
+            if $crate::visitor::is_exact_runtime_type::<$node>($type_index) {
+                let node = $value.downcast::<$node>()?;
                 return $visitor.$method(&node);
             }
         )+
@@ -115,9 +120,13 @@ macro_rules! dispatch {
 ///
 /// Unknown node kinds are errors instead of silently truncating traversal.
 pub fn walk_expr<V: StmtExprVisitor + ?Sized>(visitor: &mut V, expr: &Expr) -> Result<()> {
+    let type_index = expr
+        .runtime_type_index()
+        .ok_or_else(|| null_node("expression"))?;
     dispatch!(
         visitor,
         expr,
+        type_index,
         Var => visit_var,
         BufferLoad => visit_buffer_load,
         ProducerLoad => visit_producer_load,
@@ -151,15 +160,18 @@ pub fn walk_expr<V: StmtExprVisitor + ?Sized>(visitor: &mut V, expr: &Expr) -> R
         FloatImm => visit_float_imm,
         StringImm => visit_string_imm,
     );
-    let type_index = runtime_type_index(expr).ok_or_else(|| null_node("expression"))?;
     Err(unsupported_node("expression", type_index))
 }
 
 /// Dispatch a statement to a typed [`StmtExprVisitor`] method.
 pub fn walk_stmt<V: StmtExprVisitor + ?Sized>(visitor: &mut V, stmt: &Stmt) -> Result<()> {
+    let type_index = stmt
+        .runtime_type_index()
+        .ok_or_else(|| null_node("statement"))?;
     dispatch!(
         visitor,
         stmt,
+        type_index,
         Bind => visit_bind,
         AttrStmt => visit_attr_stmt,
         IfThenElse => visit_if_then_else,
@@ -178,7 +190,6 @@ pub fn walk_stmt<V: StmtExprVisitor + ?Sized>(visitor: &mut V, stmt: &Stmt) -> R
         ScopeIdDefStmt => visit_scope_id_def_stmt,
         TilePrimitiveCall => visit_tile_primitive_call,
     );
-    let type_index = runtime_type_index(stmt).ok_or_else(|| null_node("statement"))?;
     Err(unsupported_node("statement", type_index))
 }
 
@@ -283,7 +294,11 @@ pub trait StmtExprVisitor {
         self.visit_buffer_use(&buffer)?;
 
         let indices = node.indices()?;
-        self.visit_prim_expr_array(&indices, "BufferLoad::indices")
+        self.visit_prim_expr_array(&indices, "BufferLoad::indices")?;
+        if let Some(predicate) = node.predicate()? {
+            self.visit_prim_expr(&predicate)?;
+        }
+        Ok(())
     }
 
     fn visit_producer_load(&mut self, node: &ProducerLoad) -> Result<()> {
@@ -362,13 +377,17 @@ pub trait StmtExprVisitor {
     fn visit_ramp(&mut self, node: &Ramp) -> Result<()> {
         let base = required(node.base()?, "Ramp::base")?;
         let stride = required(node.stride()?, "Ramp::stride")?;
+        let lanes = required(node.lanes()?, "Ramp::lanes")?;
         self.visit_prim_expr(&base)?;
-        self.visit_prim_expr(&stride)
+        self.visit_prim_expr(&stride)?;
+        self.visit_prim_expr(&lanes)
     }
 
     fn visit_broadcast(&mut self, node: &Broadcast) -> Result<()> {
         let value = required(node.value()?, "Broadcast::value")?;
-        self.visit_prim_expr(&value)
+        let lanes = required(node.lanes()?, "Broadcast::lanes")?;
+        self.visit_prim_expr(&value)?;
+        self.visit_prim_expr(&lanes)
     }
 
     fn visit_shuffle(&mut self, node: &Shuffle) -> Result<()> {
@@ -459,7 +478,11 @@ pub trait StmtExprVisitor {
         let indices = node.indices()?;
         self.visit_buffer_use(&buffer)?;
         self.visit_prim_expr(&value)?;
-        self.visit_prim_expr_array(&indices, "BufferStore::indices")
+        self.visit_prim_expr_array(&indices, "BufferStore::indices")?;
+        if let Some(predicate) = node.predicate()? {
+            self.visit_prim_expr(&predicate)?;
+        }
+        Ok(())
     }
 
     fn visit_assert_stmt(&mut self, node: &AssertStmt) -> Result<()> {

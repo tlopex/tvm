@@ -327,6 +327,93 @@ TEST(IRF, StmtMutator) {
   }
 }
 
+TEST(IRF, BufferPredicatesAreTraversed) {
+  using namespace tvm;
+  using namespace tvm::tirx;
+
+  PrimVar load_condition("load_condition");
+  PrimVar store_condition("store_condition");
+  PrimVar new_load_condition("new_load_condition");
+  PrimVar new_store_condition("new_store_condition");
+  Buffer buffer = decl_buffer({1});
+  PrimExpr load = BufferLoad(buffer, {IntImm::Int32(0)}, load_condition < 1);
+  Stmt store = BufferStore(buffer, load, {IntImm::Int32(0)}, store_condition < 1);
+
+  bool visited_load_condition = false;
+  bool visited_store_condition = false;
+  PostOrderVisit(store, [&](const ffi::ObjectRef& node) {
+    if (const auto* var_node = node.as<VarNode>()) {
+      Var var = ffi::GetRef<Var>(var_node);
+      visited_load_condition |= var.same_as(load_condition);
+      visited_store_condition |= var.same_as(store_condition);
+    }
+  });
+  EXPECT_TRUE(visited_load_condition);
+  EXPECT_TRUE(visited_store_condition);
+
+  Stmt rewritten = Substitute(store, [&](const Var& var) -> ffi::Optional<Expr> {
+    if (var.same_as(load_condition)) return Expr(new_load_condition);
+    if (var.same_as(store_condition)) return Expr(new_store_condition);
+    return std::nullopt;
+  });
+
+  const auto* rewritten_store = rewritten.as<BufferStoreNode>();
+  ASSERT_NE(rewritten_store, nullptr);
+  ASSERT_TRUE(rewritten_store->predicate.has_value());
+  const auto* store_predicate = rewritten_store->predicate.value().as<LTNode>();
+  ASSERT_NE(store_predicate, nullptr);
+  EXPECT_TRUE(store_predicate->a.same_as(new_store_condition));
+
+  const auto* rewritten_load = rewritten_store->value.as<BufferLoadNode>();
+  ASSERT_NE(rewritten_load, nullptr);
+  ASSERT_TRUE(rewritten_load->predicate.has_value());
+  const auto* load_predicate = rewritten_load->predicate.value().as<LTNode>();
+  ASSERT_NE(load_predicate, nullptr);
+  EXPECT_TRUE(load_predicate->a.same_as(new_load_condition));
+}
+
+TEST(IRF, VectorLanesAreTraversed) {
+  using namespace tvm;
+  using namespace tvm::tirx;
+
+  auto scalable_lanes = []() -> PrimExpr {
+    return Mul(Call(PrimType::Int(32), builtin::vscale(), {}), 4);
+  };
+  Stmt stmt =
+      SeqStmt({Evaluate(Ramp(0, 1, scalable_lanes())), Evaluate(Broadcast(0, scalable_lanes()))});
+
+  int visited_vscale_calls = 0;
+  PostOrderVisit(stmt, [&](const ffi::ObjectRef& node) {
+    if (const auto* call = node.as<CallNode>(); call && call->op.same_as(builtin::vscale())) {
+      ++visited_vscale_calls;
+    }
+  });
+  EXPECT_EQ(visited_vscale_calls, 2);
+
+  class ReplaceLaneFactor : public StmtExprMutator {
+   protected:
+    Expr VisitExpr_(const IntImmNode* op) final {
+      if (op->value == 4) return IntImm::Int32(8);
+      return ffi::GetRef<PrimExpr>(op);
+    }
+  };
+  stmt = ReplaceLaneFactor()(std::move(stmt));
+
+  const auto* seq = stmt.as<SeqStmtNode>();
+  ASSERT_NE(seq, nullptr);
+  ASSERT_EQ(seq->seq.size(), 2);
+  const auto* ramp = seq->seq[0].as<EvaluateNode>()->value.as<RampNode>();
+  const auto* broadcast = seq->seq[1].as<EvaluateNode>()->value.as<BroadcastNode>();
+  ASSERT_NE(ramp, nullptr);
+  ASSERT_NE(broadcast, nullptr);
+  const auto* ramp_lanes = ramp->lanes.as<MulNode>();
+  const auto* broadcast_lanes = broadcast->lanes.as<MulNode>();
+  ASSERT_NE(ramp_lanes, nullptr);
+  ASSERT_NE(broadcast_lanes, nullptr);
+  EXPECT_TRUE(is_const_int(ramp_lanes->b, 8));
+  EXPECT_TRUE(is_const_int(broadcast_lanes->b, 8));
+}
+
 TEST(IRF, Substitute) {
   using namespace tvm;
   using namespace tvm::tirx;

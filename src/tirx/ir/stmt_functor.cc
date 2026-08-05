@@ -92,6 +92,9 @@ void StmtVisitor::VisitStmt_(const BufferStoreNode* op) {
   this->VisitBufferUse(op->buffer);
   this->VisitExpr(op->value);
   VisitArray(op->indices, [this](const PrimExpr& e) { this->VisitExpr(e); });
+  if (op->predicate.has_value()) {
+    this->VisitExpr(op->predicate.value());
+  }
 }
 
 void StmtVisitor::VisitStmt_(const IfThenElseNode* op) {
@@ -468,14 +471,20 @@ Stmt StmtMutator::VisitStmt_(const BufferStoreNode* op) {
   Buffer new_buf = this->VisitBufferUse(op->buffer);
   PrimExpr value = this->VisitPrimExpr(op->value);
   ffi::Array<PrimExpr> indices = Internal::Mutate(this, op->indices);
+  ffi::Optional<PrimExpr> predicate = std::nullopt;
+  if (op->predicate.has_value()) {
+    predicate = this->VisitPrimExpr(op->predicate.value());
+  }
 
-  if (new_buf.same_as(op->buffer) && value.same_as(op->value) && indices.same_as(op->indices)) {
+  if (new_buf.same_as(op->buffer) && value.same_as(op->value) && indices.same_as(op->indices) &&
+      predicate.same_as(op->predicate)) {
     return ffi::GetRef<Stmt>(op);
   } else {
     auto n = CopyOnWrite(op);
     n->buffer = std::move(new_buf);
     n->value = std::move(value);
     n->indices = std::move(indices);
+    n->predicate = std::move(predicate);
     return Stmt(n);
   }
 }
