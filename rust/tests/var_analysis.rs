@@ -67,8 +67,8 @@ fn variable_analyses_follow_structural_definition_regions() -> Result<()> {
     let ty: PrimType = Function::get_global("ir.PrimType")?
         .call_packed(&[AnyView::from(&dtype)])?
         .try_into()?;
-    let x = make_var("x", &ty)?;
-    let y = make_var("y", &ty)?;
+    let x = make_var("v", &ty)?;
+    let y = make_var("v", &ty)?;
     let expr: Let = Function::get_global("tirx.Let")?
         .call_packed(&[
             AnyView::from(&x),
@@ -78,6 +78,7 @@ fn variable_analyses_follow_structural_definition_regions() -> Result<()> {
         ])?
         .try_into()?;
 
+    assert!(!x.same_as(&y));
     assert!(expr.var.same_as(&x));
     let vars = collect_structural_vars(&expr)?;
     assert_eq!(vars.len(), 2);
