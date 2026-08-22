@@ -1,0 +1,360 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+use tvm_ffi::derive::{Object, ObjectRef};
+use tvm_ffi::{
+    Any, AnyView, Array, Error, Map, ObjectArc, ObjectRefCast, Result, String, VALUE_ERROR,
+};
+
+use super::{BufferRegion, MatchBufferRegion, Stmt, StmtObj};
+use crate::ir::{Expr, PrimExprConvertible, PrimExprConvertibleObj, Range, Span, Var};
+
+/// Scheduling role attached to a TIR block iteration variable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(i64)]
+pub enum IterVarType {
+    DataParallel = 0,
+    ThreadIndex = 1,
+    CommutativeReduction = 2,
+    Ordered = 3,
+    Opaque = 4,
+    Unrolled = 5,
+    Vectorized = 6,
+    Parallelized = 7,
+    Tensorized = 8,
+}
+
+impl TryFrom<i64> for IterVarType {
+    type Error = Error;
+
+    fn try_from(value: i64) -> Result<Self> {
+        match value {
+            0 => Ok(Self::DataParallel),
+            1 => Ok(Self::ThreadIndex),
+            2 => Ok(Self::CommutativeReduction),
+            3 => Ok(Self::Ordered),
+            4 => Ok(Self::Opaque),
+            5 => Ok(Self::Unrolled),
+            6 => Ok(Self::Vectorized),
+            7 => Ok(Self::Parallelized),
+            8 => Ok(Self::Tensorized),
+            _ => Err(Error::new(
+                VALUE_ERROR,
+                &format!("unknown tirx.IterVarType value {value}"),
+                "",
+            )),
+        }
+    }
+}
+
+/// Opaque Rust view of a TIR block iteration variable.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "tirx.IterVar"]
+#[type_final]
+pub struct IterVarObj {
+    base: PrimExprConvertibleObj,
+}
+
+/// Reference-counted handle to a block iteration variable.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct IterVar {
+    data: ObjectArc<IterVarObj>,
+}
+
+impl std::ops::Deref for IterVar {
+    type Target = IterVarObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for IterVarObj {
+    type Target = PrimExprConvertibleObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl IterVarObj {
+    /// Return the optional iteration domain.
+    pub fn domain(&self) -> Result<Option<Range>> {
+        crate::reflected_field!(self, "dom")?.try_into()
+    }
+
+    /// Return the variable defined by this axis.
+    pub fn variable(&self) -> Result<Var> {
+        crate::reflected_field!(self, "var")?.try_into()
+    }
+
+    /// Return the scheduling role of this axis.
+    pub fn iter_type(&self) -> Result<IterVarType> {
+        IterVarType::try_from(i64::try_from(crate::reflected_field!(self, "iter_type")?)?)
+    }
+
+    /// Return the optional runtime thread tag.
+    pub fn thread_tag(&self) -> Result<String> {
+        crate::reflected_field!(self, "thread_tag")?.try_into()
+    }
+}
+
+impl IterVar {
+    /// Construct an untagged block iteration variable.
+    pub fn new(domain: &Range, variable: &Var, iter_type: IterVarType) -> Result<Self> {
+        let iter_type = iter_type as i64;
+        let thread_tag = String::from("");
+        let none = ();
+        crate::global_function!("tirx.IterVar")?
+            .call_packed(&[
+                AnyView::from(domain),
+                AnyView::from(variable),
+                AnyView::from(&iter_type),
+                AnyView::from(&thread_tag),
+                AnyView::from(&none),
+            ])?
+            .try_into()
+    }
+}
+
+impl From<IterVar> for PrimExprConvertible {
+    fn from(value: IterVar) -> Self {
+        value
+            .try_cast()
+            .expect("tirx.IterVar must be a subtype of ir.PrimExprConvertible")
+    }
+}
+
+/// Opaque Rust view of TVM's current TIR block node (`SBlockNode` in C++).
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "tirx.SBlock"]
+#[type_final]
+pub struct SBlockObj {
+    base: StmtObj,
+}
+
+/// Reference-counted handle to a TIR scheduling block.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct SBlock {
+    data: ObjectArc<SBlockObj>,
+}
+
+impl std::ops::Deref for SBlock {
+    type Target = SBlockObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for SBlockObj {
+    type Target = StmtObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl SBlockObj {
+    /// Return the block axes defined recursively for its fields and body.
+    pub fn iter_vars(&self) -> Result<Array<IterVar>> {
+        crate::reflected_field!(self, "iter_vars")?.try_into()
+    }
+
+    /// Return declared read regions.
+    pub fn reads(&self) -> Result<Array<BufferRegion>> {
+        crate::reflected_field!(self, "reads")?.try_into()
+    }
+
+    /// Return declared write regions.
+    pub fn writes(&self) -> Result<Array<BufferRegion>> {
+        crate::reflected_field!(self, "writes")?.try_into()
+    }
+
+    /// Return the diagnostic block name.
+    pub fn name_hint(&self) -> Result<String> {
+        crate::reflected_field!(self, "name_hint")?.try_into()
+    }
+
+    /// Return buffers allocated within this block.
+    pub fn allocated_buffers(&self) -> Result<Array<Var>> {
+        crate::reflected_field!(self, "alloc_buffers")?.try_into()
+    }
+
+    /// Return match-buffer declarations.
+    pub fn match_buffers(&self) -> Result<Array<MatchBufferRegion>> {
+        crate::reflected_field!(self, "match_buffers")?.try_into()
+    }
+
+    /// Return heterogeneous scheduling annotations as their complete FFI value.
+    pub fn annotations(&self) -> Result<Any> {
+        crate::reflected_field!(self, "annotations")
+    }
+
+    /// Return an optional reduction initializer.
+    pub fn init(&self) -> Result<Option<Stmt>> {
+        crate::reflected_field!(self, "init")?.try_into()
+    }
+
+    /// Return the main block body.
+    pub fn body(&self) -> Result<Stmt> {
+        crate::reflected_field!(self, "body")?.try_into()
+    }
+}
+
+impl SBlock {
+    /// Construct a block with no axes, declared regions, or local buffers.
+    pub fn new(name_hint: &str, body: &Stmt) -> Result<Self> {
+        Self::with_metadata(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            name_hint,
+            body,
+            None,
+            Vec::new(),
+            Vec::new(),
+            &Any::from(Map::<String, String>::new()),
+            None,
+        )
+    }
+
+    /// Construct a scheduling block with all structural fields.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_metadata(
+        iter_vars: Vec<IterVar>,
+        reads: Vec<BufferRegion>,
+        writes: Vec<BufferRegion>,
+        name_hint: &str,
+        body: &Stmt,
+        init: Option<&Stmt>,
+        allocated_buffers: Vec<Var>,
+        match_buffers: Vec<MatchBufferRegion>,
+        annotations: &Any,
+        span: Option<&Span>,
+    ) -> Result<Self> {
+        let iter_vars = Array::new(iter_vars);
+        let reads = Array::new(reads);
+        let writes = Array::new(writes);
+        let name_hint = String::from(name_hint);
+        let init = init.cloned();
+        let allocated_buffers = Array::new(allocated_buffers);
+        let match_buffers = Array::new(match_buffers);
+        let span = span.cloned();
+        crate::global_function!("tirx.SBlock")?
+            .call_packed(&[
+                AnyView::from(&iter_vars),
+                AnyView::from(&reads),
+                AnyView::from(&writes),
+                AnyView::from(&name_hint),
+                AnyView::from(body),
+                AnyView::from(&init),
+                AnyView::from(&allocated_buffers),
+                AnyView::from(&match_buffers),
+                AnyView::from(annotations),
+                AnyView::from(&span),
+            ])?
+            .try_into()
+    }
+}
+
+impl From<SBlock> for Stmt {
+    fn from(value: SBlock) -> Self {
+        value
+            .try_cast()
+            .expect("tirx.SBlock must be a subtype of tirx.Stmt")
+    }
+}
+
+/// Opaque Rust view of a block realization.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "tirx.SBlockRealize"]
+#[type_final]
+pub struct SBlockRealizeObj {
+    base: StmtObj,
+}
+
+/// Reference-counted handle to one realized scheduling block.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct SBlockRealize {
+    data: ObjectArc<SBlockRealizeObj>,
+}
+
+impl std::ops::Deref for SBlockRealize {
+    type Target = SBlockRealizeObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for SBlockRealizeObj {
+    type Target = StmtObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl SBlockRealizeObj {
+    /// Return the values bound to the block's axes.
+    pub fn iter_values(&self) -> Result<Array<Expr>> {
+        crate::reflected_field!(self, "iter_values")?.try_into()
+    }
+
+    /// Return the execution predicate.
+    pub fn predicate(&self) -> Result<Expr> {
+        crate::reflected_field!(self, "predicate")?.try_into()
+    }
+
+    /// Return the scheduling block being realized.
+    pub fn block(&self) -> Result<SBlock> {
+        crate::reflected_field!(self, "block")?.try_into()
+    }
+}
+
+impl SBlockRealize {
+    /// Construct one realization of `block`.
+    pub fn new(iter_values: Vec<Expr>, predicate: &Expr, block: &SBlock) -> Result<Self> {
+        let iter_values = Array::new(iter_values);
+        let none = ();
+        crate::global_function!("tirx.SBlockRealize")?
+            .call_packed(&[
+                AnyView::from(&iter_values),
+                AnyView::from(predicate),
+                AnyView::from(block),
+                AnyView::from(&none),
+            ])?
+            .try_into()
+    }
+}
+
+impl From<SBlockRealize> for Stmt {
+    fn from(value: SBlockRealize) -> Self {
+        value
+            .try_cast()
+            .expect("tirx.SBlockRealize must be a subtype of tirx.Stmt")
+    }
+}
