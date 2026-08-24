@@ -19,15 +19,16 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, AnyView, Array, Error, Map, ObjectArc, ObjectRefCast, Result, String, VALUE_ERROR,
+    AnyMap, AnyView, Array, DLDataTypeCode, Error, ObjectArc, ObjectRefCast, Result, String,
+    TYPE_ERROR, VALUE_ERROR,
 };
 
-use super::{BufferRegion, MatchBufferRegion, Stmt, StmtObj};
+use super::{primitive_type, BufferRegion, MatchBufferRegion, Stmt, StmtObj};
 use crate::ir::{Expr, PrimExprConvertible, PrimExprConvertibleObj, Range, Span, Var};
 
 /// Scheduling role attached to a TIR block iteration variable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(i64)]
+#[repr(i32)]
 pub enum IterVarType {
     DataParallel = 0,
     ThreadIndex = 1,
@@ -118,7 +119,7 @@ impl IterVarObj {
 }
 
 impl IterVar {
-    /// Construct an untagged block iteration variable.
+    /// Construct an untagged iteration variable through its polymorphic C++ base.
     pub fn new(domain: &Range, variable: &Var, iter_type: IterVarType) -> Result<Self> {
         let iter_type = iter_type as i64;
         let thread_tag = String::from("");
@@ -143,13 +144,22 @@ impl From<IterVar> for PrimExprConvertible {
     }
 }
 
-/// Opaque Rust view of TVM's current TIR block node (`SBlockNode` in C++).
+/// ABI-complete Rust representation of TVM's current TIR block node.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.SBlock"]
 #[type_final]
 pub struct SBlockObj {
     base: StmtObj,
+    iter_vars: Array<IterVar>,
+    reads: Array<BufferRegion>,
+    writes: Array<BufferRegion>,
+    name_hint: String,
+    alloc_buffers: Array<Var>,
+    match_buffers: Array<MatchBufferRegion>,
+    annotations: AnyMap<String>,
+    init: Option<Stmt>,
+    body: Stmt,
 }
 
 /// Reference-counted handle to a TIR scheduling block.
@@ -178,47 +188,47 @@ impl std::ops::Deref for SBlockObj {
 impl SBlockObj {
     /// Return the block axes defined recursively for its fields and body.
     pub fn iter_vars(&self) -> Result<Array<IterVar>> {
-        crate::reflected_field!(self, "iter_vars")?.try_into()
+        Ok(self.iter_vars.clone())
     }
 
     /// Return declared read regions.
     pub fn reads(&self) -> Result<Array<BufferRegion>> {
-        crate::reflected_field!(self, "reads")?.try_into()
+        Ok(self.reads.clone())
     }
 
     /// Return declared write regions.
     pub fn writes(&self) -> Result<Array<BufferRegion>> {
-        crate::reflected_field!(self, "writes")?.try_into()
+        Ok(self.writes.clone())
     }
 
     /// Return the diagnostic block name.
     pub fn name_hint(&self) -> Result<String> {
-        crate::reflected_field!(self, "name_hint")?.try_into()
+        Ok(self.name_hint.clone())
     }
 
     /// Return buffers allocated within this block.
     pub fn allocated_buffers(&self) -> Result<Array<Var>> {
-        crate::reflected_field!(self, "alloc_buffers")?.try_into()
+        Ok(self.alloc_buffers.clone())
     }
 
     /// Return match-buffer declarations.
     pub fn match_buffers(&self) -> Result<Array<MatchBufferRegion>> {
-        crate::reflected_field!(self, "match_buffers")?.try_into()
+        Ok(self.match_buffers.clone())
     }
 
-    /// Return heterogeneous scheduling annotations as their complete FFI value.
-    pub fn annotations(&self) -> Result<Any> {
-        crate::reflected_field!(self, "annotations")
+    /// Return heterogeneous scheduling annotations.
+    pub fn annotations(&self) -> Result<AnyMap<String>> {
+        Ok(self.annotations.clone())
     }
 
     /// Return an optional reduction initializer.
     pub fn init(&self) -> Result<Option<Stmt>> {
-        crate::reflected_field!(self, "init")?.try_into()
+        Ok(self.init.clone())
     }
 
     /// Return the main block body.
     pub fn body(&self) -> Result<Stmt> {
-        crate::reflected_field!(self, "body")?.try_into()
+        Ok(self.body.clone())
     }
 }
 
@@ -234,12 +244,12 @@ impl SBlock {
             None,
             Vec::new(),
             Vec::new(),
-            &Any::from(Map::<String, String>::new()),
+            &AnyMap::new(),
             None,
         )
     }
 
-    /// Construct a scheduling block with all structural fields.
+    /// Construct a scheduling block directly in Rust with all structural fields.
     #[allow(clippy::too_many_arguments)]
     pub fn with_metadata(
         iter_vars: Vec<IterVar>,
@@ -250,7 +260,7 @@ impl SBlock {
         init: Option<&Stmt>,
         allocated_buffers: Vec<Var>,
         match_buffers: Vec<MatchBufferRegion>,
-        annotations: &Any,
+        annotations: &AnyMap<String>,
         span: Option<&Span>,
     ) -> Result<Self> {
         let iter_vars = Array::new(iter_vars);
@@ -260,21 +270,20 @@ impl SBlock {
         let init = init.cloned();
         let allocated_buffers = Array::new(allocated_buffers);
         let match_buffers = Array::new(match_buffers);
-        let span = span.cloned();
-        crate::global_function!("tirx.SBlock")?
-            .call_packed(&[
-                AnyView::from(&iter_vars),
-                AnyView::from(&reads),
-                AnyView::from(&writes),
-                AnyView::from(&name_hint),
-                AnyView::from(body),
-                AnyView::from(&init),
-                AnyView::from(&allocated_buffers),
-                AnyView::from(&match_buffers),
-                AnyView::from(annotations),
-                AnyView::from(&span),
-            ])?
-            .try_into()
+        Ok(Self {
+            data: ObjectArc::new(SBlockObj {
+                base: StmtObj::new(span.cloned()),
+                iter_vars,
+                reads,
+                writes,
+                name_hint,
+                alloc_buffers: allocated_buffers,
+                match_buffers,
+                annotations: annotations.clone(),
+                init,
+                body: body.clone(),
+            }),
+        })
     }
 }
 
@@ -286,13 +295,16 @@ impl From<SBlock> for Stmt {
     }
 }
 
-/// Opaque Rust view of a block realization.
+/// ABI-complete Rust representation of a block realization.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.SBlockRealize"]
 #[type_final]
 pub struct SBlockRealizeObj {
     base: StmtObj,
+    iter_values: Array<Expr>,
+    predicate: Expr,
+    block: SBlock,
 }
 
 /// Reference-counted handle to one realized scheduling block.
@@ -321,33 +333,49 @@ impl std::ops::Deref for SBlockRealizeObj {
 impl SBlockRealizeObj {
     /// Return the values bound to the block's axes.
     pub fn iter_values(&self) -> Result<Array<Expr>> {
-        crate::reflected_field!(self, "iter_values")?.try_into()
+        Ok(self.iter_values.clone())
     }
 
     /// Return the execution predicate.
     pub fn predicate(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "predicate")?.try_into()
+        Ok(self.predicate.clone())
     }
 
     /// Return the scheduling block being realized.
     pub fn block(&self) -> Result<SBlock> {
-        crate::reflected_field!(self, "block")?.try_into()
+        Ok(self.block.clone())
     }
 }
 
 impl SBlockRealize {
-    /// Construct one realization of `block`.
+    /// Construct one realization of `block` directly in Rust.
     pub fn new(iter_values: Vec<Expr>, predicate: &Expr, block: &SBlock) -> Result<Self> {
-        let iter_values = Array::new(iter_values);
-        let none = ();
-        crate::global_function!("tirx.SBlockRealize")?
-            .call_packed(&[
-                AnyView::from(&iter_values),
-                AnyView::from(predicate),
-                AnyView::from(block),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        if block.iter_vars()?.len() != iter_values.len() {
+            return Err(Error::new(
+                VALUE_ERROR,
+                "SBlockRealize needs the same number of iter_vars and binding values",
+                "",
+            ));
+        }
+        for value in &iter_values {
+            primitive_type(value, "SBlockRealize binding value")?;
+        }
+        let predicate_dtype = primitive_type(predicate, "SBlockRealize predicate")?.dtype()?;
+        if predicate_dtype.code != DLDataTypeCode::kDLBool as u8 {
+            return Err(Error::new(
+                TYPE_ERROR,
+                "SBlockRealize predicate must have bool type",
+                "",
+            ));
+        }
+        Ok(Self {
+            data: ObjectArc::new(SBlockRealizeObj {
+                base: StmtObj::new(None),
+                iter_values: Array::new(iter_values),
+                predicate: predicate.clone(),
+                block: block.clone(),
+            }),
+        })
     }
 }
 

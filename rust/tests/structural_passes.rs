@@ -25,19 +25,20 @@ use tvm::analysis::{
     node_statistics, ExprTraceEvent,
 };
 use tvm::ir::{
-    Call, Expr, GlobalVar, IRModule, IntImm, PrimType, Range, SourceName, Span, Type, Var,
+    Call, DictAttrs, DummyGlobalInfo, Expr, GlobalVar, IRModule, IntImm, PrimType, Range,
+    SourceMap, SourceName, Span, Type, Var,
 };
 use tvm::relax::{
     BindingBlock, If as RelaxIf, RelaxFunction, SeqExpr, Tuple as RelaxTuple, VarBinding,
 };
 use tvm::tirx::{
-    Add, AddObj, AssertStmt, AssertStmtObj, BufferLoad, BufferRegion, BufferStore, BufferType,
-    Evaluate, EvaluateObj, For as TirFor, IfThenElse, IterVar, IterVarType, Mul, PrimFunc, SBlock,
-    SBlockRealize, SeqStmt, Stmt, Sub,
+    Add, AddObj, AssertStmt, AssertStmtObj, Axis, BufferLoad, BufferRegion, BufferStore,
+    BufferType, Evaluate, EvaluateObj, For as TirFor, IfThenElse, Iter, IterVar, IterVarType,
+    Layout, Mul, PrimFunc, SBlock, SBlockRealize, SeqStmt, Stmt, Sub, TileLayout,
 };
 use tvm::transform;
 use tvm::tvm_ffi::{
-    dispatch, structural_map, structural_walk, Any, AnyCompatible, AnyView, DefRegionKind,
+    dispatch, structural_map, structural_walk, Any, AnyCompatible, AnyMap, AnyView, DefRegionKind,
     Function, Map, Module, ObjectArc, ObjectRefCast, ObjectRefCore, Result, WalkOrder, WalkResult,
 };
 
@@ -302,9 +303,72 @@ fn source_and_module_metadata_round_trip_cpp_objects() {
     let module = IRModule::from_expr(&function).unwrap();
     assert_eq!(module.functions().unwrap().len(), 1);
     assert_eq!(module.global_var_map().unwrap().len(), 1);
-    module.source_map().unwrap();
-    module.attrs().unwrap().dictionary().unwrap();
-    module.global_infos().unwrap();
+    assert_eq!(module.source_map().unwrap().source_map().unwrap().len(), 0);
+
+    // SourceMap itself is Rust-allocated; SourceMapAdd is a C++ semantic
+    // operation mutating its ABI-compatible map field.
+    let source_map = SourceMap::new();
+    let source_name = source_map
+        .add("module.tvm", "first line\nsecond line")
+        .unwrap();
+    let sources = source_map.source_map().unwrap();
+    let source = sources.get(&source_name).unwrap().unwrap();
+    assert_eq!(
+        source.source_name().unwrap().name().unwrap().as_str(),
+        "module.tvm"
+    );
+    assert_eq!(source.source().unwrap().as_str(), "first line\nsecond line");
+
+    let dictionary: AnyMap<tvm::tvm_ffi::String> = [
+        (tvm::tvm_ffi::String::from("number"), Any::from(7i64)),
+        (
+            tvm::tvm_ffi::String::from("text"),
+            Any::from(tvm::tvm_ffi::String::from("value")),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let attrs = DictAttrs::from_dictionary(&dictionary).unwrap();
+    let dictionary = attrs.dictionary().unwrap();
+    assert_eq!(
+        i64::try_from(
+            dictionary
+                .get(&tvm::tvm_ffi::String::from("number"))
+                .unwrap()
+                .unwrap()
+        )
+        .unwrap(),
+        7
+    );
+    assert_eq!(
+        tvm::tvm_ffi::String::try_from(
+            dictionary
+                .get(&tvm::tvm_ffi::String::from("text"))
+                .unwrap()
+                .unwrap()
+        )
+        .unwrap()
+        .as_str(),
+        "value"
+    );
+
+    assert!(module.global_infos().unwrap().is_empty());
+    let dummy = DummyGlobalInfo::new().unwrap();
+    let updated = module
+        .with_updated_global_info("dummy", vec![dummy.clone().into()])
+        .unwrap();
+    assert!(module.global_infos().unwrap().is_empty());
+    let group = updated
+        .global_infos()
+        .unwrap()
+        .get(&tvm::tvm_ffi::String::from("dummy"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(group.len(), 1);
+    assert_eq!(
+        object_pointer(&group.get(0).unwrap()),
+        object_pointer(&dummy)
+    );
 }
 
 #[test]
@@ -861,8 +925,56 @@ fn mutate_can_limit_a_rewrite_to_loop_bodies() {
 #[test]
 fn buffer_and_block_bindings_round_trip_cpp_objects() {
     load_tvm_compiler();
-    let buffer_type =
-        BufferType::new("global", "int32", vec![Expr::int("int64", 8).unwrap()]).unwrap();
+    let extent = Expr::int("int64", 8).unwrap();
+    let stride = Expr::int("int64", 1).unwrap();
+    let axis_name = Axis::get("m").unwrap();
+    let layout_iter = Iter::new(&extent, &stride, &axis_name).unwrap();
+    let tile_layout = TileLayout::new(vec![layout_iter.clone()], Vec::new(), Map::new()).unwrap();
+    let layout = Layout::from(tile_layout.clone());
+    let buffer_type = BufferType::with_metadata(
+        "global",
+        &PrimType::new("int32").unwrap(),
+        vec![extent.clone()],
+        Vec::new(),
+        &Expr::int("int64", 0).unwrap(),
+        64,
+        1,
+        Some(&layout),
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+    let reflected_layout = buffer_type
+        .layout()
+        .unwrap()
+        .unwrap()
+        .try_cast::<TileLayout>()
+        .unwrap();
+    assert_eq!(reflected_layout.shard().unwrap().len(), 1);
+    assert!(reflected_layout.replica().unwrap().is_empty());
+    assert!(reflected_layout.offset().unwrap().is_empty());
+    let reflected_iter = reflected_layout.shard().unwrap().get(0).unwrap();
+    assert_eq!(
+        reflected_iter
+            .extent()
+            .unwrap()
+            .try_cast::<IntImm>()
+            .unwrap()
+            .value()
+            .unwrap(),
+        8
+    );
+    assert_eq!(
+        reflected_iter
+            .stride()
+            .unwrap()
+            .try_cast::<IntImm>()
+            .unwrap()
+            .value()
+            .unwrap(),
+        1
+    );
+    assert_eq!(reflected_iter.axis().unwrap().name().unwrap().as_str(), "m");
     let buffer = buffer_type.new_var("A").unwrap();
     let axis = Var::new("vi", "int64").unwrap();
     let axis_domain = Range::from_min_extent(
@@ -882,7 +994,15 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
     )
     .unwrap();
     let region = BufferRegion::new(&buffer, vec![axis_domain.clone()]).unwrap();
-    let annotations = Any::from(Map::<tvm::tvm_ffi::String, tvm::tvm_ffi::String>::new());
+    let annotations: AnyMap<tvm::tvm_ffi::String> = [
+        (tvm::tvm_ffi::String::from("pipeline"), Any::from(2i64)),
+        (
+            tvm::tvm_ffi::String::from("tag"),
+            Any::from(tvm::tvm_ffi::String::from("copy")),
+        ),
+    ]
+    .into_iter()
+    .collect();
     let block = SBlock::with_metadata(
         vec![iter_var],
         vec![region.clone()],
@@ -896,6 +1016,7 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
         None,
     )
     .unwrap();
+    assert_eq!(block.annotations().unwrap().len(), 2);
     let realization = SBlockRealize::new(
         vec![Expr::int("int64", 0).unwrap()],
         &Expr::int("bool", 1).unwrap(),
@@ -1074,10 +1195,12 @@ fn unit_loop_elimination_preserves_annotated_loops() {
     load_tvm_compiler();
     let loop_var = Var::new("i", "int64").unwrap();
     let body: Stmt = Evaluate::new(&Expr::from(loop_var.clone())).unwrap().into();
-    let annotations = Any::from(Map::from_iter([(
+    let annotations: AnyMap<tvm::tvm_ffi::String> = [(
         tvm::tvm_ffi::String::from("keep_unit_loop"),
-        1i64,
-    )]));
+        Any::from(1i64),
+    )]
+    .into_iter()
+    .collect();
     let loop_statement = TirFor::with_metadata(
         &loop_var,
         &Expr::int("int64", 7).unwrap(),

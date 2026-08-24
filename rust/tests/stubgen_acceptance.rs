@@ -32,8 +32,8 @@ use tvm::tvm_ffi::tvm_ffi_sys::{
     TVMFFIFieldFlagBitMask, TVMFFIFieldInfo, TVMFFIGetTypeInfo, TVMFFITypeInfo,
 };
 use tvm::tvm_ffi::{
-    structural_map, structural_walk, Any, DefRegionKind, Function, Module, Object, ObjectArc,
-    ObjectCore, ObjectRefCast, ObjectRefCore, Result, WalkOrder, WalkResult,
+    structural_map, structural_walk, Any, AnyCompatible, AnyView, DefRegionKind, Function, Module,
+    Object, ObjectArc, ObjectCore, ObjectRefCast, ObjectRefCore, Result, WalkOrder, WalkResult,
 };
 
 static TVM_COMPILER: OnceLock<Module> = OnceLock::new();
@@ -54,8 +54,9 @@ fn load_tvm_compiler() {
 
 fn sample_function() -> PrimFunc {
     let variable = Var::new("x", "int32").unwrap();
-    let zero = Expr::int("int32", 0).unwrap();
-    let value = Expr::add(&variable.clone().into(), &zero).unwrap();
+    let variable_expr = Expr::from(variable.clone());
+    let zero = Expr::from(IntImm::new("int32", 0).unwrap());
+    let value = Expr::from(Add::new(&variable_expr, &zero).unwrap());
     let body = Evaluate::new(&value).unwrap();
     PrimFunc::new(vec![variable], &body).unwrap()
 }
@@ -124,8 +125,33 @@ fn object_pointer<O: ObjectRefCore>(value: &O) -> *const () {
     unsafe { ObjectArc::as_raw(O::data(value)).cast() }
 }
 
+fn cpp_reflected_field<O: ObjectRefCore>(value: &O, name: &str) -> Any {
+    let field = direct_field::<O::ContainerType>(name);
+    let getter = field
+        .getter
+        .expect("reflected field must have a C ABI getter");
+    let object = object_pointer(value).cast::<u8>();
+    let address = unsafe { object.add(field.offset as usize).cast_mut().cast() };
+    let mut result = Any::new();
+    assert_eq!(unsafe { getter(address, Any::as_data_ptr(&mut result)) }, 0);
+    result
+}
+
+fn assert_cpp_structural_equal<L: AnyCompatible, R: AnyCompatible>(lhs: &L, rhs: &R) {
+    let equal = Function::get_global("ffi.StructuralEqual")
+        .unwrap()
+        .call_packed(&[
+            AnyView::from(lhs),
+            AnyView::from(rhs),
+            AnyView::from(&false),
+            AnyView::from(&false),
+        ])
+        .unwrap();
+    assert!(bool::try_from(equal).unwrap());
+}
+
 #[test]
-fn handwritten_bindings_match_the_minimal_runtime_contract() {
+fn minimal_bindings_match_the_runtime_contract() {
     load_tvm_compiler();
 
     assert_type_contract::<ExprObj, Object>(false, &["span", "ty"]);
@@ -156,19 +182,14 @@ fn handwritten_bindings_match_the_minimal_runtime_contract() {
 }
 
 #[test]
-fn canonical_constructors_and_getters_round_trip() {
+fn direct_and_semantic_constructors_round_trip() {
     load_tvm_compiler();
-    for name in [
-        "ir.IntImm",
-        "ir.PrimType",
-        "ir.TypeMissing",
-        "ir.Var",
-        "tirx.Add",
-        "tirx.Evaluate",
-        "tirx.PrimFunc",
-    ] {
+    // These constructors intentionally remain registered-function overrides:
+    // PrimType is interned, TypeMissing is a singleton, and PrimFunc derives
+    // additional semantic state.
+    for name in ["ir.PrimType", "ir.TypeMissing", "tirx.PrimFunc"] {
         Function::get_global(name)
-            .unwrap_or_else(|error| panic!("missing canonical constructor `{name}`: {error}"));
+            .unwrap_or_else(|error| panic!("missing semantic constructor `{name}`: {error}"));
     }
 
     let function = sample_function();
@@ -201,6 +222,51 @@ fn canonical_constructors_and_getters_round_trip() {
     function.ty().unwrap();
     assert!(function.span().unwrap().is_none());
     assert!(IntImm::new("int8", 128).is_err());
+}
+
+#[test]
+fn rust_allocated_nodes_are_consumed_by_cpp_abi() {
+    load_tvm_compiler();
+
+    let lhs = Expr::from(IntImm::new("int32", 7).unwrap());
+    let rhs = Expr::from(IntImm::new("int32", 9).unwrap());
+    let rust_add = Add::new(&lhs, &rhs).unwrap();
+
+    // Invoke the field getter registered by C++ on a Rust allocation.  A wrong
+    // Rust field offset or representation would return the wrong object here.
+    let reflected_lhs = Expr::try_from(cpp_reflected_field(&rust_add, "a")).unwrap();
+    assert_eq!(object_pointer(&reflected_lhs), object_pointer(&lhs));
+
+    // Build the equivalent node through C++ and compare through C++'s
+    // structural-equality implementation.
+    let none = ();
+    let cpp_lhs = Function::get_global("ir.IntImm")
+        .unwrap()
+        .call_packed(&[
+            AnyView::from(&PrimType::new("int32").unwrap().dtype().unwrap()),
+            AnyView::from(&7_i64),
+            AnyView::from(&none),
+        ])
+        .unwrap();
+    let cpp_rhs = Function::get_global("ir.IntImm")
+        .unwrap()
+        .call_packed(&[
+            AnyView::from(&PrimType::new("int32").unwrap().dtype().unwrap()),
+            AnyView::from(&9_i64),
+            AnyView::from(&none),
+        ])
+        .unwrap();
+    let cpp_add: Add = Function::get_global("tirx.Add")
+        .unwrap()
+        .call_packed(&[
+            AnyView::from(&cpp_lhs),
+            AnyView::from(&cpp_rhs),
+            AnyView::from(&none),
+        ])
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert_cpp_structural_equal(&rust_add, &cpp_add);
 }
 
 #[test]

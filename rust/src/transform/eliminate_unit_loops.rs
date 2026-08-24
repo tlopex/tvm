@@ -19,10 +19,9 @@
 
 use std::collections::HashMap;
 
-use tvm_ffi::derive::ObjectRef;
 use tvm_ffi::{
-    structural_mutate, Any, DefRegionKind, MutateCallbacks, MutateContext, ObjectArc,
-    ObjectRefCore, Result,
+    structural_mutate, Any, AnyMap, DefRegionKind, MutateCallbacks, MutateContext, ObjectArc,
+    ObjectRefCore, Result, String,
 };
 
 use super::utils::int_value;
@@ -33,21 +32,6 @@ use crate::tirx::{For as TirFor, PrimFunc, Stmt};
 #[derive(Default)]
 struct UnitLoopEliminationState {
     replacements: HashMap<usize, Expr>,
-}
-
-/// Type-erased view used only to read the common map header.
-#[repr(C)]
-#[derive(ObjectRef, Clone)]
-struct UntypedMap {
-    data: ObjectArc<tvm_ffi::collections::map::MapObj>,
-}
-
-impl std::ops::Deref for UntypedMap {
-    type Target = tvm_ffi::collections::map::MapObj;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
 }
 
 /// Eliminate unannotated unit loops and substitute their variables.
@@ -84,7 +68,7 @@ fn eliminate_unit_loop(
     let kind = value.kind()?;
     let should_eliminate = kind != crate::tirx::ForKind::ThreadBinding
         && int_value(&extent)? == Some(1)
-        && untyped_map_is_empty(annotations.clone())?;
+        && annotations.is_empty();
 
     if should_eliminate {
         let key = object_identity(&value.loop_var()?);
@@ -109,7 +93,7 @@ fn eliminate_unit_loop(
     let body = Stmt::try_from(mutator.mutate(&value.body()?)?)?;
     let thread_binding =
         Option::<crate::tirx::IterVar>::try_from(mutator.mutate(&value.thread_binding()?)?)?;
-    let annotations = mutator.mutate(&annotations)?;
+    let annotations = AnyMap::<String>::try_from(mutator.mutate(&annotations)?)?;
     let step = value
         .step()?
         .map(|step| mutator.mutate(&step).and_then(Expr::try_from))
@@ -143,10 +127,4 @@ fn object_identity<T: ObjectRefCore>(value: &T) -> usize {
     // The pointer is used only as a non-dereferenced identity key while
     // `value` and the owning traversal root keep the object alive.
     unsafe { ObjectArc::as_raw(T::data(value)) as usize }
-}
-
-fn untyped_map_is_empty(value: Any) -> Result<bool> {
-    // This checked cast verifies only the common `ffi.Map` runtime type.  No
-    // annotation key or heterogeneous value is interpreted.
-    Ok(UntypedMap::try_from(value)?.size == 0)
 }

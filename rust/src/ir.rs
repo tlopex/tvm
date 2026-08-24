@@ -19,16 +19,18 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, AnyCompatible, AnyView, Array, DLDataType, DLDataTypeExt, Map, ObjectArc, ObjectRefCast,
-    Result, String,
+    AnyCompatible, AnyMap, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Map,
+    ObjectArc, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
-/// Opaque Rust view of TVM's `ExprNode` prefix.
+/// ABI-complete Rust representation of TVM's `ExprNode` prefix.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Expr"]
 pub struct ExprObj {
     base: tvm_ffi::Object,
+    span: Option<Span>,
+    ty: Type,
 }
 
 /// Reference-counted handle to any TVM expression.
@@ -47,23 +49,32 @@ impl std::ops::Deref for Expr {
 }
 
 impl ExprObj {
+    pub(crate) fn new(ty: Type, span: Option<Span>) -> Self {
+        Self {
+            base: tvm_ffi::Object::new(),
+            span,
+            ty,
+        }
+    }
+
     /// Return optional source metadata carried by this expression.
     pub fn span(&self) -> Result<Option<Span>> {
-        crate::reflected_field!(self, "span")?.try_into()
+        Ok(self.span.clone())
     }
 
     /// Return the static type annotation carried by this expression.
     pub fn ty(&self) -> Result<Type> {
-        crate::reflected_field!(self, "ty")?.try_into()
+        Ok(self.ty.clone())
     }
 }
 
-/// Opaque Rust view of TVM's `BaseFuncNode` prefix.
+/// ABI-complete Rust representation of TVM's `BaseFuncNode` prefix.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.BaseFunc"]
 pub struct BaseFuncObj {
     base: ExprObj,
+    attrs: DictAttrs,
 }
 
 /// Reference-counted handle to any TVM base function.
@@ -92,17 +103,18 @@ impl std::ops::Deref for BaseFuncObj {
 impl BaseFuncObj {
     /// Return the function attributes.
     pub fn attrs(&self) -> Result<DictAttrs> {
-        crate::reflected_field!(self, "attrs")?.try_into()
+        Ok(self.attrs.clone())
     }
 }
 
-/// Opaque Rust view of TVM's `GlobalVarNode`.
+/// ABI-complete Rust representation of TVM's `GlobalVarNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.GlobalVar"]
 #[type_final]
 pub struct GlobalVarObj {
     base: ExprObj,
+    name_hint: String,
 }
 
 /// Reference-counted handle to a global function name.
@@ -131,16 +143,17 @@ impl std::ops::Deref for GlobalVarObj {
 impl GlobalVarObj {
     /// Return the module-level symbol name hint.
     pub fn name_hint(&self) -> Result<String> {
-        crate::reflected_field!(self, "name_hint")?.try_into()
+        Ok(self.name_hint.clone())
     }
 }
 
-/// Opaque Rust view of TVM's `VarNode` prefix.
+/// ABI-complete Rust representation of TVM's `VarNode` prefix.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Var"]
 pub struct VarObj {
     base: ExprObj,
+    name: String,
 }
 
 /// Reference-counted handle to a TVM variable.
@@ -169,17 +182,18 @@ impl std::ops::Deref for VarObj {
 impl VarObj {
     /// Return the display name hint.  Variable identity is still pointer-based.
     pub fn name(&self) -> Result<String> {
-        crate::reflected_field!(self, "name")?.try_into()
+        Ok(self.name.clone())
     }
 }
 
-/// Opaque Rust view of TVM's interned source name.
+/// ABI-complete Rust view of TVM's interned source name.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.SourceName"]
 #[type_final]
 pub struct SourceNameObj {
     base: tvm_ffi::Object,
+    name: String,
 }
 
 /// Reference-counted handle to an interned source name.
@@ -200,7 +214,7 @@ impl std::ops::Deref for SourceName {
 impl SourceNameObj {
     /// Return the interned source name text.
     pub fn name(&self) -> Result<String> {
-        crate::reflected_field!(self, "name")?.try_into()
+        Ok(self.name.clone())
     }
 }
 
@@ -214,12 +228,110 @@ impl SourceName {
     }
 }
 
-/// Opaque Rust view of TVM's source-span metadata.
+/// Opaque Rust view of TVM's `SourceNode`.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "ir.Source"]
+#[type_final]
+pub struct SourceObj {
+    base: tvm_ffi::Object,
+}
+
+/// Reference-counted handle to one program source fragment.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct Source {
+    data: ObjectArc<SourceObj>,
+}
+
+impl std::ops::Deref for Source {
+    type Target = SourceObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl SourceObj {
+    /// Return the interned name of this source fragment.
+    pub fn source_name(&self) -> Result<SourceName> {
+        crate::reflected_field!(self, "source_name")?.try_into()
+    }
+
+    /// Return the complete source text.
+    pub fn source(&self) -> Result<String> {
+        crate::reflected_field!(self, "source")?.try_into()
+    }
+}
+
+/// ABI-complete Rust representation of TVM's `SourceMapObj`.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "ir.SourceMap"]
+#[type_final]
+pub struct SourceMapObj {
+    base: tvm_ffi::Object,
+    source_map: Map<SourceName, Source>,
+}
+
+/// Reference-counted handle to TVM's source-name-to-source mapping.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct SourceMap {
+    data: ObjectArc<SourceMapObj>,
+}
+
+impl std::ops::Deref for SourceMap {
+    type Target = SourceMapObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl SourceMapObj {
+    /// Return the typed source-name-to-source mapping.
+    pub fn source_map(&self) -> Result<Map<SourceName, Source>> {
+        Ok(self.source_map.clone())
+    }
+}
+
+impl SourceMap {
+    /// Construct an empty source map directly in Rust.
+    pub fn new() -> Self {
+        Self {
+            data: ObjectArc::new(SourceMapObj {
+                base: tvm_ffi::Object::new(),
+                source_map: Map::new(),
+            }),
+        }
+    }
+
+    /// Add a named source fragment through TVM's registered source-map API.
+    pub fn add(&self, name: &str, content: &str) -> Result<SourceName> {
+        let name = String::from(name);
+        let content = String::from(content);
+        crate::global_function!("SourceMapAdd")?
+            .call_packed(&[
+                AnyView::from(self),
+                AnyView::from(&name),
+                AnyView::from(&content),
+            ])?
+            .try_into()
+    }
+}
+
+/// ABI-complete Rust representation of TVM's source-span metadata.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Span"]
 pub struct SpanObj {
     base: tvm_ffi::Object,
+    source_name: SourceName,
+    line: i32,
+    column: i32,
+    end_line: i32,
+    end_column: i32,
 }
 
 /// Reference-counted handle to source-span metadata.
@@ -232,27 +344,27 @@ pub struct Span {
 impl SpanObj {
     /// Return the source fragment containing this span.
     pub fn source_name(&self) -> Result<SourceName> {
-        crate::reflected_field!(self, "source_name")?.try_into()
+        Ok(self.source_name.clone())
     }
 
     /// Return the first source line.
     pub fn line(&self) -> Result<i64> {
-        crate::reflected_field!(self, "line")?.try_into()
+        Ok(i64::from(self.line))
     }
 
     /// Return the first source column.
     pub fn column(&self) -> Result<i64> {
-        crate::reflected_field!(self, "column")?.try_into()
+        Ok(i64::from(self.column))
     }
 
     /// Return the last source line.
     pub fn end_line(&self) -> Result<i64> {
-        crate::reflected_field!(self, "end_line")?.try_into()
+        Ok(i64::from(self.end_line))
     }
 
     /// Return the last source column.
     pub fn end_column(&self) -> Result<i64> {
-        crate::reflected_field!(self, "end_column")?.try_into()
+        Ok(i64::from(self.end_column))
     }
 }
 
@@ -265,16 +377,31 @@ impl Span {
         end_line: i64,
         end_column: i64,
     ) -> Result<Self> {
-        crate::global_function!("ir.Span")?
-            .call_packed(&[
-                AnyView::from(source_name),
-                AnyView::from(&line),
-                AnyView::from(&end_line),
-                AnyView::from(&column),
-                AnyView::from(&end_column),
-            ])?
-            .try_into()
+        let line = i32::try_from(line).map_err(|_| integer_field_overflow("line", line))?;
+        let column = i32::try_from(column).map_err(|_| integer_field_overflow("column", column))?;
+        let end_line =
+            i32::try_from(end_line).map_err(|_| integer_field_overflow("end_line", end_line))?;
+        let end_column = i32::try_from(end_column)
+            .map_err(|_| integer_field_overflow("end_column", end_column))?;
+        Ok(Self {
+            data: ObjectArc::new(SpanObj {
+                base: tvm_ffi::Object::new(),
+                source_name: source_name.clone(),
+                line,
+                column,
+                end_line,
+                end_column,
+            }),
+        })
     }
+}
+
+fn integer_field_overflow(field: &str, value: i64) -> Error {
+    Error::new(
+        VALUE_ERROR,
+        &format!("{field} value {value} does not fit TVM's 32-bit integer field"),
+        "",
+    )
 }
 
 /// Opaque prefix for TVM objects that can convert to a primitive expression.
@@ -300,13 +427,16 @@ impl std::ops::Deref for PrimExprConvertible {
     }
 }
 
-/// Opaque Rust view of an integer range.
+/// ABI-complete Rust representation of an integer range.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Range"]
 #[type_final]
 pub struct RangeObj {
     base: tvm_ffi::Object,
+    min: Expr,
+    extent: Expr,
+    span: Option<Span>,
 }
 
 /// Reference-counted handle to `min .. min + extent`.
@@ -327,32 +457,44 @@ impl std::ops::Deref for Range {
 impl RangeObj {
     /// Return the first value in the range.
     pub fn minimum(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "min")?.try_into()
+        Ok(self.min.clone())
     }
 
     /// Return the number of values in the range.
     pub fn extent(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "extent")?.try_into()
+        Ok(self.extent.clone())
     }
 
     /// Return optional source metadata.
     pub fn span(&self) -> Result<Option<Span>> {
-        crate::reflected_field!(self, "span")?.try_into()
+        Ok(self.span.clone())
     }
 }
 
 impl Range {
     /// Construct a range from its minimum and extent.
     pub fn from_min_extent(minimum: &Expr, extent: &Expr) -> Result<Self> {
-        let none = ();
-        crate::global_function!("ir.Range_from_min_extent")?
-            .call_packed(&[
-                AnyView::from(minimum),
-                AnyView::from(extent),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        require_primitive_expr(minimum, "Range minimum")?;
+        require_primitive_expr(extent, "Range extent")?;
+        Ok(Self {
+            data: ObjectArc::new(RangeObj {
+                base: tvm_ffi::Object::new(),
+                min: minimum.clone(),
+                extent: extent.clone(),
+                span: None,
+            }),
+        })
     }
+}
+
+fn require_primitive_expr(value: &Expr, context: &str) -> Result<()> {
+    value.ty()?.try_cast::<PrimType>().map(|_| ()).map_err(|_| {
+        Error::new(
+            TYPE_ERROR,
+            &format!("{context} must have a primitive type"),
+            "",
+        )
+    })
 }
 
 impl std::ops::Deref for Span {
@@ -363,13 +505,17 @@ impl std::ops::Deref for Span {
     }
 }
 
-/// Opaque Rust view of TVM's `CallNode`.
+/// ABI-complete Rust representation of TVM's `CallNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Call"]
 #[type_final]
 pub struct CallObj {
     base: ExprObj,
+    op: Expr,
+    args: Array<Expr>,
+    attrs: Option<Attrs>,
+    ty_args: Array<Type>,
 }
 
 /// Reference-counted handle to a call expression shared by TIR and Relax.
@@ -398,31 +544,32 @@ impl std::ops::Deref for CallObj {
 impl CallObj {
     /// Return the callable expression.
     pub fn operator(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "op")?.try_into()
+        Ok(self.op.clone())
     }
 
     /// Return the call arguments.
     pub fn arguments(&self) -> Result<Array<Expr>> {
-        crate::reflected_field!(self, "args")?.try_into()
+        Ok(self.args.clone())
     }
 
     /// Return optional operator-specific attributes.
     pub fn attrs(&self) -> Result<Option<Attrs>> {
-        crate::reflected_field!(self, "attrs")?.try_into()
+        Ok(self.attrs.clone())
     }
 
     /// Return explicit type arguments.
     pub fn type_arguments(&self) -> Result<Array<Type>> {
-        crate::reflected_field!(self, "ty_args")?.try_into()
+        Ok(self.ty_args.clone())
     }
 }
 
-/// Opaque Rust view of TVM's `TypeNode` prefix.
+/// ABI-complete Rust representation of TVM's `TypeNode` prefix.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Type"]
 pub struct TypeObj {
     base: tvm_ffi::Object,
+    span: Option<Span>,
 }
 
 /// Reference-counted handle to any TVM type.
@@ -441,19 +588,27 @@ impl std::ops::Deref for Type {
 }
 
 impl TypeObj {
+    pub(crate) fn new(span: Option<Span>) -> Self {
+        Self {
+            base: tvm_ffi::Object::new(),
+            span,
+        }
+    }
+
     /// Return optional source metadata carried by this type.
     pub fn span(&self) -> Result<Option<Span>> {
-        crate::reflected_field!(self, "span")?.try_into()
+        Ok(self.span.clone())
     }
 }
 
-/// Opaque Rust view of TVM's `PrimTypeNode`.
+/// ABI-complete Rust representation of TVM's `PrimTypeNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.PrimType"]
 #[type_final]
 pub struct PrimTypeObj {
     base: TypeObj,
+    dtype: DLDataType,
 }
 
 /// Reference-counted handle to a primitive TVM type.
@@ -482,17 +637,18 @@ impl std::ops::Deref for PrimTypeObj {
 impl PrimTypeObj {
     /// Return the DLPack dtype stored by this primitive type.
     pub fn dtype(&self) -> Result<DLDataType> {
-        crate::reflected_field!(self, "dtype")?.try_into()
+        Ok(self.dtype)
     }
 }
 
-/// Opaque Rust view of TVM's `IntImmNode`.
+/// ABI-complete Rust representation of TVM's `IntImmNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.IntImm"]
 #[type_final]
 pub struct IntImmObj {
     base: ExprObj,
+    value: i64,
 }
 
 /// Reference-counted handle to an integer literal.
@@ -521,7 +677,7 @@ impl std::ops::Deref for IntImmObj {
 impl IntImmObj {
     /// Return the literal value.
     pub fn value(&self) -> Result<i64> {
-        crate::reflected_field!(self, "value")?.try_into()
+        Ok(self.value)
     }
 }
 
@@ -555,6 +711,7 @@ impl std::ops::Deref for Attrs {
 #[type_final]
 pub struct DictAttrsObj {
     base: AttrsObj,
+    dict: AnyMap<String>,
 }
 
 /// Reference-counted handle to dictionary-backed TVM attributes.
@@ -581,19 +738,100 @@ impl std::ops::Deref for DictAttrsObj {
 }
 
 impl DictAttrsObj {
-    /// Return the heterogeneous attribute dictionary as its complete FFI value.
-    pub fn dictionary(&self) -> Result<Any> {
-        crate::reflected_field!(self, "__dict__")
+    /// Return the heterogeneous string-to-value attribute dictionary.
+    pub fn dictionary(&self) -> Result<AnyMap<String>> {
+        Ok(self.dict.clone())
     }
 }
 
-/// Opaque Rust view of TVM's `IRModuleNode`.
+/// Opaque Rust view of TVM's `GlobalInfoNode` base class.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "ir.GlobalInfo"]
+pub struct GlobalInfoObj {
+    base: tvm_ffi::Object,
+}
+
+/// Reference-counted handle to module-level global metadata.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct GlobalInfo {
+    data: ObjectArc<GlobalInfoObj>,
+}
+
+impl std::ops::Deref for GlobalInfo {
+    type Target = GlobalInfoObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+/// Opaque Rust view of TVM's fieldless test global-info object.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "ir.DummyGlobalInfo"]
+#[type_final]
+pub struct DummyGlobalInfoObj {
+    base: GlobalInfoObj,
+}
+
+/// Reference-counted handle to a dummy global-info value.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct DummyGlobalInfo {
+    data: ObjectArc<DummyGlobalInfoObj>,
+}
+
+impl std::ops::Deref for DummyGlobalInfo {
+    type Target = DummyGlobalInfoObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for DummyGlobalInfoObj {
+    type Target = GlobalInfoObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DummyGlobalInfo {
+    /// Construct TVM's fieldless global-info test value directly in Rust.
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            data: ObjectArc::new(DummyGlobalInfoObj {
+                base: GlobalInfoObj {
+                    base: tvm_ffi::Object::new(),
+                },
+            }),
+        })
+    }
+}
+
+impl From<DummyGlobalInfo> for GlobalInfo {
+    fn from(value: DummyGlobalInfo) -> Self {
+        value
+            .try_cast()
+            .expect("ir.DummyGlobalInfo must be a subtype of ir.GlobalInfo")
+    }
+}
+
+/// ABI-complete Rust representation of TVM's `IRModuleNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.IRModule"]
 #[type_final]
 pub struct IRModuleObj {
     base: tvm_ffi::Object,
+    functions: Map<GlobalVar, BaseFunc>,
+    source_map: SourceMap,
+    attrs: DictAttrs,
+    global_infos: Map<String, Array<GlobalInfo>>,
+    global_var_map: Map<String, GlobalVar>,
 }
 
 /// Reference-counted handle to a TVM IRModule.
@@ -614,27 +852,27 @@ impl std::ops::Deref for IRModule {
 impl IRModuleObj {
     /// Return the module's global-function table.
     pub fn functions(&self) -> Result<Map<GlobalVar, BaseFunc>> {
-        crate::reflected_field!(self, "functions")?.try_into()
+        Ok(self.functions.clone())
     }
 
     /// Return TVM's derived name-to-global-variable index.
     pub fn global_var_map(&self) -> Result<Map<String, GlobalVar>> {
-        crate::reflected_field!(self, "global_var_map_")?.try_into()
+        Ok(self.global_var_map.clone())
     }
 
-    /// Return the module source map as its complete FFI value.
-    pub fn source_map(&self) -> Result<Any> {
-        crate::reflected_field!(self, "source_map")
+    /// Return the module's typed source map.
+    pub fn source_map(&self) -> Result<SourceMap> {
+        Ok(self.source_map.clone())
     }
 
     /// Return the module attributes.
     pub fn attrs(&self) -> Result<DictAttrs> {
-        crate::reflected_field!(self, "attrs")?.try_into()
+        Ok(self.attrs.clone())
     }
 
-    /// Return heterogeneous global metadata as its complete FFI value.
-    pub fn global_infos(&self) -> Result<Any> {
-        crate::reflected_field!(self, "global_infos")
+    /// Return typed module-level global metadata groups.
+    pub fn global_infos(&self) -> Result<Map<String, Array<GlobalInfo>>> {
+        Ok(self.global_infos.clone())
     }
 }
 
@@ -651,28 +889,83 @@ impl Expr {
 }
 
 impl IntImm {
-    /// Construct an integer literal through TVM's registered IR constructor.
+    /// Construct an integer literal directly in Rust.
     pub fn new(dtype: &str, value: i64) -> Result<Self> {
         Self::from_dtype(DLDataType::try_from_str(dtype)?, value)
     }
 
     /// Construct an integer literal from a parsed DLPack dtype.
     pub fn from_dtype(dtype: DLDataType, value: i64) -> Result<Self> {
-        let none = ();
-        crate::global_function!("ir.IntImm")?
-            .call_packed(&[
-                AnyView::from(&dtype),
-                AnyView::from(&value),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        validate_integer_literal(dtype, value)?;
+        let value_type = PrimType::from_dtype(dtype)?;
+        Ok(Self {
+            data: ObjectArc::new(IntImmObj {
+                base: ExprObj::new(value_type.into(), None),
+                value,
+            }),
+        })
+    }
+}
+
+fn validate_integer_literal(dtype: DLDataType, value: i64) -> Result<()> {
+    let dtype_text = dtype.to_string();
+    if dtype.lanes != 1 {
+        return Err(Error::new(
+            VALUE_ERROR,
+            &format!("IntImm can only take a scalar, but {dtype_text} was supplied"),
+            "",
+        ));
+    }
+    let is_int = dtype.code == DLDataTypeCode::kDLInt as u8;
+    let is_uint = dtype.code == DLDataTypeCode::kDLUInt as u8;
+    let is_bool = dtype.code == DLDataTypeCode::kDLBool as u8;
+    if !is_int && !is_uint && !is_bool {
+        return Err(Error::new(
+            VALUE_ERROR,
+            &format!("IntImm supports only int, uint, or bool, but {dtype_text} was supplied"),
+            "",
+        ));
+    }
+    let bits = u32::from(dtype.bits);
+    if bits == 0 || bits > 64 {
+        return Err(Error::new(
+            VALUE_ERROR,
+            &format!("invalid integer bit width in {dtype_text}"),
+            "",
+        ));
+    }
+    let in_range = if is_uint {
+        value >= 0 && (bits == 64 || (value as u64) < (1_u64 << bits))
+    } else if is_bool || bits == 1 {
+        value == 0 || value == 1
+    } else if bits == 64 {
+        true
+    } else {
+        let bound = 1_i64 << (bits - 1);
+        value >= -bound && value < bound
+    };
+    if in_range {
+        Ok(())
+    } else {
+        Err(Error::new(
+            VALUE_ERROR,
+            &format!("literal value {value} is outside the range of {dtype_text}"),
+            "",
+        ))
     }
 }
 
 impl PrimType {
     /// Construct a primitive type from a DLPack dtype string.
     pub fn new(dtype: &str) -> Result<Self> {
-        let dtype = DLDataType::try_from_str(dtype)?;
+        Self::from_dtype(DLDataType::try_from_str(dtype)?)
+    }
+
+    /// Return TVM's canonical primitive type for a parsed DLPack dtype.
+    ///
+    /// Primitive types are intentionally obtained from TVM because C++ interns
+    /// these nodes; ordinary IR data nodes are allocated directly in Rust.
+    pub fn from_dtype(dtype: DLDataType) -> Result<Self> {
         crate::global_function!("ir.PrimType")?
             .call_packed(&[AnyView::from(&dtype)])?
             .try_into()
@@ -689,38 +982,36 @@ impl Type {
 }
 
 impl Var {
-    /// Construct a variable with an explicit primitive type.
+    /// Construct a variable directly in Rust with an explicit primitive type.
     pub fn new(name: &str, dtype: &str) -> Result<Self> {
         Self::with_type(name, &PrimType::new(dtype)?.into())
     }
 
     /// Construct a variable with an arbitrary TVM type annotation.
     pub fn with_type(name: &str, ty: &Type) -> Result<Self> {
-        let name = String::from(name);
-        let ty = Some(ty.clone());
-        let none = ();
-        crate::global_function!("ir.Var")?
-            .call_packed(&[
-                AnyView::from(&name),
-                AnyView::from(&ty),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        Ok(Self {
+            data: ObjectArc::new(VarObj {
+                base: ExprObj::new(ty.clone(), None),
+                name: String::from(name),
+            }),
+        })
     }
 }
 
 impl GlobalVar {
-    /// Construct a module-level symbol.
+    /// Construct a module-level symbol directly in Rust.
     pub fn new(name_hint: &str) -> Result<Self> {
-        let name_hint = String::from(name_hint);
-        crate::global_function!("ir.GlobalVar")?
-            .call_packed(&[AnyView::from(&name_hint)])?
-            .try_into()
+        Ok(Self {
+            data: ObjectArc::new(GlobalVarObj {
+                base: ExprObj::new(Type::missing()?, None),
+                name_hint: String::from(name_hint),
+            }),
+        })
     }
 }
 
 impl Call {
-    /// Construct a call with no attributes or explicit type arguments.
+    /// Construct a call directly in Rust with no attributes or explicit type arguments.
     pub fn new(ret_type: &Type, operator: &Expr, arguments: Vec<Expr>) -> Result<Self> {
         Self::with_metadata(ret_type, operator, arguments, None, Vec::new())
     }
@@ -736,17 +1027,15 @@ impl Call {
         let arguments = Array::new(arguments);
         let attrs = attrs.cloned();
         let type_arguments = Array::new(type_arguments);
-        let none = ();
-        crate::global_function!("ir.Call")?
-            .call_packed(&[
-                AnyView::from(ret_type),
-                AnyView::from(operator),
-                AnyView::from(&arguments),
-                AnyView::from(&attrs),
-                AnyView::from(&type_arguments),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        Ok(Self {
+            data: ObjectArc::new(CallObj {
+                base: ExprObj::new(ret_type.clone(), None),
+                op: operator.clone(),
+                args: arguments,
+                attrs,
+                ty_args: type_arguments,
+            }),
+        })
     }
 }
 
@@ -822,6 +1111,23 @@ impl IRModule {
             .update_function_owned(global_var, function)
     }
 
+    /// Return an independently updatable module with one global-info group set.
+    pub fn with_updated_global_info(
+        &self,
+        name: &str,
+        global_info: Vec<GlobalInfo>,
+    ) -> Result<Self> {
+        let module = self.copy_for_update()?;
+        let name = String::from(name);
+        let global_info = Array::new(global_info);
+        crate::global_function!("ir.Module_UpdateGlobalInfo")?.call_packed(&[
+            AnyView::from(&module),
+            AnyView::from(&name),
+            AnyView::from(&global_info),
+        ])?;
+        Ok(module)
+    }
+
     pub(crate) fn copy_for_update(&self) -> Result<Self> {
         crate::global_function!("ir.Module_Clone")?
             .call_packed(&[AnyView::from(self)])?
@@ -848,15 +1154,24 @@ impl IRModule {
 impl DictAttrs {
     /// Construct a defined, empty DictAttrs object.
     pub fn empty() -> Result<Self> {
-        let empty = Map::<String, String>::new();
-        let type_key = String::from("ir.DictAttrs");
-        let field_name = String::from("__dict__");
-        crate::global_function!("ffi.MakeObjectFromPackedArgs")?
-            .call_packed(&[
-                AnyView::from(&type_key),
-                AnyView::from(&field_name),
-                AnyView::from(&empty),
-            ])?
-            .try_into()
+        Self::from_dictionary(&AnyMap::new())
+    }
+
+    /// Construct DictAttrs from a heterogeneous string-to-value map.
+    pub fn from_dictionary(dictionary: &AnyMap<String>) -> Result<Self> {
+        Ok(Self {
+            data: ObjectArc::new(DictAttrsObj {
+                base: AttrsObj {
+                    base: tvm_ffi::Object::new(),
+                },
+                dict: dictionary.clone(),
+            }),
+        })
+    }
+}
+
+impl Default for SourceMap {
+    fn default() -> Self {
+        Self::new()
     }
 }

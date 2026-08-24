@@ -19,8 +19,8 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, AnyCompatible, AnyView, Array, Error, ObjectArc, ObjectRefCast, Result, String,
-    VALUE_ERROR,
+    AnyCompatible, AnyMap, AnyView, Array, DLDataTypeCode, DLDataTypeExt, Error, ObjectArc,
+    ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
 use crate::ir::{BaseFuncObj, DictAttrs, Expr, ExprObj, Span, Var};
@@ -32,16 +32,19 @@ pub use block::{
     IterVar, IterVarObj, IterVarType, SBlock, SBlockObj, SBlockRealize, SBlockRealizeObj,
 };
 pub use buffer::{
-    BufferLoad, BufferLoadObj, BufferRegion, BufferRegionObj, BufferStore, BufferStoreObj,
-    BufferType, BufferTypeObj, MatchBufferRegion, MatchBufferRegionObj,
+    Axis, AxisObj, BufferLoad, BufferLoadObj, BufferRegion, BufferRegionObj, BufferStore,
+    BufferStoreObj, BufferType, BufferTypeObj, Iter, IterObj, Layout, LayoutObj, MatchBufferRegion,
+    MatchBufferRegionObj, TileLayout, TileLayoutObj,
 };
-/// Opaque Rust view of TVM's `AddNode`.
+/// ABI-complete Rust representation of TVM's `AddNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.Add"]
 #[type_final]
 pub struct AddObj {
     base: ExprObj,
+    a: Expr,
+    b: Expr,
 }
 
 /// Reference-counted handle to an addition expression.
@@ -70,22 +73,26 @@ impl std::ops::Deref for AddObj {
 impl AddObj {
     /// Return the left operand.
     pub fn lhs(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "a")?.try_into()
+        Ok(self.a.clone())
     }
 
     /// Return the right operand.
     pub fn rhs(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "b")?.try_into()
+        Ok(self.b.clone())
     }
 }
 
 impl Add {
-    /// Construct an addition expression.
+    /// Construct an addition expression directly in Rust.
     pub fn new(lhs: &Expr, rhs: &Expr) -> Result<Self> {
-        let none = ();
-        crate::global_function!("tirx.Add")?
-            .call_packed(&[AnyView::from(lhs), AnyView::from(rhs), AnyView::from(&none)])?
-            .try_into()
+        let result_type = matching_binary_type(lhs, rhs)?;
+        Ok(Self {
+            data: ObjectArc::new(AddObj {
+                base: ExprObj::new(result_type, None),
+                a: lhs.clone(),
+                b: rhs.clone(),
+            }),
+        })
     }
 }
 
@@ -97,15 +104,45 @@ impl From<Add> for Expr {
     }
 }
 
+pub(crate) fn primitive_type(expr: &Expr, context: &str) -> Result<crate::ir::PrimType> {
+    expr.ty()?.try_cast::<crate::ir::PrimType>().map_err(|_| {
+        Error::new(
+            TYPE_ERROR,
+            &format!("{context} must have a primitive type"),
+            "",
+        )
+    })
+}
+
+fn matching_binary_type(lhs: &Expr, rhs: &Expr) -> Result<crate::ir::Type> {
+    let lhs_type = lhs.ty()?;
+    let lhs_dtype = primitive_type(lhs, "left binary operand")?.dtype()?;
+    let rhs_dtype = primitive_type(rhs, "right binary operand")?.dtype()?;
+    if lhs_dtype != rhs_dtype {
+        return Err(Error::new(
+            TYPE_ERROR,
+            &format!(
+                "mismatched binary operand types: {} vs. {}",
+                lhs_dtype.to_string(),
+                rhs_dtype.to_string()
+            ),
+            "",
+        ));
+    }
+    Ok(lhs_type)
+}
+
 macro_rules! define_binary_expression {
-    ($object:ident, $reference:ident, $type_key:literal, $constructor:literal, $description:literal) => {
-        #[doc = concat!("Opaque Rust view of TVM's `", $type_key, "` node.")]
+    ($object:ident, $reference:ident, $type_key:literal, $description:literal) => {
+        #[doc = concat!("ABI-complete Rust representation of TVM's `", $type_key, "` node.")]
         #[repr(C)]
         #[derive(Object)]
         #[type_key = $type_key]
         #[type_final]
         pub struct $object {
             base: ExprObj,
+            a: Expr,
+            b: Expr,
         }
 
         #[doc = concat!("Reference-counted handle to ", $description, ".")]
@@ -134,22 +171,26 @@ macro_rules! define_binary_expression {
         impl $object {
             /// Return the left operand.
             pub fn lhs(&self) -> Result<Expr> {
-                crate::reflected_field!(self, "a")?.try_into()
+                Ok(self.a.clone())
             }
 
             /// Return the right operand.
             pub fn rhs(&self) -> Result<Expr> {
-                crate::reflected_field!(self, "b")?.try_into()
+                Ok(self.b.clone())
             }
         }
 
         impl $reference {
-            /// Construct the binary expression.
+            /// Construct the binary expression directly in Rust.
             pub fn new(lhs: &Expr, rhs: &Expr) -> Result<Self> {
-                let none = ();
-                crate::global_function!($constructor)?
-                    .call_packed(&[AnyView::from(lhs), AnyView::from(rhs), AnyView::from(&none)])?
-                    .try_into()
+                let result_type = matching_binary_type(lhs, rhs)?;
+                Ok(Self {
+                    data: ObjectArc::new($object {
+                        base: ExprObj::new(result_type, None),
+                        a: lhs.clone(),
+                        b: rhs.clone(),
+                    }),
+                })
             }
         }
 
@@ -163,28 +204,17 @@ macro_rules! define_binary_expression {
     };
 }
 
-define_binary_expression!(
-    SubObj,
-    Sub,
-    "tirx.Sub",
-    "tirx.Sub",
-    "a subtraction expression"
-);
-define_binary_expression!(
-    MulObj,
-    Mul,
-    "tirx.Mul",
-    "tirx.Mul",
-    "a multiplication expression"
-);
+define_binary_expression!(SubObj, Sub, "tirx.Sub", "a subtraction expression");
+define_binary_expression!(MulObj, Mul, "tirx.Mul", "a multiplication expression");
 
-/// Opaque Rust view of TVM's `StringImmNode`.
+/// ABI-complete Rust representation of TVM's `StringImmNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.StringImm"]
 #[type_final]
 pub struct StringImmObj {
     base: ExprObj,
+    value: String,
 }
 
 /// Reference-counted handle to a TIR string literal.
@@ -213,18 +243,19 @@ impl std::ops::Deref for StringImmObj {
 impl StringImmObj {
     /// Return the string literal value.
     pub fn value(&self) -> Result<String> {
-        crate::reflected_field!(self, "value")?.try_into()
+        Ok(self.value.clone())
     }
 }
 
 impl StringImm {
-    /// Construct a string literal.
+    /// Construct a string literal directly in Rust.
     pub fn new(value: &str) -> Result<Self> {
-        let value = String::from(value);
-        let none = ();
-        crate::global_function!("tirx.StringImm")?
-            .call_packed(&[AnyView::from(&value), AnyView::from(&none)])?
-            .try_into()
+        Ok(Self {
+            data: ObjectArc::new(StringImmObj {
+                base: ExprObj::new(crate::ir::PrimType::new("void")?.into(), None),
+                value: String::from(value),
+            }),
+        })
     }
 }
 
@@ -236,12 +267,13 @@ impl From<StringImm> for Expr {
     }
 }
 
-/// Opaque Rust view of TVM's `StmtNode` prefix.
+/// ABI-complete Rust representation of TVM's `StmtNode` prefix.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.Stmt"]
 pub struct StmtObj {
     base: tvm_ffi::Object,
+    span: Option<Span>,
 }
 
 /// Reference-counted handle to any TIR statement.
@@ -260,19 +292,29 @@ impl std::ops::Deref for Stmt {
 }
 
 impl StmtObj {
+    pub(crate) fn new(span: Option<Span>) -> Self {
+        Self {
+            base: tvm_ffi::Object::new(),
+            span,
+        }
+    }
+
     /// Return source-span metadata carried by this statement.
     pub fn span(&self) -> Result<Option<Span>> {
-        crate::reflected_field!(self, "span")?.try_into()
+        Ok(self.span.clone())
     }
 }
 
-/// Opaque Rust view of TVM's `AssertStmtNode`.
+/// ABI-complete Rust representation of TVM's `AssertStmtNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.AssertStmt"]
 #[type_final]
 pub struct AssertStmtObj {
     base: StmtObj,
+    condition: Expr,
+    error_kind: StringImm,
+    message_parts: Array<StringImm>,
 }
 
 /// Reference-counted handle to a TIR assertion.
@@ -301,27 +343,28 @@ impl std::ops::Deref for AssertStmtObj {
 impl AssertStmtObj {
     /// Return the assertion condition.
     pub fn condition(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "condition")?.try_into()
+        Ok(self.condition.clone())
     }
 
     /// Return the exception kind.
     pub fn error_kind(&self) -> Result<StringImm> {
-        crate::reflected_field!(self, "error_kind")?.try_into()
+        Ok(self.error_kind.clone())
     }
 
     /// Return the message fragments.
     pub fn message_parts(&self) -> Result<Array<StringImm>> {
-        crate::reflected_field!(self, "message_parts")?.try_into()
+        Ok(self.message_parts.clone())
     }
 }
 
-/// Opaque Rust view of TVM's `EvaluateNode`.
+/// ABI-complete Rust representation of TVM's `EvaluateNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.Evaluate"]
 #[type_final]
 pub struct EvaluateObj {
     base: StmtObj,
+    value: Expr,
 }
 
 /// Reference-counted handle to a TIR evaluate statement.
@@ -350,17 +393,18 @@ impl std::ops::Deref for EvaluateObj {
 impl EvaluateObj {
     /// Return the evaluated expression.
     pub fn value(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "value")?.try_into()
+        Ok(self.value.clone())
     }
 }
 
-/// Opaque Rust view of TVM's `SeqStmtNode`.
+/// ABI-complete Rust representation of TVM's `SeqStmtNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.SeqStmt"]
 #[type_final]
 pub struct SeqStmtObj {
     base: StmtObj,
+    seq: Array<Stmt>,
 }
 
 /// Reference-counted handle to a sequence of statements.
@@ -389,28 +433,59 @@ impl std::ops::Deref for SeqStmtObj {
 impl SeqStmtObj {
     /// Return the statements in this sequence.
     pub fn statements(&self) -> Result<Array<Stmt>> {
-        crate::reflected_field!(self, "seq")?.try_into()
+        Ok(self.seq.clone())
     }
 }
 
 impl SeqStmt {
-    /// Construct a sequence.  TVM requires at least two statements.
+    /// Construct and recursively flatten a sequence directly in Rust.
     pub fn new(statements: Vec<Stmt>) -> Result<Self> {
-        let statements = Array::new(statements);
-        let none = ();
-        crate::global_function!("tirx.SeqStmt")?
-            .call_packed(&[AnyView::from(&statements), AnyView::from(&none)])?
-            .try_into()
+        let mut flattened = Vec::new();
+        for statement in statements {
+            flatten_statement(statement, &mut flattened)?;
+        }
+        if flattened.len() < 2 {
+            return Err(Error::new(
+                VALUE_ERROR,
+                if flattened.is_empty() {
+                    "an empty SeqStmt is prohibited; use Evaluate(0) for a no-op"
+                } else {
+                    "a SeqStmt of length one is prohibited; use its single statement directly"
+                },
+                "",
+            ));
+        }
+        Ok(Self {
+            data: ObjectArc::new(SeqStmtObj {
+                base: StmtObj::new(None),
+                seq: Array::new(flattened),
+            }),
+        })
     }
 }
 
-/// Opaque Rust view of TVM's `IfThenElseNode`.
+fn flatten_statement(statement: Stmt, output: &mut Vec<Stmt>) -> Result<()> {
+    match statement.clone().try_cast::<SeqStmt>() {
+        Ok(sequence) => {
+            for child in sequence.statements()?.iter() {
+                flatten_statement(child, output)?;
+            }
+        }
+        Err(_) => output.push(statement),
+    }
+    Ok(())
+}
+
+/// ABI-complete Rust representation of TVM's `IfThenElseNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.IfThenElse"]
 #[type_final]
 pub struct IfThenElseObj {
     base: StmtObj,
+    condition: Expr,
+    then_case: Stmt,
+    else_case: Option<Stmt>,
 }
 
 /// Reference-counted handle to a conditional statement.
@@ -439,39 +514,38 @@ impl std::ops::Deref for IfThenElseObj {
 impl IfThenElseObj {
     /// Return the condition.
     pub fn condition(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "condition")?.try_into()
+        Ok(self.condition.clone())
     }
 
     /// Return the true branch.
     pub fn then_case(&self) -> Result<Stmt> {
-        crate::reflected_field!(self, "then_case")?.try_into()
+        Ok(self.then_case.clone())
     }
 
     /// Return the optional false branch.
     pub fn else_case(&self) -> Result<Option<Stmt>> {
-        crate::reflected_field!(self, "else_case")?.try_into()
+        Ok(self.else_case.clone())
     }
 }
 
 impl IfThenElse {
-    /// Construct a conditional statement.
+    /// Construct a conditional statement directly in Rust.
     pub fn new(condition: &Expr, then_case: &Stmt, else_case: Option<&Stmt>) -> Result<Self> {
-        let else_case = else_case.cloned();
-        let none = ();
-        crate::global_function!("tirx.IfThenElse")?
-            .call_packed(&[
-                AnyView::from(condition),
-                AnyView::from(then_case),
-                AnyView::from(&else_case),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        primitive_type(condition, "IfThenElse condition")?;
+        Ok(Self {
+            data: ObjectArc::new(IfThenElseObj {
+                base: StmtObj::new(None),
+                condition: condition.clone(),
+                then_case: then_case.clone(),
+                else_case: else_case.cloned(),
+            }),
+        })
     }
 }
 
 /// Execution policy attached to a TIR `For` loop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(i64)]
+#[repr(i32)]
 pub enum ForKind {
     Serial = 0,
     Parallel = 1,
@@ -499,13 +573,21 @@ impl TryFrom<i64> for ForKind {
     }
 }
 
-/// Opaque Rust view of TVM's `ForNode`.
+/// ABI-complete Rust representation of TVM's `ForNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.For"]
 #[type_final]
 pub struct ForObj {
     base: StmtObj,
+    loop_var: Var,
+    min: Expr,
+    extent: Expr,
+    kind: ForKind,
+    body: Stmt,
+    thread_binding: Option<IterVar>,
+    annotations: AnyMap<String>,
+    step: Option<Expr>,
 }
 
 /// Reference-counted handle to a TIR loop.
@@ -534,42 +616,42 @@ impl std::ops::Deref for ForObj {
 impl ForObj {
     /// Return the variable defined by this loop.
     pub fn loop_var(&self) -> Result<Var> {
-        crate::reflected_field!(self, "loop_var")?.try_into()
+        Ok(self.loop_var.clone())
     }
 
     /// Return the inclusive starting value.
     pub fn minimum(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "min")?.try_into()
+        Ok(self.min.clone())
     }
 
     /// Return the number of loop iterations.
     pub fn extent(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "extent")?.try_into()
+        Ok(self.extent.clone())
     }
 
     /// Return the loop execution policy.
     pub fn kind(&self) -> Result<ForKind> {
-        ForKind::try_from(i64::try_from(crate::reflected_field!(self, "kind")?)?)
+        Ok(self.kind)
     }
 
     /// Return the loop body.
     pub fn body(&self) -> Result<Stmt> {
-        crate::reflected_field!(self, "body")?.try_into()
+        Ok(self.body.clone())
     }
 
     /// Return the optional thread axis bound by this loop.
     pub fn thread_binding(&self) -> Result<Option<IterVar>> {
-        crate::reflected_field!(self, "thread_binding")?.try_into()
+        Ok(self.thread_binding.clone())
     }
 
-    /// Return heterogeneous loop annotations as their complete FFI value.
-    pub fn annotations(&self) -> Result<Any> {
-        crate::reflected_field!(self, "annotations")
+    /// Return heterogeneous loop annotations.
+    pub fn annotations(&self) -> Result<AnyMap<String>> {
+        Ok(self.annotations.clone())
     }
 
     /// Return an optional non-unit loop step.
     pub fn step(&self) -> Result<Option<Expr>> {
-        crate::reflected_field!(self, "step")?.try_into()
+        Ok(self.step.clone())
     }
 }
 
@@ -583,13 +665,13 @@ impl For {
             ForKind::Serial,
             body,
             None,
-            &Any::from(()),
+            &AnyMap::new(),
             None,
             None,
         )
     }
 
-    /// Construct a loop while preserving all reflected fields used by a mutator.
+    /// Construct a loop through C++ so bound dtypes and loop invariants are validated.
     #[allow(clippy::too_many_arguments)]
     pub fn with_metadata(
         loop_var: &Var,
@@ -598,7 +680,7 @@ impl For {
         kind: ForKind,
         body: &Stmt,
         thread_binding: Option<&IterVar>,
-        annotations: &Any,
+        annotations: &AnyMap<String>,
         step: Option<&Expr>,
         span: Option<&Span>,
     ) -> Result<Self> {
@@ -630,13 +712,16 @@ impl From<For> for Stmt {
     }
 }
 
-/// Opaque Rust view of TVM's `PrimFuncNode`.
+/// ABI-complete Rust representation of TVM's `PrimFuncNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.PrimFunc"]
 #[type_final]
 pub struct PrimFuncObj {
     base: BaseFuncObj,
+    params: Array<Var>,
+    ret_type: crate::ir::Type,
+    body: Stmt,
 }
 
 /// Reference-counted handle to a TIR primitive function.
@@ -665,35 +750,45 @@ impl std::ops::Deref for PrimFuncObj {
 impl PrimFuncObj {
     /// Return the function parameters.
     pub fn params(&self) -> Result<Array<Var>> {
-        crate::reflected_field!(self, "params")?.try_into()
+        Ok(self.params.clone())
     }
 
     /// Return the function return type.
     pub fn ret_type(&self) -> Result<crate::ir::Type> {
-        crate::reflected_field!(self, "ret_type")?.try_into()
+        Ok(self.ret_type.clone())
     }
 
     /// Return the function body.
     pub fn body(&self) -> Result<Stmt> {
-        crate::reflected_field!(self, "body")?.try_into()
+        Ok(self.body.clone())
     }
 }
 
 impl AssertStmt {
-    /// Construct a leaf assertion with one string message part.
+    /// Construct a leaf assertion directly in Rust with one string message part.
     pub fn new(condition: &Expr, error_kind: &str, message: &str) -> Result<Self> {
+        let dtype = primitive_type(condition, "AssertStmt condition")?.dtype()?;
+        if dtype.code != DLDataTypeCode::kDLBool as u8 {
+            return Err(Error::new(
+                TYPE_ERROR,
+                &format!(
+                    "AssertStmt condition must have bool type, but received {}",
+                    dtype.to_string()
+                ),
+                "",
+            ));
+        }
         let error_kind = StringImm::new(error_kind)?;
         let message = StringImm::new(message)?;
         let message_parts = Array::new(vec![message]);
-        let none = ();
-        crate::global_function!("tirx.AssertStmt")?
-            .call_packed(&[
-                AnyView::from(condition),
-                AnyView::from(&error_kind),
-                AnyView::from(&message_parts),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        Ok(Self {
+            data: ObjectArc::new(AssertStmtObj {
+                base: StmtObj::new(None),
+                condition: condition.clone(),
+                error_kind,
+                message_parts,
+            }),
+        })
     }
 }
 
@@ -706,12 +801,23 @@ impl From<AssertStmt> for Stmt {
 }
 
 impl Evaluate {
-    /// Construct `Evaluate(value)`.
-    pub fn new<E: AnyCompatible>(value: &E) -> Result<Self> {
-        let none = ();
-        crate::global_function!("tirx.Evaluate")?
-            .call_packed(&[AnyView::from(value), AnyView::from(&none)])?
-            .try_into()
+    /// Construct `Evaluate(value)` directly in Rust.
+    pub fn new(value: &Expr) -> Result<Self> {
+        if value.clone().try_cast::<Var>().is_ok()
+            && value.ty()?.try_cast::<buffer::BufferType>().is_ok()
+        {
+            return Err(Error::new(
+                VALUE_ERROR,
+                "a buffer variable cannot be used as a scalar Evaluate value",
+                "",
+            ));
+        }
+        Ok(Self {
+            data: ObjectArc::new(EvaluateObj {
+                base: StmtObj::new(None),
+                value: value.clone(),
+            }),
+        })
     }
 
     /// Construct `Evaluate(IntImm("int32", value))`.
@@ -750,11 +856,11 @@ impl PrimFunc {
         Self::new(Vec::new(), body)
     }
 
-    /// Construct a PrimFunc with explicit parameters and a body.
+    /// Construct a PrimFunc through C++ so its return and function types are derived.
     pub fn new<S: AnyCompatible>(params: Vec<Var>, body: &S) -> Result<Self> {
         let params = Array::new(params);
         let attrs = DictAttrs::empty()?;
-        let ret_type = crate::global_function!("ir.TypeMissing")?.call_packed(&[])?;
+        let ret_type = crate::ir::Type::missing()?;
         let none = ();
         crate::global_function!("tirx.PrimFunc")?
             .call_packed(&[

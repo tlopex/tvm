@@ -18,21 +18,226 @@
  */
 
 use tvm_ffi::derive::{Object, ObjectRef};
-use tvm_ffi::{Any, AnyView, Array, ObjectArc, ObjectRefCast, Result, String};
+use tvm_ffi::{AnyView, Array, Error, Map, ObjectArc, ObjectRefCast, Result, String, VALUE_ERROR};
 
-use super::{Stmt, StmtObj};
+use super::{primitive_type, Stmt, StmtObj};
 use crate::ir::{
     Expr, ExprObj, PrimExprConvertible, PrimExprConvertibleObj, PrimType, Range, Span, Type,
     TypeObj, Var,
 };
 
-/// Opaque Rust view of TVM's immutable buffer access contract.
+/// Opaque Rust view of TVM's abstract layout base class.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "tirx.Layout"]
+pub struct LayoutObj {
+    base: tvm_ffi::Object,
+}
+
+/// Reference-counted handle to a TIRx buffer layout.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct Layout {
+    data: ObjectArc<LayoutObj>,
+}
+
+impl std::ops::Deref for Layout {
+    type Target = LayoutObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+/// Opaque Rust view of one interned TIRx layout axis.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "tirx.Axis"]
+#[type_final]
+pub struct AxisObj {
+    base: tvm_ffi::Object,
+}
+
+/// Reference-counted handle to an interned layout axis.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct Axis {
+    data: ObjectArc<AxisObj>,
+}
+
+impl std::ops::Deref for Axis {
+    type Target = AxisObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl AxisObj {
+    /// Return the registered axis name.
+    pub fn name(&self) -> Result<String> {
+        crate::reflected_field!(self, "name")?.try_into()
+    }
+}
+
+impl Axis {
+    /// Return TVM's process-wide interned axis for `name`.
+    pub fn get(name: &str) -> Result<Self> {
+        let name = String::from(name);
+        crate::global_function!("tirx.AxisGet")?
+            .call_packed(&[AnyView::from(&name)])?
+            .try_into()
+    }
+}
+
+/// ABI-complete Rust representation of one layout extent/stride/axis component.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "tirx.Iter"]
+#[type_final]
+pub struct IterObj {
+    base: tvm_ffi::Object,
+    extent: Expr,
+    stride: Expr,
+    axis: Axis,
+}
+
+/// Reference-counted handle to one layout iterator.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct Iter {
+    data: ObjectArc<IterObj>,
+}
+
+impl std::ops::Deref for Iter {
+    type Target = IterObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl IterObj {
+    /// Return the number of logical positions.
+    pub fn extent(&self) -> Result<Expr> {
+        Ok(self.extent.clone())
+    }
+
+    /// Return the physical stride.
+    pub fn stride(&self) -> Result<Expr> {
+        Ok(self.stride.clone())
+    }
+
+    /// Return the target layout axis.
+    pub fn axis(&self) -> Result<Axis> {
+        Ok(self.axis.clone())
+    }
+}
+
+impl Iter {
+    /// Construct one layout iterator directly in Rust.
+    pub fn new(extent: &Expr, stride: &Expr, axis: &Axis) -> Result<Self> {
+        primitive_type(extent, "layout iterator extent")?;
+        primitive_type(stride, "layout iterator stride")?;
+        Ok(Self {
+            data: ObjectArc::new(IterObj {
+                base: tvm_ffi::Object::new(),
+                extent: extent.clone(),
+                stride: stride.clone(),
+                axis: axis.clone(),
+            }),
+        })
+    }
+}
+
+/// Opaque Rust view of TVM's concrete tiled layout.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "tirx.TileLayout"]
+#[type_final]
+pub struct TileLayoutObj {
+    base: LayoutObj,
+}
+
+/// Reference-counted handle to a tiled layout.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct TileLayout {
+    data: ObjectArc<TileLayoutObj>,
+}
+
+impl std::ops::Deref for TileLayout {
+    type Target = TileLayoutObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for TileLayoutObj {
+    type Target = LayoutObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl TileLayoutObj {
+    /// Return iterators that partition the logical tile.
+    pub fn shard(&self) -> Result<Array<Iter>> {
+        crate::reflected_field!(self, "shard")?.try_into()
+    }
+
+    /// Return replicated layout iterators.
+    pub fn replica(&self) -> Result<Array<Iter>> {
+        crate::reflected_field!(self, "replica")?.try_into()
+    }
+
+    /// Return per-axis physical offsets.
+    pub fn offset(&self) -> Result<Map<Axis, Expr>> {
+        crate::reflected_field!(self, "offset")?.try_into()
+    }
+}
+
+impl TileLayout {
+    /// Construct a tile layout through C++ because `LayoutNode` is polymorphic.
+    pub fn new(shard: Vec<Iter>, replica: Vec<Iter>, offset: Map<Axis, Expr>) -> Result<Self> {
+        let shard = Array::new(shard);
+        let replica = Array::new(replica);
+        crate::global_function!("tirx.TileLayout")?
+            .call_packed(&[
+                AnyView::from(&shard),
+                AnyView::from(&replica),
+                AnyView::from(&offset),
+            ])?
+            .try_into()
+    }
+}
+
+impl From<TileLayout> for Layout {
+    fn from(value: TileLayout) -> Self {
+        value
+            .try_cast()
+            .expect("tirx.TileLayout must be a subtype of tirx.Layout")
+    }
+}
+
+/// ABI-complete Rust representation of TVM's immutable buffer access contract.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.BufferType"]
 #[type_final]
 pub struct BufferTypeObj {
     base: TypeObj,
+    dtype: PrimType,
+    storage_scope: String,
+    shape: Array<Expr>,
+    strides: Array<Expr>,
+    elem_offset: Expr,
+    data_alignment: i32,
+    offset_factor: i32,
+    layout: Option<Layout>,
+    allocated_addr: Array<Expr>,
 }
 
 /// Reference-counted buffer type carried by an ordinary `ir.Var`.
@@ -61,47 +266,47 @@ impl std::ops::Deref for BufferTypeObj {
 impl BufferTypeObj {
     /// Return the primitive element type.
     pub fn dtype(&self) -> Result<PrimType> {
-        crate::reflected_field!(self, "dtype")?.try_into()
+        Ok(self.dtype.clone())
     }
 
     /// Return the logical address space.
     pub fn storage_scope(&self) -> Result<String> {
-        crate::reflected_field!(self, "storage_scope")?.try_into()
+        Ok(self.storage_scope.clone())
     }
 
     /// Return logical extents for every accessed dimension.
     pub fn shape(&self) -> Result<Array<Expr>> {
-        crate::reflected_field!(self, "shape")?.try_into()
+        Ok(self.shape.clone())
     }
 
     /// Return explicit strides, or an empty array for compact storage.
     pub fn strides(&self) -> Result<Array<Expr>> {
-        crate::reflected_field!(self, "strides")?.try_into()
+        Ok(self.strides.clone())
     }
 
     /// Return the element offset from the physical base pointer.
     pub fn element_offset(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "elem_offset")?.try_into()
+        Ok(self.elem_offset.clone())
     }
 
     /// Return the required data-pointer alignment in bytes.
     pub fn data_alignment(&self) -> Result<i64> {
-        crate::reflected_field!(self, "data_alignment")?.try_into()
+        Ok(i64::from(self.data_alignment))
     }
 
     /// Return the divisibility guarantee for the element offset.
     pub fn offset_factor(&self) -> Result<i64> {
-        crate::reflected_field!(self, "offset_factor")?.try_into()
+        Ok(i64::from(self.offset_factor))
     }
 
-    /// Return the optional layout without requiring a handwritten layout binding.
-    pub fn layout(&self) -> Result<Any> {
-        crate::reflected_field!(self, "layout")
+    /// Return the optional physical layout.
+    pub fn layout(&self) -> Result<Option<Layout>> {
+        Ok(self.layout.clone())
     }
 
     /// Return any explicitly allocated multidimensional address.
     pub fn allocated_addresses(&self) -> Result<Array<Expr>> {
-        crate::reflected_field!(self, "allocated_addr")?.try_into()
+        Ok(self.allocated_addr.clone())
     }
 }
 
@@ -116,13 +321,13 @@ impl BufferType {
             &Expr::int("int64", 0)?,
             64,
             1,
-            &Any::from(()),
+            None,
             Vec::new(),
             None,
         )
     }
 
-    /// Construct a buffer type with all currently reflected access metadata.
+    /// Construct a buffer type directly in Rust with all reflected access metadata.
     #[allow(clippy::too_many_arguments)]
     pub fn with_metadata(
         storage_scope: &str,
@@ -132,43 +337,67 @@ impl BufferType {
         element_offset: &Expr,
         data_alignment: i64,
         offset_factor: i64,
-        layout: &Any,
+        layout: Option<&Layout>,
         allocated_addresses: Vec<Expr>,
         span: Option<&Span>,
     ) -> Result<Self> {
-        let storage_scope = String::from(storage_scope);
+        for extent in &shape {
+            primitive_type(extent, "buffer shape extent")?;
+        }
+        for stride in &strides {
+            primitive_type(stride, "buffer stride")?;
+        }
+        primitive_type(element_offset, "buffer element offset")?;
+        for address in &allocated_addresses {
+            primitive_type(address, "buffer allocated address")?;
+        }
+        let storage_scope = String::from(if storage_scope.is_empty() {
+            "global"
+        } else {
+            storage_scope
+        });
         let shape = Array::new(shape);
         let strides = Array::new(strides);
         let allocated_addresses = Array::new(allocated_addresses);
-        let span = span.cloned();
-        crate::global_function!("tirx.BufferType")?
-            .call_packed(&[
-                AnyView::from(&storage_scope),
-                AnyView::from(dtype),
-                AnyView::from(&shape),
-                AnyView::from(&strides),
-                AnyView::from(element_offset),
-                AnyView::from(&data_alignment),
-                AnyView::from(&offset_factor),
-                AnyView::from(layout),
-                AnyView::from(&allocated_addresses),
-                AnyView::from(&span),
-            ])?
-            .try_into()
+        let layout = layout.cloned();
+        let data_alignment = if data_alignment <= 0 {
+            64
+        } else {
+            i32::try_from(data_alignment).map_err(|_| integer_overflow("data_alignment"))?
+        };
+        let offset_factor = if offset_factor == 0 {
+            1
+        } else {
+            i32::try_from(offset_factor).map_err(|_| integer_overflow("offset_factor"))?
+        };
+        Ok(Self {
+            data: ObjectArc::new(BufferTypeObj {
+                base: TypeObj::new(span.cloned()),
+                dtype: dtype.clone(),
+                storage_scope,
+                shape,
+                strides,
+                elem_offset: element_offset.clone(),
+                data_alignment,
+                offset_factor,
+                layout,
+                allocated_addr: allocated_addresses,
+            }),
+        })
     }
 
     /// Construct a buffer variable.  Its runtime identity is an ordinary `ir.Var`.
     pub fn new_var(&self, name: &str) -> Result<Var> {
-        let name = String::from(name);
-        let none = ();
-        crate::global_function!("tirx.BufferVar")?
-            .call_packed(&[
-                AnyView::from(&name),
-                AnyView::from(self),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        Var::with_type(name, &self.clone().into())
     }
+}
+
+fn integer_overflow(field: &str) -> Error {
+    Error::new(
+        VALUE_ERROR,
+        &format!("{field} does not fit TVM's 32-bit integer field"),
+        "",
+    )
 }
 
 impl From<BufferType> for Type {
@@ -179,13 +408,16 @@ impl From<BufferType> for Type {
     }
 }
 
-/// Opaque Rust view of a buffer read.
+/// ABI-complete Rust representation of a buffer read.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.BufferLoad"]
 #[type_final]
 pub struct BufferLoadObj {
     base: ExprObj,
+    buffer: Var,
+    indices: Array<Expr>,
+    predicate: Option<Expr>,
 }
 
 /// Reference-counted handle to a TIR buffer read.
@@ -214,22 +446,22 @@ impl std::ops::Deref for BufferLoadObj {
 impl BufferLoadObj {
     /// Return the ordinary variable carrying this access's `BufferType`.
     pub fn buffer(&self) -> Result<Var> {
-        crate::reflected_field!(self, "buffer")?.try_into()
+        Ok(self.buffer.clone())
     }
 
     /// Return one index per accessed dimension.
     pub fn indices(&self) -> Result<Array<Expr>> {
-        crate::reflected_field!(self, "indices")?.try_into()
+        Ok(self.indices.clone())
     }
 
     /// Return an optional vector access predicate.
     pub fn predicate(&self) -> Result<Option<Expr>> {
-        crate::reflected_field!(self, "predicate")?.try_into()
+        Ok(self.predicate.clone())
     }
 }
 
 impl BufferLoad {
-    /// Construct a buffer read.
+    /// Construct a buffer read through C++ index/predicate validation and dtype legalization.
     pub fn new(buffer: &Var, indices: Vec<Expr>, predicate: Option<&Expr>) -> Result<Self> {
         let indices = Array::new(indices);
         let predicate = predicate.cloned();
@@ -253,13 +485,17 @@ impl From<BufferLoad> for Expr {
     }
 }
 
-/// Opaque Rust view of a buffer write.
+/// ABI-complete Rust representation of a buffer write.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.BufferStore"]
 #[type_final]
 pub struct BufferStoreObj {
     base: StmtObj,
+    buffer: Var,
+    value: Expr,
+    indices: Array<Expr>,
+    predicate: Option<Expr>,
 }
 
 /// Reference-counted handle to a TIR buffer write.
@@ -288,27 +524,27 @@ impl std::ops::Deref for BufferStoreObj {
 impl BufferStoreObj {
     /// Return the ordinary variable carrying this access's `BufferType`.
     pub fn buffer(&self) -> Result<Var> {
-        crate::reflected_field!(self, "buffer")?.try_into()
+        Ok(self.buffer.clone())
     }
 
     /// Return the value written by this store.
     pub fn value(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "value")?.try_into()
+        Ok(self.value.clone())
     }
 
     /// Return one index per accessed dimension.
     pub fn indices(&self) -> Result<Array<Expr>> {
-        crate::reflected_field!(self, "indices")?.try_into()
+        Ok(self.indices.clone())
     }
 
     /// Return an optional vector access predicate.
     pub fn predicate(&self) -> Result<Option<Expr>> {
-        crate::reflected_field!(self, "predicate")?.try_into()
+        Ok(self.predicate.clone())
     }
 }
 
 impl BufferStore {
-    /// Construct a buffer write.
+    /// Construct a buffer write through C++ shape, lane, and predicate validation.
     pub fn new(
         buffer: &Var,
         value: &Expr,
@@ -383,7 +619,7 @@ impl BufferRegionObj {
 }
 
 impl BufferRegion {
-    /// Construct a declared region of `buffer`.
+    /// Construct a declared region through its polymorphic C++ base.
     pub fn new(buffer: &Var, region: Vec<Range>) -> Result<Self> {
         let region = Array::new(region);
         crate::global_function!("tirx.BufferRegion")?
@@ -400,13 +636,15 @@ impl From<BufferRegion> for PrimExprConvertible {
     }
 }
 
-/// Opaque Rust view of a match-buffer declaration.
+/// ABI-complete Rust representation of a match-buffer declaration.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.MatchBufferRegion"]
 #[type_final]
 pub struct MatchBufferRegionObj {
     base: tvm_ffi::Object,
+    buffer: Var,
+    source: BufferRegion,
 }
 
 /// Reference-counted handle to a match-buffer declaration.
@@ -427,17 +665,17 @@ impl std::ops::Deref for MatchBufferRegion {
 impl MatchBufferRegionObj {
     /// Return the target buffer variable introduced by this declaration.
     pub fn buffer(&self) -> Result<Var> {
-        crate::reflected_field!(self, "buffer")?.try_into()
+        Ok(self.buffer.clone())
     }
 
     /// Return the source region matched by the target buffer.
     pub fn source(&self) -> Result<BufferRegion> {
-        crate::reflected_field!(self, "source")?.try_into()
+        Ok(self.source.clone())
     }
 }
 
 impl MatchBufferRegion {
-    /// Construct a match-buffer declaration.
+    /// Construct through C++ scope, dtype, alignment, and region validation.
     pub fn new(buffer: &Var, source: &BufferRegion) -> Result<Self> {
         crate::global_function!("tirx.MatchBufferRegion")?
             .call_packed(&[AnyView::from(buffer), AnyView::from(source)])?

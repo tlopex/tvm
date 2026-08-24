@@ -20,14 +20,15 @@
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{AnyView, Array, ObjectArc, ObjectRefCast, Result};
 
-use crate::ir::{BaseFunc, BaseFuncObj, DictAttrs, Expr, ExprObj, Type, Var};
-/// Opaque Rust view of Relax's tuple expression.
+use crate::ir::{BaseFunc, BaseFuncObj, DictAttrs, Expr, ExprObj, Span, Type, Var};
+/// ABI-complete Rust representation of Relax's tuple expression.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "relax.expr.Tuple"]
 #[type_final]
 pub struct TupleObj {
     base: ExprObj,
+    fields: Array<Expr>,
 }
 
 /// Reference-counted handle to a Relax tuple expression.
@@ -56,12 +57,12 @@ impl std::ops::Deref for TupleObj {
 impl TupleObj {
     /// Return the tuple fields.
     pub fn fields(&self) -> Result<Array<Expr>> {
-        crate::reflected_field!(self, "fields")?.try_into()
+        Ok(self.fields.clone())
     }
 }
 
 impl Tuple {
-    /// Construct a Relax tuple.
+    /// Construct a Relax tuple through C++ so its derived tuple type is preserved.
     pub fn new(fields: Vec<Expr>) -> Result<Self> {
         let fields = Array::new(fields);
         let none = ();
@@ -79,13 +80,16 @@ impl From<Tuple> for Expr {
     }
 }
 
-/// Opaque Rust view of Relax's DAG-valued conditional expression.
+/// ABI-complete Rust representation of Relax's DAG-valued conditional expression.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "relax.expr.If"]
 #[type_final]
 pub struct IfObj {
     base: ExprObj,
+    cond: Expr,
+    true_branch: SeqExpr,
+    false_branch: SeqExpr,
 }
 
 /// Reference-counted handle to a Relax conditional expression.
@@ -114,32 +118,31 @@ impl std::ops::Deref for IfObj {
 impl IfObj {
     /// Return the conditional expression.
     pub fn condition(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "cond")?.try_into()
+        Ok(self.cond.clone())
     }
 
     /// Return the sequence evaluated when the condition is true.
     pub fn true_branch(&self) -> Result<SeqExpr> {
-        crate::reflected_field!(self, "true_branch")?.try_into()
+        Ok(self.true_branch.clone())
     }
 
     /// Return the sequence evaluated when the condition is false.
     pub fn false_branch(&self) -> Result<SeqExpr> {
-        crate::reflected_field!(self, "false_branch")?.try_into()
+        Ok(self.false_branch.clone())
     }
 }
 
 impl If {
-    /// Construct a Relax conditional.  TVM wraps each branch in `SeqExpr`.
+    /// Construct a Relax conditional directly in Rust, wrapping each branch in `SeqExpr`.
     pub fn new(condition: &Expr, true_branch: &Expr, false_branch: &Expr) -> Result<Self> {
-        let none = ();
-        crate::global_function!("relax.If")?
-            .call_packed(&[
-                AnyView::from(condition),
-                AnyView::from(true_branch),
-                AnyView::from(false_branch),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        Ok(Self {
+            data: ObjectArc::new(IfObj {
+                base: ExprObj::new(Type::missing()?, None),
+                cond: condition.clone(),
+                true_branch: SeqExpr::from_expr(true_branch)?,
+                false_branch: SeqExpr::from_expr(false_branch)?,
+            }),
+        })
     }
 }
 
@@ -151,12 +154,14 @@ impl From<If> for Expr {
     }
 }
 
-/// Opaque Rust view of Relax's `BindingNode` prefix.
+/// ABI-complete Rust representation of Relax's `BindingNode` prefix.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "relax.expr.Binding"]
 pub struct BindingObj {
     base: tvm_ffi::Object,
+    span: Option<Span>,
+    var: Var,
 }
 
 /// Reference-counted handle to any Relax binding.
@@ -177,22 +182,23 @@ impl std::ops::Deref for Binding {
 impl BindingObj {
     /// Return optional source metadata carried by this binding.
     pub fn span(&self) -> Result<Option<crate::ir::Span>> {
-        crate::reflected_field!(self, "span")?.try_into()
+        Ok(self.span.clone())
     }
 
     /// Return the variable defined by this binding.
     pub fn variable(&self) -> Result<Var> {
-        crate::reflected_field!(self, "var")?.try_into()
+        Ok(self.var.clone())
     }
 }
 
-/// Opaque Rust view of a Relax variable binding.
+/// ABI-complete Rust representation of a Relax variable binding.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "relax.expr.VarBinding"]
 #[type_final]
 pub struct VarBindingObj {
     base: BindingObj,
+    value: Expr,
 }
 
 /// Reference-counted handle to `var = value` in Relax.
@@ -221,21 +227,23 @@ impl std::ops::Deref for VarBindingObj {
 impl VarBindingObj {
     /// Return the expression assigned to the binding variable.
     pub fn value(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "value")?.try_into()
+        Ok(self.value.clone())
     }
 }
 
 impl VarBinding {
-    /// Construct `variable = value`.
+    /// Construct `variable = value` directly in Rust.
     pub fn new(variable: &Var, value: &Expr) -> Result<Self> {
-        let none = ();
-        crate::global_function!("relax.VarBinding")?
-            .call_packed(&[
-                AnyView::from(variable),
-                AnyView::from(value),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        Ok(Self {
+            data: ObjectArc::new(VarBindingObj {
+                base: BindingObj {
+                    base: tvm_ffi::Object::new(),
+                    span: None,
+                    var: variable.clone(),
+                },
+                value: value.clone(),
+            }),
+        })
     }
 }
 
@@ -247,12 +255,14 @@ impl From<VarBinding> for Binding {
     }
 }
 
-/// Opaque Rust view of a Relax binding block.
+/// ABI-complete Rust representation of a Relax binding block.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "relax.expr.BindingBlock"]
 pub struct BindingBlockObj {
     base: tvm_ffi::Object,
+    bindings: Array<Binding>,
+    span: Option<Span>,
 }
 
 /// Reference-counted handle to an ordered Relax binding block.
@@ -273,33 +283,37 @@ impl std::ops::Deref for BindingBlock {
 impl BindingBlockObj {
     /// Return bindings in evaluation order.
     pub fn bindings(&self) -> Result<Array<Binding>> {
-        crate::reflected_field!(self, "bindings")?.try_into()
+        Ok(self.bindings.clone())
     }
 
     /// Return optional source metadata carried by this block.
     pub fn span(&self) -> Result<Option<crate::ir::Span>> {
-        crate::reflected_field!(self, "span")?.try_into()
+        Ok(self.span.clone())
     }
 }
 
 impl BindingBlock {
-    /// Construct an ordinary (non-dataflow) binding block.
+    /// Construct an ordinary (non-dataflow) binding block directly in Rust.
     pub fn new(bindings: Vec<Binding>) -> Result<Self> {
-        let bindings = Array::new(bindings);
-        let none = ();
-        crate::global_function!("relax.BindingBlock")?
-            .call_packed(&[AnyView::from(&bindings), AnyView::from(&none)])?
-            .try_into()
+        Ok(Self {
+            data: ObjectArc::new(BindingBlockObj {
+                base: tvm_ffi::Object::new(),
+                bindings: Array::new(bindings),
+                span: None,
+            }),
+        })
     }
 }
 
-/// Opaque Rust view of a Relax sequence expression.
+/// ABI-complete Rust representation of a Relax sequence expression.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "relax.expr.SeqExpr"]
 #[type_final]
 pub struct SeqExprObj {
     base: ExprObj,
+    blocks: Array<BindingBlock>,
+    body: Expr,
 }
 
 /// Reference-counted handle to ordered bindings followed by a body expression.
@@ -328,27 +342,32 @@ impl std::ops::Deref for SeqExprObj {
 impl SeqExprObj {
     /// Return binding blocks in evaluation order.
     pub fn blocks(&self) -> Result<Array<BindingBlock>> {
-        crate::reflected_field!(self, "blocks")?.try_into()
+        Ok(self.blocks.clone())
     }
 
     /// Return the value produced after all binding blocks execute.
     pub fn body(&self) -> Result<Expr> {
-        crate::reflected_field!(self, "body")?.try_into()
+        Ok(self.body.clone())
     }
 }
 
 impl SeqExpr {
-    /// Construct ordered binding blocks followed by `body`.
+    /// Construct ordered binding blocks followed by `body` directly in Rust.
     pub fn new(blocks: Vec<BindingBlock>, body: &Expr) -> Result<Self> {
-        let blocks = Array::new(blocks);
-        let none = ();
-        crate::global_function!("relax.SeqExpr")?
-            .call_packed(&[
-                AnyView::from(&blocks),
-                AnyView::from(body),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        Ok(Self {
+            data: ObjectArc::new(SeqExprObj {
+                base: ExprObj::new(Type::missing()?, None),
+                blocks: Array::new(blocks),
+                body: body.clone(),
+            }),
+        })
+    }
+
+    fn from_expr(body: &Expr) -> Result<Self> {
+        match body.clone().try_cast::<Self>() {
+            Ok(sequence) => Ok(sequence),
+            Err(_) => Self::new(Vec::new(), body),
+        }
     }
 }
 
@@ -360,13 +379,17 @@ impl From<SeqExpr> for Expr {
     }
 }
 
-/// Opaque Rust view of a Relax function.
+/// ABI-complete Rust representation of a Relax function.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "relax.expr.Function"]
 #[type_final]
 pub struct RelaxFunctionObj {
     base: BaseFuncObj,
+    params: Array<Var>,
+    body: SeqExpr,
+    ret_ty: Type,
+    is_pure: bool,
 }
 
 /// Reference-counted handle to a Relax function.
@@ -395,27 +418,27 @@ impl std::ops::Deref for RelaxFunctionObj {
 impl RelaxFunctionObj {
     /// Return recursively defined function parameters.
     pub fn params(&self) -> Result<Array<Var>> {
-        crate::reflected_field!(self, "params")?.try_into()
+        Ok(self.params.clone())
     }
 
     /// Return the function's sequence-expression body.
     pub fn body(&self) -> Result<SeqExpr> {
-        crate::reflected_field!(self, "body")?.try_into()
+        Ok(self.body.clone())
     }
 
     /// Return the declared result type.
     pub fn return_type(&self) -> Result<Type> {
-        crate::reflected_field!(self, "ret_ty")?.try_into()
+        Ok(self.ret_ty.clone())
     }
 
     /// Return whether the function is declared pure.
     pub fn is_pure(&self) -> Result<bool> {
-        crate::reflected_field!(self, "is_pure")?.try_into()
+        Ok(self.is_pure)
     }
 }
 
 impl RelaxFunction {
-    /// Construct a typed Relax function.
+    /// Construct a typed Relax function through C++ type inference and validation.
     pub fn new(params: Vec<Var>, body: &Expr, return_type: &Type, is_pure: bool) -> Result<Self> {
         let params = Array::new(params);
         let return_type = Some(return_type.clone());

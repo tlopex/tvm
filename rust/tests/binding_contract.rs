@@ -23,17 +23,19 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use tvm::ir::{
-    AttrsObj, BaseFuncObj, CallObj, DictAttrsObj, ExprObj, GlobalVarObj, IRModuleObj, IntImmObj,
-    PrimExprConvertibleObj, PrimTypeObj, RangeObj, SourceNameObj, SpanObj, TypeObj, VarObj,
+    AttrsObj, BaseFuncObj, CallObj, DictAttrsObj, DummyGlobalInfoObj, ExprObj, GlobalInfoObj,
+    GlobalVarObj, IRModuleObj, IntImmObj, PrimExprConvertibleObj, PrimTypeObj, RangeObj,
+    SourceMapObj, SourceNameObj, SourceObj, SpanObj, TypeObj, VarObj,
 };
 use tvm::relax::{
     BindingBlockObj, BindingObj, IfObj as RelaxIfObj, RelaxFunctionObj, SeqExprObj, TupleObj,
     VarBindingObj,
 };
 use tvm::tirx::{
-    AddObj, AssertStmtObj, BufferLoadObj, BufferRegionObj, BufferStoreObj, BufferTypeObj,
-    EvaluateObj, ForObj, IfThenElseObj, IterVarObj, MatchBufferRegionObj, MulObj, PrimFuncObj,
-    SBlockObj, SBlockRealizeObj, SeqStmtObj, StmtObj, StringImmObj, SubObj,
+    AddObj, AssertStmtObj, AxisObj, BufferLoadObj, BufferRegionObj, BufferStoreObj, BufferTypeObj,
+    EvaluateObj, ForObj, IfThenElseObj, IterObj, IterVarObj, LayoutObj, MatchBufferRegionObj,
+    MulObj, PrimFuncObj, SBlockObj, SBlockRealizeObj, SeqStmtObj, StmtObj, StringImmObj, SubObj,
+    TileLayoutObj,
 };
 use tvm::tvm_ffi::tvm_ffi_sys::{
     TVMFFIFieldFlagBitMask, TVMFFIFieldInfo, TVMFFIGetTypeInfo, TVMFFISEqHashKind, TVMFFITypeInfo,
@@ -145,7 +147,7 @@ fn all_handwritten_objects_match_runtime_metadata() {
     load_tvm_compiler();
     use TVMFFISEqHashKind::{
         kTVMFFISEqHashKindDAGNode as Dag, kTVMFFISEqHashKindFreeVar as FreeVar,
-        kTVMFFISEqHashKindTreeNode as Tree,
+        kTVMFFISEqHashKindTreeNode as Tree, kTVMFFISEqHashKindUnsupported as Unsupported,
     };
 
     assert_contract::<ExprObj, Object>(
@@ -157,6 +159,12 @@ fn all_handwritten_objects_match_runtime_metadata() {
     assert_contract::<GlobalVarObj, ExprObj>(true, Some(FreeVar), &[("name_hint", 0)]);
     assert_contract::<VarObj, ExprObj>(false, Some(FreeVar), &[("name", IGNORE)]);
     assert_contract::<SourceNameObj, Object>(true, Some(Tree), &[("name", 0)]);
+    assert_contract::<SourceObj, Object>(
+        true,
+        Some(Unsupported),
+        &[("source_name", 0), ("source", 0)],
+    );
+    assert_contract::<SourceMapObj, Object>(true, Some(Tree), &[("source_map", 0)]);
     assert_contract::<SpanObj, Object>(
         false,
         Some(Tree),
@@ -184,6 +192,9 @@ fn all_handwritten_objects_match_runtime_metadata() {
     assert_contract::<IntImmObj, ExprObj>(true, Some(Tree), &[("value", 0)]);
     assert_contract::<AttrsObj, Object>(false, Some(Tree), &[]);
     assert_contract::<DictAttrsObj, AttrsObj>(true, Some(Tree), &[("__dict__", 0)]);
+    // GlobalInfo declares a C++ structural kind but does not register reflection metadata itself.
+    assert_contract::<GlobalInfoObj, Object>(false, None, &[]);
+    assert_contract::<DummyGlobalInfoObj, GlobalInfoObj>(true, Some(Tree), &[]);
     assert_contract::<IRModuleObj, Object>(
         true,
         Some(Tree),
@@ -231,6 +242,19 @@ fn all_handwritten_objects_match_runtime_metadata() {
         true,
         Some(Tree),
         &[("params", DEF_RECURSIVE), ("ret_type", 0), ("body", 0)],
+    );
+    // The abstract polymorphic base has no reflected metadata of its own.
+    assert_contract::<LayoutObj, Object>(false, None, &[]);
+    assert_contract::<AxisObj, Object>(true, Some(Tree), &[("name", 0)]);
+    assert_contract::<IterObj, Object>(
+        true,
+        Some(Tree),
+        &[("extent", 0), ("stride", 0), ("axis", 0)],
+    );
+    assert_contract::<TileLayoutObj, LayoutObj>(
+        true,
+        Some(Tree),
+        &[("shard", 0), ("replica", 0), ("offset", 0)],
     );
     assert_contract::<BufferTypeObj, TypeObj>(
         true,

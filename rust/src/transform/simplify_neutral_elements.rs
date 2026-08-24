@@ -18,8 +18,8 @@
  */
 
 use tvm_ffi::{
-    structural_map, structural_mutate, Any, DefRegionKind, MutateCallbacks, MutateContext, Result,
-    WalkOrder,
+    structural_map, structural_mutate, Any, AnyMap, DefRegionKind, MutateCallbacks, MutateContext,
+    Result, String, WalkOrder,
 };
 
 use super::utils::int_value;
@@ -118,7 +118,7 @@ fn mutate_loop(
 
     let thread_binding =
         Option::<crate::tirx::IterVar>::try_from(mutator.mutate(&value.thread_binding()?)?)?;
-    let annotations = mutator.mutate(&value.annotations()?)?;
+    let annotations = AnyMap::<String>::try_from(mutator.mutate(&value.annotations()?)?)?;
     let step = value
         .step()?
         .map(|step| mutator.mutate(&step).and_then(Expr::try_from))

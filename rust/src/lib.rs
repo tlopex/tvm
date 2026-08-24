@@ -19,9 +19,11 @@
 
 //! Minimal handwritten TVM IR bindings used to develop Rust analyses and passes.
 //!
-//! The object references in this crate are opaque handles.  TVM owns the full
-//! C++ object layout, while Rust uses the common FFI object header and runtime
-//! type table for checked casts and structural traversal.
+//! Ordinary data nodes use ABI-complete `#[repr(C)]` Rust layouts and can be
+//! allocated by Rust.  Opaque wrappers and registered C++ constructors are
+//! retained only where C++ owns hidden state, virtual dispatch, interning, or
+//! other semantic invariants.  Both forms use the common FFI object header and
+//! runtime type table for checked casts and structural traversal.
 
 macro_rules! global_function {
     ($name:literal) => {{
