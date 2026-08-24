@@ -40,6 +40,7 @@ ALLOW_EXTENSION = {
     "ts",
     "sh",
     "bat",
+    "rs",
     "py",
     "pyi",
     # configurations

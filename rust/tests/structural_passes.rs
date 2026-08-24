@@ -24,7 +24,9 @@ use tvm::analysis::{
     contains_int, expression_trace, first_int, loop_nesting, memory_access_statistics,
     node_statistics, ExprTraceEvent,
 };
-use tvm::ir::{Call, Expr, GlobalVar, IRModule, IntImm, PrimType, Range, Type, Var};
+use tvm::ir::{
+    Call, Expr, GlobalVar, IRModule, IntImm, PrimType, Range, SourceName, Span, Type, Var,
+};
 use tvm::relax::{
     BindingBlock, If as RelaxIf, RelaxFunction, SeqExpr, Tuple as RelaxTuple, VarBinding,
 };
@@ -274,6 +276,38 @@ fn reflected_getters_read_cpp_owned_nodes() {
 }
 
 #[test]
+fn source_and_module_metadata_round_trip_cpp_objects() {
+    load_tvm_compiler();
+    let source_name = SourceName::get("contract-test.tvm").unwrap();
+    let same_source_name = SourceName::get("contract-test.tvm").unwrap();
+    let span = Span::new(&source_name, 2, 3, 4, 5).unwrap();
+
+    assert_eq!(source_name.name().unwrap().as_str(), "contract-test.tvm");
+    assert_eq!(
+        object_pointer(&source_name),
+        object_pointer(&same_source_name)
+    );
+    assert_eq!(
+        object_pointer(&span.source_name().unwrap()),
+        object_pointer(&source_name)
+    );
+    assert_eq!(span.line().unwrap(), 2);
+    assert_eq!(span.column().unwrap(), 3);
+    assert_eq!(span.end_line().unwrap(), 4);
+    assert_eq!(span.end_column().unwrap(), 5);
+
+    let int_type = PrimType::new("int32").unwrap();
+    assert!(int_type.span().unwrap().is_none());
+    let function = PrimFunc::from_body(&Evaluate::from_i64(0).unwrap()).unwrap();
+    let module = IRModule::from_expr(&function).unwrap();
+    assert_eq!(module.functions().unwrap().len(), 1);
+    assert_eq!(module.global_var_map().unwrap().len(), 1);
+    module.source_map().unwrap();
+    module.attrs().unwrap().dictionary().unwrap();
+    module.global_infos().unwrap();
+}
+
+#[test]
 fn rust_skip_assert_matches_the_cpp_pass() {
     load_tvm_compiler();
     let condition = Expr::int("bool", 1).unwrap();
@@ -404,6 +438,40 @@ fn structural_map_memoizes_shared_relax_dag_nodes() {
         &int_expression(2),
     )
     .unwrap();
+    assert_eq!(
+        shared
+            .condition()
+            .unwrap()
+            .try_cast::<IntImm>()
+            .unwrap()
+            .value()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        shared
+            .true_branch()
+            .unwrap()
+            .body()
+            .unwrap()
+            .try_cast::<IntImm>()
+            .unwrap()
+            .value()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        shared
+            .false_branch()
+            .unwrap()
+            .body()
+            .unwrap()
+            .try_cast::<IntImm>()
+            .unwrap()
+            .value()
+            .unwrap(),
+        2
+    );
     let shared_pointer = object_pointer(&shared);
     let root = RelaxTuple::new(vec![shared.clone().into(), shared.into()]).unwrap();
     let mut mapper = DagProbe::default();
@@ -573,6 +641,14 @@ fn walk_and_visit_handle_real_tir_loop_scopes() {
     load_tvm_compiler();
     let statement = nested_loop_statement();
 
+    assert!(statement
+        .clone()
+        .try_cast::<TirFor>()
+        .unwrap()
+        .thread_binding()
+        .unwrap()
+        .is_none());
+
     let statistics = node_statistics(&statement).unwrap();
     assert_eq!(statistics.loops, 2);
     assert_eq!(statistics.statements, 3);
@@ -617,7 +693,9 @@ fn map_renames_relax_definitions_and_preserves_identity_links() {
         .unwrap()
         .into();
     let binding = VarBinding::new(&bound, &call).unwrap();
+    assert!(binding.span().unwrap().is_none());
     let block = BindingBlock::new(vec![binding.into()]).unwrap();
+    assert!(block.span().unwrap().is_none());
     let sequence = SeqExpr::new(vec![block], &bound.clone().into()).unwrap();
     let function = RelaxFunction::new(vec![parameter], &sequence.into(), &int_type, true).unwrap();
 
@@ -1006,7 +1084,7 @@ fn unit_loop_elimination_preserves_annotated_loops() {
         &Expr::int("int64", 1).unwrap(),
         tvm::tirx::ForKind::Serial,
         &body,
-        &Any::from(()),
+        None,
         &annotations,
         None,
         None,

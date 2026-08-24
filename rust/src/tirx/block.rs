@@ -111,7 +111,7 @@ impl IterVarObj {
         IterVarType::try_from(i64::try_from(crate::reflected_field!(self, "iter_type")?)?)
     }
 
-    /// Return the optional runtime thread tag.
+    /// Return the runtime thread tag, or an empty string when no tag is set.
     pub fn thread_tag(&self) -> Result<String> {
         crate::reflected_field!(self, "thread_tag")?.try_into()
     }

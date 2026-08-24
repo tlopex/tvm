@@ -316,7 +316,8 @@ fn mutate_loop(
     mutator.state_mut().depth -= 1;
     let body = Stmt::try_from(body_result?)?;
 
-    let thread_binding = mutator.mutate(&value.thread_binding()?)?;
+    let thread_binding =
+        Option::<crate::tirx::IterVar>::try_from(mutator.mutate(&value.thread_binding()?)?)?;
     let annotations = mutator.mutate(&value.annotations()?)?;
     let step = value
         .step()?
@@ -330,7 +331,7 @@ fn mutate_loop(
         &extent,
         value.kind()?,
         &body,
-        &thread_binding,
+        thread_binding.as_ref(),
         &annotations,
         step.as_ref(),
         span.as_ref(),
@@ -510,7 +511,8 @@ fn eliminate_unit_loop(
     let loop_var =
         Var::try_from(mutator.mutate_with(&value.loop_var()?, DefRegionKind::Recursive)?)?;
     let body = Stmt::try_from(mutator.mutate(&value.body()?)?)?;
-    let thread_binding = mutator.mutate(&value.thread_binding()?)?;
+    let thread_binding =
+        Option::<crate::tirx::IterVar>::try_from(mutator.mutate(&value.thread_binding()?)?)?;
     let annotations = mutator.mutate(&annotations)?;
     let step = value
         .step()?
@@ -524,7 +526,7 @@ fn eliminate_unit_loop(
         &extent,
         kind,
         &body,
-        &thread_binding,
+        thread_binding.as_ref(),
         &annotations,
         step.as_ref(),
         span.as_ref(),

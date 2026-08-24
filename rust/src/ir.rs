@@ -19,7 +19,7 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    AnyCompatible, AnyView, Array, DLDataType, DLDataTypeExt, Map, ObjectArc, ObjectRefCast,
+    Any, AnyCompatible, AnyView, Array, DLDataType, DLDataTypeExt, Map, ObjectArc, ObjectRefCast,
     Result, String,
 };
 
@@ -47,6 +47,11 @@ impl std::ops::Deref for Expr {
 }
 
 impl ExprObj {
+    /// Return optional source metadata carried by this expression.
+    pub fn span(&self) -> Result<Option<Span>> {
+        crate::reflected_field!(self, "span")?.try_into()
+    }
+
     /// Return the static type annotation carried by this expression.
     pub fn ty(&self) -> Result<Type> {
         crate::reflected_field!(self, "ty")?.try_into()
@@ -168,6 +173,47 @@ impl VarObj {
     }
 }
 
+/// Opaque Rust view of TVM's interned source name.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "ir.SourceName"]
+#[type_final]
+pub struct SourceNameObj {
+    base: tvm_ffi::Object,
+}
+
+/// Reference-counted handle to an interned source name.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct SourceName {
+    data: ObjectArc<SourceNameObj>,
+}
+
+impl std::ops::Deref for SourceName {
+    type Target = SourceNameObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl SourceNameObj {
+    /// Return the interned source name text.
+    pub fn name(&self) -> Result<String> {
+        crate::reflected_field!(self, "name")?.try_into()
+    }
+}
+
+impl SourceName {
+    /// Return TVM's process-wide interned source name for `name`.
+    pub fn get(name: &str) -> Result<Self> {
+        let name = String::from(name);
+        crate::global_function!("ir.SourceName")?
+            .call_packed(&[AnyView::from(&name)])?
+            .try_into()
+    }
+}
+
 /// Opaque Rust view of TVM's source-span metadata.
 #[repr(C)]
 #[derive(Object)]
@@ -181,6 +227,54 @@ pub struct SpanObj {
 #[derive(ObjectRef, Clone)]
 pub struct Span {
     data: ObjectArc<SpanObj>,
+}
+
+impl SpanObj {
+    /// Return the source fragment containing this span.
+    pub fn source_name(&self) -> Result<SourceName> {
+        crate::reflected_field!(self, "source_name")?.try_into()
+    }
+
+    /// Return the first source line.
+    pub fn line(&self) -> Result<i64> {
+        crate::reflected_field!(self, "line")?.try_into()
+    }
+
+    /// Return the first source column.
+    pub fn column(&self) -> Result<i64> {
+        crate::reflected_field!(self, "column")?.try_into()
+    }
+
+    /// Return the last source line.
+    pub fn end_line(&self) -> Result<i64> {
+        crate::reflected_field!(self, "end_line")?.try_into()
+    }
+
+    /// Return the last source column.
+    pub fn end_column(&self) -> Result<i64> {
+        crate::reflected_field!(self, "end_column")?.try_into()
+    }
+}
+
+impl Span {
+    /// Construct source-location metadata.
+    pub fn new(
+        source_name: &SourceName,
+        line: i64,
+        column: i64,
+        end_line: i64,
+        end_column: i64,
+    ) -> Result<Self> {
+        crate::global_function!("ir.Span")?
+            .call_packed(&[
+                AnyView::from(source_name),
+                AnyView::from(&line),
+                AnyView::from(&end_line),
+                AnyView::from(&column),
+                AnyView::from(&end_column),
+            ])?
+            .try_into()
+    }
 }
 
 /// Opaque prefix for TVM objects that can convert to a primitive expression.
@@ -346,6 +440,13 @@ impl std::ops::Deref for Type {
     }
 }
 
+impl TypeObj {
+    /// Return optional source metadata carried by this type.
+    pub fn span(&self) -> Result<Option<Span>> {
+        crate::reflected_field!(self, "span")?.try_into()
+    }
+}
+
 /// Opaque Rust view of TVM's `PrimTypeNode`.
 #[repr(C)]
 #[derive(Object)]
@@ -479,6 +580,13 @@ impl std::ops::Deref for DictAttrsObj {
     }
 }
 
+impl DictAttrsObj {
+    /// Return the heterogeneous attribute dictionary as its complete FFI value.
+    pub fn dictionary(&self) -> Result<Any> {
+        crate::reflected_field!(self, "__dict__")
+    }
+}
+
 /// Opaque Rust view of TVM's `IRModuleNode`.
 #[repr(C)]
 #[derive(Object)]
@@ -507,6 +615,26 @@ impl IRModuleObj {
     /// Return the module's global-function table.
     pub fn functions(&self) -> Result<Map<GlobalVar, BaseFunc>> {
         crate::reflected_field!(self, "functions")?.try_into()
+    }
+
+    /// Return TVM's derived name-to-global-variable index.
+    pub fn global_var_map(&self) -> Result<Map<String, GlobalVar>> {
+        crate::reflected_field!(self, "global_var_map_")?.try_into()
+    }
+
+    /// Return the module source map as its complete FFI value.
+    pub fn source_map(&self) -> Result<Any> {
+        crate::reflected_field!(self, "source_map")
+    }
+
+    /// Return the module attributes.
+    pub fn attrs(&self) -> Result<DictAttrs> {
+        crate::reflected_field!(self, "attrs")?.try_into()
+    }
+
+    /// Return heterogeneous global metadata as its complete FFI value.
+    pub fn global_infos(&self) -> Result<Any> {
+        crate::reflected_field!(self, "global_infos")
     }
 }
 

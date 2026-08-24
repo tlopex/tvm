@@ -26,11 +26,14 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use tvm::ir::{Expr, IntImm, Var, VarObj};
-use tvm::tirx::{Add, AddObj, Evaluate, PrimFunc};
+use tvm::ir::{BaseFuncObj, Expr, ExprObj, IntImm, IntImmObj, PrimType, Var, VarObj};
+use tvm::tirx::{Add, AddObj, Evaluate, EvaluateObj, PrimFunc, PrimFuncObj, StmtObj};
+use tvm::tvm_ffi::tvm_ffi_sys::{
+    TVMFFIFieldFlagBitMask, TVMFFIFieldInfo, TVMFFIGetTypeInfo, TVMFFITypeInfo,
+};
 use tvm::tvm_ffi::{
-    structural_map, structural_walk, Any, DefRegionKind, Module, ObjectRefCast, Result, WalkOrder,
-    WalkResult,
+    structural_map, structural_walk, Any, DefRegionKind, Function, Module, Object, ObjectArc,
+    ObjectCore, ObjectRefCast, ObjectRefCore, Result, WalkOrder, WalkResult,
 };
 
 static TVM_COMPILER: OnceLock<Module> = OnceLock::new();
@@ -55,6 +58,149 @@ fn sample_function() -> PrimFunc {
     let value = Expr::add(&variable.clone().into(), &zero).unwrap();
     let body = Evaluate::new(&value).unwrap();
     PrimFunc::new(vec![variable], &body).unwrap()
+}
+
+fn runtime_type_info<N: ObjectCore>() -> &'static TVMFFITypeInfo {
+    let pointer = unsafe { TVMFFIGetTypeInfo(N::type_index()) };
+    assert!(!pointer.is_null(), "missing type info for {}", N::TYPE_KEY);
+    unsafe { &*pointer }
+}
+
+fn direct_fields<N: ObjectCore>() -> &'static [TVMFFIFieldInfo] {
+    let info = runtime_type_info::<N>();
+    if info.num_fields == 0 {
+        return &[];
+    }
+    assert!(!info.fields.is_null(), "missing fields for {}", N::TYPE_KEY);
+    unsafe { std::slice::from_raw_parts(info.fields, info.num_fields as usize) }
+}
+
+fn direct_field<N: ObjectCore>(name: &str) -> &'static TVMFFIFieldInfo {
+    direct_fields::<N>()
+        .iter()
+        .find(|field| field.name.as_str() == name)
+        .unwrap_or_else(|| panic!("missing reflected field {}.{name}", N::TYPE_KEY))
+}
+
+fn assert_type_contract<N: ObjectCore, P: ObjectCore>(
+    expected_final: bool,
+    expected_fields: &[&str],
+) {
+    let info = runtime_type_info::<N>();
+    assert_eq!(info.type_index, N::type_index());
+    assert_eq!(info.type_key.as_str(), N::TYPE_KEY);
+    assert_eq!(info.type_depth, N::TYPE_DEPTH);
+    assert_eq!(N::TYPE_DEPTH, P::TYPE_DEPTH + 1);
+    assert_eq!(N::TYPE_FINAL, expected_final);
+
+    assert!(!info.type_acenstors.is_null());
+    let parent = unsafe { *info.type_acenstors.add(P::TYPE_DEPTH as usize) };
+    assert!(!parent.is_null());
+    assert_eq!(unsafe { (*parent).type_index }, P::type_index());
+
+    let fields = direct_fields::<N>();
+    assert_eq!(
+        fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect::<Vec<_>>(),
+        expected_fields
+    );
+    for field in fields {
+        assert!(
+            field.getter.is_some(),
+            "reflected field {}.{} has no getter",
+            N::TYPE_KEY,
+            field.name.as_str()
+        );
+    }
+}
+
+fn assert_field_flag<N: ObjectCore>(name: &str, flag: TVMFFIFieldFlagBitMask) {
+    assert_ne!(direct_field::<N>(name).flags & flag as i64, 0);
+}
+
+fn object_pointer<O: ObjectRefCore>(value: &O) -> *const () {
+    unsafe { ObjectArc::as_raw(O::data(value)).cast() }
+}
+
+#[test]
+fn handwritten_bindings_match_the_minimal_runtime_contract() {
+    load_tvm_compiler();
+
+    assert_type_contract::<ExprObj, Object>(false, &["span", "ty"]);
+    assert_type_contract::<VarObj, ExprObj>(false, &["name"]);
+    assert_type_contract::<IntImmObj, ExprObj>(true, &["value"]);
+    assert_type_contract::<AddObj, ExprObj>(true, &["a", "b"]);
+    assert_type_contract::<StmtObj, Object>(false, &["span"]);
+    assert_type_contract::<EvaluateObj, StmtObj>(true, &["value"]);
+    assert_type_contract::<BaseFuncObj, ExprObj>(false, &["attrs"]);
+    assert_type_contract::<PrimFuncObj, BaseFuncObj>(true, &["params", "ret_type", "body"]);
+
+    assert_field_flag::<ExprObj>(
+        "span",
+        TVMFFIFieldFlagBitMask::kTVMFFIFieldFlagBitMaskSEqHashIgnore,
+    );
+    assert_field_flag::<VarObj>(
+        "name",
+        TVMFFIFieldFlagBitMask::kTVMFFIFieldFlagBitMaskSEqHashIgnore,
+    );
+    assert_field_flag::<StmtObj>(
+        "span",
+        TVMFFIFieldFlagBitMask::kTVMFFIFieldFlagBitMaskSEqHashIgnore,
+    );
+    assert_field_flag::<PrimFuncObj>(
+        "params",
+        TVMFFIFieldFlagBitMask::kTVMFFIFieldFlagBitMaskSEqHashDefRecursive,
+    );
+}
+
+#[test]
+fn canonical_constructors_and_getters_round_trip() {
+    load_tvm_compiler();
+    for name in [
+        "ir.IntImm",
+        "ir.PrimType",
+        "ir.TypeMissing",
+        "ir.Var",
+        "tirx.Add",
+        "tirx.Evaluate",
+        "tirx.PrimFunc",
+    ] {
+        Function::get_global(name)
+            .unwrap_or_else(|error| panic!("missing canonical constructor `{name}`: {error}"));
+    }
+
+    let function = sample_function();
+    let parameter = function.params().unwrap().get(0).unwrap();
+    assert_eq!(parameter.name().unwrap().as_str(), "x");
+    assert!(parameter.span().unwrap().is_none());
+    assert_eq!(
+        parameter
+            .ty()
+            .unwrap()
+            .try_cast::<PrimType>()
+            .unwrap()
+            .dtype()
+            .unwrap()
+            .bits,
+        32
+    );
+
+    let body = function.body().unwrap().try_cast::<Evaluate>().unwrap();
+    assert!(body.span().unwrap().is_none());
+    let addition = body.value().unwrap().try_cast::<Add>().unwrap();
+    let lhs = addition.lhs().unwrap().try_cast::<Var>().unwrap();
+    let rhs = addition.rhs().unwrap().try_cast::<IntImm>().unwrap();
+    assert_eq!(object_pointer(&lhs), object_pointer(&parameter));
+    assert_eq!(rhs.value().unwrap(), 0);
+    assert!(rhs.span().unwrap().is_none());
+
+    function.attrs().unwrap();
+    function.ret_type().unwrap();
+    function.ty().unwrap();
+    assert!(function.span().unwrap().is_none());
+    assert!(IntImm::new("int8", 128).is_err());
 }
 
 #[test]
@@ -124,14 +270,11 @@ fn generated_bindings_support_structural_map() {
         .unwrap()
         .value()
         .unwrap();
+    let mapped_variable = mapped_value.try_cast::<Var>().unwrap();
+    assert_eq!(mapped_variable.name().unwrap().as_str(), "x");
     assert_eq!(
-        mapped_value
-            .try_cast::<Var>()
-            .unwrap()
-            .name()
-            .unwrap()
-            .as_str(),
-        "x"
+        object_pointer(&mapped_variable),
+        object_pointer(&mapped.params().unwrap().get(0).unwrap())
     );
 
     let original_value = original

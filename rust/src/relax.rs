@@ -111,6 +111,23 @@ impl std::ops::Deref for IfObj {
     }
 }
 
+impl IfObj {
+    /// Return the conditional expression.
+    pub fn condition(&self) -> Result<Expr> {
+        crate::reflected_field!(self, "cond")?.try_into()
+    }
+
+    /// Return the sequence evaluated when the condition is true.
+    pub fn true_branch(&self) -> Result<SeqExpr> {
+        crate::reflected_field!(self, "true_branch")?.try_into()
+    }
+
+    /// Return the sequence evaluated when the condition is false.
+    pub fn false_branch(&self) -> Result<SeqExpr> {
+        crate::reflected_field!(self, "false_branch")?.try_into()
+    }
+}
+
 impl If {
     /// Construct a Relax conditional.  TVM wraps each branch in `SeqExpr`.
     pub fn new(condition: &Expr, true_branch: &Expr, false_branch: &Expr) -> Result<Self> {
@@ -158,6 +175,11 @@ impl std::ops::Deref for Binding {
 }
 
 impl BindingObj {
+    /// Return optional source metadata carried by this binding.
+    pub fn span(&self) -> Result<Option<crate::ir::Span>> {
+        crate::reflected_field!(self, "span")?.try_into()
+    }
+
     /// Return the variable defined by this binding.
     pub fn variable(&self) -> Result<Var> {
         crate::reflected_field!(self, "var")?.try_into()
@@ -252,6 +274,11 @@ impl BindingBlockObj {
     /// Return bindings in evaluation order.
     pub fn bindings(&self) -> Result<Array<Binding>> {
         crate::reflected_field!(self, "bindings")?.try_into()
+    }
+
+    /// Return optional source metadata carried by this block.
+    pub fn span(&self) -> Result<Option<crate::ir::Span>> {
+        crate::reflected_field!(self, "span")?.try_into()
     }
 }
 

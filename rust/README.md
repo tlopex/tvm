@@ -67,9 +67,13 @@ The focused acceptance tests are in
 `Expr`, `Var`, `IntImm`, `Add`, `Evaluate`, and `PrimFunc` plus their base
 types.  The completion condition is simple: generate that slice, delete its
 handwritten definitions, and run the same tests without modifying them.
+[`tests/binding_contract.rs`](tests/binding_contract.rs) separately checks the
+runtime metadata contract of every object wrapper currently handwritten by the
+prototype.
 
-See [STUBGEN_FEEDBACK.md](STUBGEN_FEEDBACK.md) for the concrete generator,
-runtime, and metadata requirements found by the experiment.
+See [BINDING_CONTRACT.md](BINDING_CONTRACT.md) for the correctness standard and
+[STUBGEN_FEEDBACK.md](STUBGEN_FEEDBACK.md) for the concrete generator, runtime,
+and metadata requirements found by the experiment.
 
 Build TVM first, ensure `tvm-ffi-config` resolves that build, and run:
 

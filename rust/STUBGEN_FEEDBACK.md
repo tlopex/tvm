@@ -27,11 +27,16 @@ handwritten crate is a reference output for stubgen, not a proposed manually
 maintained TVM Rust frontend.  It lives in a TVM checkout only because the
 experiment needs a real compiler library and real registered IR types.
 
+The independent correctness criteria are defined in
+[BINDING_CONTRACT.md](BINDING_CONTRACT.md).  This document records engineering
+feedback discovered while trying to satisfy that contract.
+
 The first stubgen milestone is deliberately small.  Generate `Expr`, `Var`,
 `IntImm`, `Add`, `Stmt`, `Evaluate`, `BaseFunc`, and `PrimFunc`, including the
 base types required by their inheritance chains.  Then delete the corresponding
 handwritten definitions and run `tests/stubgen_acceptance.rs` unchanged.  The
-milestone is complete when both its walk and map tests pass.
+milestone is complete when its metadata, construction, walk, and map tests all
+pass.
 
 Do not expand the handwritten surface merely to approach complete TVM
 coverage.  Add a type only when a focused experiment is needed to answer a

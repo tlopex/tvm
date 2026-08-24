@@ -557,12 +557,11 @@ impl ForObj {
         crate::reflected_field!(self, "body")?.try_into()
     }
 
-    /// Return the optional IterVar without requiring a handwritten IterVar binding.
-    pub fn thread_binding(&self) -> Result<Any> {
-        crate::reflected_field!(self, "thread_binding")
+    /// Return the optional thread axis bound by this loop.
+    pub fn thread_binding(&self) -> Result<Option<IterVar>> {
+        crate::reflected_field!(self, "thread_binding")?.try_into()
     }
 
-    /// Return the annotation map without restricting its heterogeneous values.
     /// Return heterogeneous loop annotations as their complete FFI value.
     pub fn annotations(&self) -> Result<Any> {
         crate::reflected_field!(self, "annotations")
@@ -583,7 +582,7 @@ impl For {
             extent,
             ForKind::Serial,
             body,
-            &Any::from(()),
+            None,
             &Any::from(()),
             None,
             None,
@@ -598,12 +597,13 @@ impl For {
         extent: &Expr,
         kind: ForKind,
         body: &Stmt,
-        thread_binding: &Any,
+        thread_binding: Option<&IterVar>,
         annotations: &Any,
         step: Option<&Expr>,
         span: Option<&Span>,
     ) -> Result<Self> {
         let kind = kind as i64;
+        let thread_binding = thread_binding.cloned();
         let step = step.cloned();
         let span = span.cloned();
         crate::global_function!("tirx.For")?
@@ -613,7 +613,7 @@ impl For {
                 AnyView::from(extent),
                 AnyView::from(&kind),
                 AnyView::from(body),
-                AnyView::from(thread_binding),
+                AnyView::from(&thread_binding),
                 AnyView::from(annotations),
                 AnyView::from(&step),
                 AnyView::from(&span),
@@ -666,6 +666,11 @@ impl PrimFuncObj {
     /// Return the function parameters.
     pub fn params(&self) -> Result<Array<Var>> {
         crate::reflected_field!(self, "params")?.try_into()
+    }
+
+    /// Return the function return type.
+    pub fn ret_type(&self) -> Result<crate::ir::Type> {
+        crate::reflected_field!(self, "ret_type")?.try_into()
     }
 
     /// Return the function body.
