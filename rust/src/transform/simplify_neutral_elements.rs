@@ -1,0 +1,188 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+use tvm_ffi::{
+    structural_map, structural_mutate, Any, DefRegionKind, MutateCallbacks, MutateContext, Result,
+    WalkOrder,
+};
+
+use super::utils::int_value;
+use crate::ir::{Expr, Var};
+use crate::tirx::{Add, For as TirFor, Mul, PrimFunc, Stmt, Sub};
+
+/// Simplify arithmetic identity operations using framework-controlled mapping.
+///
+/// The post-order map rewrites children first, then removes `x + 0`, `0 + x`,
+/// `x - 0`, `x * 1`, and `1 * x` throughout the expression graph.
+pub fn simplify_neutral_elements_expr(expr: Expr) -> Result<Expr> {
+    let mut mapper = NeutralElementSimplifier;
+    structural_map(expr, &mut mapper, WalkOrder::PostOrder)?.try_into()
+}
+
+/// Apply neutral-element simplification throughout a TIR PrimFunc.
+pub fn simplify_neutral_elements_prim_func(func: PrimFunc) -> Result<PrimFunc> {
+    let mut mapper = NeutralElementSimplifier;
+    structural_map(func, &mut mapper, WalkOrder::PostOrder)?.try_into()
+}
+
+struct NeutralElementSimplifier;
+
+#[tvm_ffi::dispatch(map)]
+impl NeutralElementSimplifier {
+    fn map_add(&mut self, value: Add) -> Result<Any> {
+        let lhs = value.lhs()?;
+        let rhs = value.rhs()?;
+        if int_value(&lhs)? == Some(0) {
+            return Ok(Any::from(rhs));
+        }
+        if int_value(&rhs)? == Some(0) {
+            return Ok(Any::from(lhs));
+        }
+        Ok(Any::from(value))
+    }
+
+    fn map_subtract(&mut self, value: Sub) -> Result<Any> {
+        let rhs = value.rhs()?;
+        if int_value(&rhs)? == Some(0) {
+            return Ok(Any::from(value.lhs()?));
+        }
+        Ok(Any::from(value))
+    }
+
+    fn map_multiply(&mut self, value: Mul) -> Result<Any> {
+        let lhs = value.lhs()?;
+        let rhs = value.rhs()?;
+        if int_value(&lhs)? == Some(1) {
+            return Ok(Any::from(rhs));
+        }
+        if int_value(&rhs)? == Some(1) {
+            return Ok(Any::from(lhs));
+        }
+        Ok(Any::from(value))
+    }
+}
+
+#[derive(Default)]
+struct LoopBodyMutationState {
+    depth: usize,
+}
+
+/// Simplify neutral arithmetic operations only while inside a loop body.
+///
+/// This uses callback-controlled mutation because the state transition must
+/// surround one specific child (`For.body`).  Bounds of a top-level loop are
+/// left unchanged, while bounds of a nested loop are transformed because that
+/// loop itself occurs inside its parent's body.
+pub fn simplify_neutral_elements_in_loop_bodies(statement: Stmt) -> Result<Stmt> {
+    let mut mutator = MutateCallbacks::new(
+        LoopBodyMutationState::default(),
+        (
+            mutate_loop,
+            mutate_scoped_add,
+            mutate_scoped_subtract,
+            mutate_scoped_multiply,
+        ),
+    );
+    structural_mutate(statement, &mut mutator)?.try_into()
+}
+
+fn mutate_loop(
+    value: TirFor,
+    mutator: &mut MutateContext<'_, LoopBodyMutationState>,
+) -> Result<Any> {
+    let loop_var =
+        Var::try_from(mutator.mutate_with(&value.loop_var()?, DefRegionKind::Recursive)?)?;
+    let minimum = Expr::try_from(mutator.mutate(&value.minimum()?)?)?;
+    let extent = Expr::try_from(mutator.mutate(&value.extent()?)?)?;
+
+    mutator.state_mut().depth += 1;
+    let body_result = mutator.mutate(&value.body()?);
+    mutator.state_mut().depth -= 1;
+    let body = Stmt::try_from(body_result?)?;
+
+    let thread_binding =
+        Option::<crate::tirx::IterVar>::try_from(mutator.mutate(&value.thread_binding()?)?)?;
+    let annotations = mutator.mutate(&value.annotations()?)?;
+    let step = value
+        .step()?
+        .map(|step| mutator.mutate(&step).and_then(Expr::try_from))
+        .transpose()?;
+    let span = value.span()?;
+
+    Ok(Any::from(TirFor::with_metadata(
+        &loop_var,
+        &minimum,
+        &extent,
+        value.kind()?,
+        &body,
+        thread_binding.as_ref(),
+        &annotations,
+        step.as_ref(),
+        span.as_ref(),
+    )?))
+}
+
+fn mutate_scoped_add(
+    _value: Add,
+    mutator: &mut MutateContext<'_, LoopBodyMutationState>,
+) -> Result<Any> {
+    let value = Add::try_from(mutator.default_mutate()?)?;
+    if mutator.state().depth == 0 {
+        return Ok(Any::from(value));
+    }
+    let lhs = value.lhs()?;
+    let rhs = value.rhs()?;
+    if int_value(&lhs)? == Some(0) {
+        return Ok(Any::from(rhs));
+    }
+    if int_value(&rhs)? == Some(0) {
+        return Ok(Any::from(lhs));
+    }
+    Ok(Any::from(value))
+}
+
+fn mutate_scoped_subtract(
+    _value: Sub,
+    mutator: &mut MutateContext<'_, LoopBodyMutationState>,
+) -> Result<Any> {
+    let value = Sub::try_from(mutator.default_mutate()?)?;
+    if mutator.state().depth > 0 && int_value(&value.rhs()?)? == Some(0) {
+        return Ok(Any::from(value.lhs()?));
+    }
+    Ok(Any::from(value))
+}
+
+fn mutate_scoped_multiply(
+    _value: Mul,
+    mutator: &mut MutateContext<'_, LoopBodyMutationState>,
+) -> Result<Any> {
+    let value = Mul::try_from(mutator.default_mutate()?)?;
+    if mutator.state().depth == 0 {
+        return Ok(Any::from(value));
+    }
+    let lhs = value.lhs()?;
+    let rhs = value.rhs()?;
+    if int_value(&lhs)? == Some(1) {
+        return Ok(Any::from(rhs));
+    }
+    if int_value(&rhs)? == Some(1) {
+        return Ok(Any::from(lhs));
+    }
+    Ok(Any::from(value))
+}
