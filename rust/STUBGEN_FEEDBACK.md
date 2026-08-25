@@ -259,8 +259,9 @@ be expressed as plain field initialization:
 | `__data_producer_vtable__` | dispatch shape, element type, and name queries for `DataProducer` subclasses without a C++ virtual table | result follows the shared owning-result ABI |
 
 Each type attribute stores an opaque pointer to a C-compatible struct whose
-entries are ABI function pointers. Rust or a nonvirtual native base shim finds
-the column and calls the pointer directly; Rust uses
+first fields are `abi_version` and `struct_size`, followed by ABI function
+pointers. Rust or a nonvirtual native base shim validates that prefix, finds
+the requested entry, and calls the pointer directly; Rust uses
 `TVMFFIGetTypeAttrColumn`. C++ may implement a registered compiler algorithm,
 but neither the object layout nor the call boundary depends on the C++ object
 ABI. A constructor `prepare` hook is not an allocator: it returns
@@ -269,6 +270,9 @@ node allocation. Its vtable also publishes the exact argument count, while its
 result always uses physical field names such as `ret_type`, `ret_ty`, or the
 inherited `ty`. This lets generated constructors share one decoding template
 instead of embedding a different return convention for every node type.
+The C++ acceptance test enumerates registered runtime types, so adding a new
+concrete `Layout`, `DataProducer`, or `PrimExprConvertible` subtype without its
+required table fails the test instead of waiting for an unrelated runtime call.
 
 The distinction is about the boundary, not the implementation file extension:
 a hook implemented in `.cc` is acceptable when its public table is declared in

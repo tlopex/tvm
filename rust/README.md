@@ -40,7 +40,9 @@ ABI vtables, and semantic constructors use a C ABI preparation table that never
 allocates the final node. These tables are declared in C-compatible headers;
 the tables called by Rust are mirrored by Rust `#[repr(C)]` structs with
 `extern "C"` entries, while native base shims use the same tables directly. No
-C++ ABI crosses the language boundary. Public direct-layout fields are borrowed
+C++ ABI crosses the language boundary. Every table starts with an ABI version
+and byte size; both languages reject an incompatible or truncated table before
+reading any function entry. Public direct-layout fields are borrowed
 through each reference wrapper's read-only `Deref`; callers write `.clone()` explicitly
 when they need an owning handle. Recursion and rebuilding use `tvm-ffi`'s
 language-independent structural protocol.

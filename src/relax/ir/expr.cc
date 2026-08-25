@@ -366,7 +366,9 @@ TVMFFIAny PrepareFunction(const TVMFFIAny* args, int32_t num_args) noexcept {
   });
 }
 
-const TVMIRConstructorVTable kFunctionConstructorVTable{4, &PrepareFunction};
+const TVMIRConstructorVTable kFunctionConstructorVTable{
+    TVM_IR_CONSTRUCTOR_VTABLE_ABI_VERSION, static_cast<uint32_t>(sizeof(TVMIRConstructorVTable)), 4,
+    &PrepareFunction};
 
 }  // namespace
 

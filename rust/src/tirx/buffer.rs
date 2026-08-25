@@ -56,6 +56,8 @@ type DataProducerCall = unsafe extern "C" fn(TVMFFIAny) -> TVMFFIAny;
 /// Rust mirror of `TVMTIRXDataProducerVTable`.
 #[repr(C)]
 struct DataProducerVTable {
+    _abi_version: u32,
+    _struct_size: u32,
     get_shape: Option<DataProducerCall>,
     get_data_type: Option<DataProducerCall>,
     get_name_hint: Option<DataProducerCall>,
@@ -87,6 +89,7 @@ impl DataProducer {
             &DATA_PRODUCER_VTABLE_COLUMN,
             "__data_producer_vtable__",
             value.type_index(),
+            crate::abi::C_ABI_VTABLE_VERSION,
         )
     }
 
@@ -160,6 +163,8 @@ type LayoutCall3 = unsafe extern "C" fn(TVMFFIAny, TVMFFIAny, TVMFFIAny, TVMFFIA
 /// Rust mirror of `TVMTIRXLayoutVTable`.
 #[repr(C)]
 struct LayoutVTable {
+    _abi_version: u32,
+    _struct_size: u32,
     compatible_with_shape: Option<LayoutCall1>,
     verify_well_formed: Option<LayoutCall0>,
     get_size: Option<LayoutCall1>,
@@ -201,6 +206,7 @@ impl Layout {
             &LAYOUT_VTABLE_COLUMN,
             "__layout_vtable__",
             value.type_index(),
+            crate::abi::C_ABI_VTABLE_VERSION,
         )
     }
 

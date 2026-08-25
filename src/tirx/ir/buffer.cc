@@ -98,7 +98,9 @@ TVMFFIAny PrepareBufferType(const TVMFFIAny* args, int32_t num_args) noexcept {
   });
 }
 
-const TVMIRConstructorVTable kBufferTypeConstructorVTable{5, &PrepareBufferType};
+const TVMIRConstructorVTable kBufferTypeConstructorVTable{
+    TVM_IR_CONSTRUCTOR_VTABLE_ABI_VERSION, static_cast<uint32_t>(sizeof(TVMIRConstructorVTable)), 5,
+    &PrepareBufferType};
 
 const TVMTIRXDataProducerVTable* GetDataProducerVTable(const DataProducerNode* self) {
   static ffi::reflection::TypeAttrColumn column(TVM_TIRX_DATA_PRODUCER_VTABLE_ATTR);
@@ -106,10 +108,9 @@ const TVMTIRXDataProducerVTable* GetDataProducerVTable(const DataProducerNode* s
   TVM_FFI_CHECK(attr.type_index() == ffi::TypeIndex::kTVMFFIOpaquePtr, TypeError)
       << "DataProducer type " << self->GetTypeKey()
       << " does not register a C ABI data-producer vtable";
-  auto* vtable = static_cast<const TVMTIRXDataProducerVTable*>(attr.cast<void*>());
-  TVM_FFI_CHECK(vtable != nullptr, TypeError)
-      << "DataProducer type " << self->GetTypeKey() << " registers a null vtable";
-  return vtable;
+  return ir_abi::CheckedVTable<TVMTIRXDataProducerVTable>(
+      attr.cast<void*>(), TVM_TIRX_DATA_PRODUCER_VTABLE_ABI_VERSION, self->GetTypeKey(),
+      TVM_TIRX_DATA_PRODUCER_VTABLE_ATTR);
 }
 
 template <typename Result>

@@ -29,6 +29,9 @@ extern "C" {
 /*! \brief Type attribute containing a TVMTIRXLayoutVTable pointer. */
 #define TVM_TIRX_LAYOUT_VTABLE_ATTR "__layout_vtable__"
 
+/*! \brief ABI version of TVMTIRXLayoutVTable's required prefix. */
+#define TVM_TIRX_LAYOUT_VTABLE_ABI_VERSION 1
+
 /*!
  * \brief ABI calls with zero through three arguments in addition to the layout.
  *
@@ -44,6 +47,10 @@ typedef TVMFFIAny (*TVMTIRXLayoutCall3)(TVMFFIAny layout, TVMFFIAny arg0, TVMFFI
 
 /*! \brief Language-neutral behavior table for one concrete layout type. */
 typedef struct {
+  /*! \brief Version of the required table prefix. */
+  uint32_t abi_version;
+  /*! \brief Total number of bytes provided by this table. */
+  uint32_t struct_size;
   TVMTIRXLayoutCall1 compatible_with_shape;
   TVMTIRXLayoutCall0 verify_well_formed;
   TVMTIRXLayoutCall1 get_size;

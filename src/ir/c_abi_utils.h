@@ -23,11 +23,31 @@
 #include <tvm/ffi/expected.h>
 
 #include <exception>
+#include <limits>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
 namespace tvm {
 namespace ir_abi {
+
+/*! \brief Validate the common versioned prefix of an opaque C ABI table. */
+template <typename VTable>
+const VTable* CheckedVTable(const void* pointer, uint32_t expected_version,
+                            std::string_view type_key, std::string_view attr_name) {
+  static_assert(std::is_standard_layout_v<VTable>);
+  static_assert(sizeof(VTable) <= std::numeric_limits<uint32_t>::max());
+  TVM_FFI_CHECK(pointer != nullptr, TypeError)
+      << "Type " << type_key << " registers a null `" << attr_name << "` table";
+  const auto* vtable = static_cast<const VTable*>(pointer);
+  TVM_FFI_CHECK_EQ(vtable->abi_version, expected_version, TypeError)
+      << "Type " << type_key << " registers `" << attr_name << "` ABI version "
+      << vtable->abi_version << ", but this library requires " << expected_version;
+  TVM_FFI_CHECK_GE(vtable->struct_size, static_cast<uint32_t>(sizeof(VTable)), TypeError)
+      << "Type " << type_key << " registers a " << vtable->struct_size << "-byte `" << attr_name
+      << "` table, but this library requires at least " << sizeof(VTable) << " bytes";
+  return vtable;
+}
 
 template <typename Callback>
 TVMFFIAny ReturnExpected(Callback&& callback) noexcept {

@@ -57,9 +57,15 @@ TVMFFIAny TensorToPrimExpr(TVMFFIAny value) noexcept {
       [&]() { return ffi::AnyView::CopyFromTVMFFIAny(value).cast<te::Tensor>()->ToPrimExpr(); });
 }
 
-const TVMIRPrimExprConvertibleVTable kIterVarPrimExprVTable{&IterVarToPrimExpr};
-const TVMIRPrimExprConvertibleVTable kBufferRegionPrimExprVTable{&BufferRegionToPrimExpr};
-const TVMIRPrimExprConvertibleVTable kTensorPrimExprVTable{&TensorToPrimExpr};
+const TVMIRPrimExprConvertibleVTable kIterVarPrimExprVTable{
+    TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ABI_VERSION,
+    static_cast<uint32_t>(sizeof(TVMIRPrimExprConvertibleVTable)), &IterVarToPrimExpr};
+const TVMIRPrimExprConvertibleVTable kBufferRegionPrimExprVTable{
+    TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ABI_VERSION,
+    static_cast<uint32_t>(sizeof(TVMIRPrimExprConvertibleVTable)), &BufferRegionToPrimExpr};
+const TVMIRPrimExprConvertibleVTable kTensorPrimExprVTable{
+    TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ABI_VERSION,
+    static_cast<uint32_t>(sizeof(TVMIRPrimExprConvertibleVTable)), &TensorToPrimExpr};
 
 }  // namespace
 
@@ -97,8 +103,10 @@ PrimExpr PrimExprConvertible::ToPrimExpr() const {
   ffi::AnyView attr = column[type_index()];
   TVM_FFI_CHECK(attr.type_index() == ffi::TypeIndex::kTVMFFIOpaquePtr, TypeError)
       << "Type " << GetTypeKey() << " does not register a C ABI PrimExpr conversion vtable";
-  auto* vtable = static_cast<const TVMIRPrimExprConvertibleVTable*>(attr.cast<void*>());
-  TVM_FFI_CHECK(vtable != nullptr && vtable->to_prim_expr != nullptr, TypeError)
+  const auto* vtable = ir_abi::CheckedVTable<TVMIRPrimExprConvertibleVTable>(
+      attr.cast<void*>(), TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ABI_VERSION, GetTypeKey(),
+      TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ATTR);
+  TVM_FFI_CHECK(vtable->to_prim_expr != nullptr, TypeError)
       << "Type " << GetTypeKey() << " registers an incomplete PrimExpr conversion vtable";
   TVMFFIAny value = ir_abi::ToBorrowedABI(*this);
   return ffi::details::ExpectedUnsafe::MoveFromTVMFFIAny<PrimExpr>(vtable->to_prim_expr(value))

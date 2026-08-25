@@ -620,7 +620,9 @@ TVMFFIAny PrepareMatchBufferRegion(const TVMFFIAny* args, int32_t num_args) noex
   });
 }
 
-const TVMIRConstructorVTable kMatchBufferRegionConstructorVTable{2, &PrepareMatchBufferRegion};
+const TVMIRConstructorVTable kMatchBufferRegionConstructorVTable{
+    TVM_IR_CONSTRUCTOR_VTABLE_ABI_VERSION, static_cast<uint32_t>(sizeof(TVMIRConstructorVTable)), 2,
+    &PrepareMatchBufferRegion};
 
 }  // namespace
 

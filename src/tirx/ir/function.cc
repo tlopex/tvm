@@ -107,7 +107,9 @@ TVMFFIAny PreparePrimFunc(const TVMFFIAny* args, int32_t num_args) noexcept {
   });
 }
 
-const TVMIRConstructorVTable kPrimFuncConstructorVTable{3, &PreparePrimFunc};
+const TVMIRConstructorVTable kPrimFuncConstructorVTable{
+    TVM_IR_CONSTRUCTOR_VTABLE_ABI_VERSION, static_cast<uint32_t>(sizeof(TVMIRConstructorVTable)), 3,
+    &PreparePrimFunc};
 }  // namespace
 
 // Get the function type of a PrimFunc

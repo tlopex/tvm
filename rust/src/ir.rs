@@ -494,6 +494,8 @@ type FToPrimExpr = unsafe extern "C" fn(TVMFFIAny) -> TVMFFIAny;
 /// Rust mirror of `TVMIRPrimExprConvertibleVTable`.
 #[repr(C)]
 struct PrimExprConvertibleVTable {
+    _abi_version: u32,
+    _struct_size: u32,
     to_prim_expr: Option<FToPrimExpr>,
 }
 
@@ -516,6 +518,7 @@ impl PrimExprConvertible {
             &PRIM_EXPR_CONVERTIBLE_VTABLE_COLUMN,
             "__to_prim_expr__",
             value.type_index(),
+            crate::abi::C_ABI_VTABLE_VERSION,
         )?;
         let callback = vtable.to_prim_expr.ok_or_else(|| {
             Error::new(

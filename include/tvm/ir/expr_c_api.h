@@ -29,6 +29,9 @@ extern "C" {
 /*! \brief Type attribute containing a TVMIRPrimExprConvertibleVTable pointer. */
 #define TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ATTR "__to_prim_expr__"
 
+/*! \brief ABI version of TVMIRPrimExprConvertibleVTable's required prefix. */
+#define TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ABI_VERSION 1
+
 /*!
  * \brief Convert one borrowed object into an owning PrimExpr or Error.
  *
@@ -40,6 +43,10 @@ typedef TVMFFIAny (*TVMIRFToPrimExpr)(TVMFFIAny value);
 
 /*! \brief Language-neutral behavior table for PrimExpr-convertible objects. */
 typedef struct {
+  /*! \brief Version of the required table prefix. */
+  uint32_t abi_version;
+  /*! \brief Total number of bytes provided by this table. */
+  uint32_t struct_size;
   TVMIRFToPrimExpr to_prim_expr;
 } TVMIRPrimExprConvertibleVTable;
 

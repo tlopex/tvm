@@ -29,6 +29,9 @@ extern "C" {
 /*! \brief Type attribute containing a TVMTIRXDataProducerVTable pointer. */
 #define TVM_TIRX_DATA_PRODUCER_VTABLE_ATTR "__data_producer_vtable__"
 
+/*! \brief ABI version of TVMTIRXDataProducerVTable's required prefix. */
+#define TVM_TIRX_DATA_PRODUCER_VTABLE_ABI_VERSION 1
+
 /*!
  * \brief Inspect one borrowed data producer.
  *
@@ -39,6 +42,10 @@ typedef TVMFFIAny (*TVMTIRXDataProducerCall)(TVMFFIAny producer);
 
 /*! \brief Language-neutral behavior table for a concrete data-producer type. */
 typedef struct {
+  /*! \brief Version of the required table prefix. */
+  uint32_t abi_version;
+  /*! \brief Total number of bytes provided by this table. */
+  uint32_t struct_size;
   TVMTIRXDataProducerCall get_shape;
   TVMTIRXDataProducerCall get_data_type;
   TVMTIRXDataProducerCall get_name_hint;

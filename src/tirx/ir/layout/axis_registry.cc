@@ -48,7 +48,9 @@ TVMFFIAny PrepareAxis(const TVMFFIAny* args, int32_t num_args) noexcept {
   });
 }
 
-const TVMIRConstructorVTable kAxisConstructorVTable{1, &PrepareAxis};
+const TVMIRConstructorVTable kAxisConstructorVTable{
+    TVM_IR_CONSTRUCTOR_VTABLE_ABI_VERSION, static_cast<uint32_t>(sizeof(TVMIRConstructorVTable)), 1,
+    &PrepareAxis};
 
 }  // namespace
 

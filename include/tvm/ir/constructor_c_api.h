@@ -29,6 +29,9 @@ extern "C" {
 /*! \brief Type attribute containing a TVMIRConstructorVTable pointer. */
 #define TVM_IR_CONSTRUCTOR_VTABLE_ATTR "__constructor_vtable__"
 
+/*! \brief ABI version of TVMIRConstructorVTable's required prefix. */
+#define TVM_IR_CONSTRUCTOR_VTABLE_ABI_VERSION 1
+
 /*!
  * \brief Validate constructor inputs and return derived object fields.
  *
@@ -43,6 +46,10 @@ typedef TVMFFIAny (*TVMIRFConstructorPrepare)(const TVMFFIAny* args, int32_t num
 
 /*! \brief Language-neutral semantic-constructor preparation table. */
 typedef struct {
+  /*! \brief Version of the required table prefix. */
+  uint32_t abi_version;
+  /*! \brief Total number of bytes provided by this table. */
+  uint32_t struct_size;
   /*! \brief Number of borrowed arguments accepted by `prepare`. */
   int32_t num_args;
   /*! \brief Validation and derived-field callback. */

@@ -46,6 +46,8 @@ TVMFFIAny TensorGetNameHint(TVMFFIAny value) noexcept {
 }
 
 const TVMTIRXDataProducerVTable kTensorDataProducerVTable{
+    TVM_TIRX_DATA_PRODUCER_VTABLE_ABI_VERSION,
+    static_cast<uint32_t>(sizeof(TVMTIRXDataProducerVTable)),
     &TensorGetShape,
     &TensorGetDataType,
     &TensorGetNameHint,

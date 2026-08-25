@@ -109,7 +109,7 @@ A binding is accepted only when every applicable check passes:
 | Complete allocator API | exact stored types by value, direct `Self` return, no hidden clone/conversion work, and visibility that preserves external invariants |
 | Constructor parity | matching defaults, rejection cases, normalization, and derived state |
 | Cross-language ABI | a C++ registered field getter can read a Rust allocation |
-| C ABI behavior tables | headers compile as C, Rust mirrors use `#[repr(C)]`/`extern "C"`, and attributes contain opaque table pointers rather than `ffi.Function` |
+| C ABI behavior tables | headers compile as C, Rust mirrors use `#[repr(C)]`/`extern "C"`, attributes contain opaque table pointers rather than `ffi.Function`, and the version/size prefix is validated before entry access |
 | Cross-language semantics | C++ structural equality accepts Rust- and C++-created equivalents |
 | Ownership | Rust and C++ may clone/drop the handle without leaks, double drops, or dangling fields |
 | Walk/map behavior | exact callback selection, order, definition regions, identity remapping, and COW behavior |
@@ -233,6 +233,12 @@ constructible only after its behavior is moved to a registered C ABI table.
   compiler algorithm lives in C++, but the table declaration, arguments,
   result, and calling convention must remain pure C ABI. No C++ class, virtual
   dispatch, STL value, reference, or exception crosses that boundary.
+- Every C ABI function table starts with `abi_version` and `struct_size`.
+  Readers reject a different ABI version or a table smaller than the prefix
+  they were generated against; append-only growth may retain the version when
+  the existing prefix remains compatible.
+- Acceptance tests enumerate registered runtime types and require every
+  concrete descendant of a behavior-only base to register a complete table.
 
 ## Stubgen output ownership
 

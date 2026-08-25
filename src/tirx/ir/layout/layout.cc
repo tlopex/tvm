@@ -137,6 +137,8 @@ struct LayoutABI {
 
   static const TVMTIRXLayoutVTable* VTable() {
     static const TVMTIRXLayoutVTable vtable{
+        TVM_TIRX_LAYOUT_VTABLE_ABI_VERSION,
+        static_cast<uint32_t>(sizeof(TVMTIRXLayoutVTable)),
         &CompatibleWithShape,
         &VerifyWellFormed,
         &GetSize,
@@ -162,10 +164,9 @@ const TVMTIRXLayoutVTable* GetLayoutVTable(const LayoutNode* self) {
   ffi::AnyView attr = column[self->type_index()];
   TVM_FFI_CHECK(attr.type_index() == ffi::TypeIndex::kTVMFFIOpaquePtr, TypeError)
       << "Layout type " << self->GetTypeKey() << " does not register a C ABI layout vtable";
-  auto* vtable = static_cast<const TVMTIRXLayoutVTable*>(attr.cast<void*>());
-  TVM_FFI_CHECK(vtable != nullptr, TypeError)
-      << "Layout type " << self->GetTypeKey() << " registers a null layout vtable";
-  return vtable;
+  return ir_abi::CheckedVTable<TVMTIRXLayoutVTable>(
+      attr.cast<void*>(), TVM_TIRX_LAYOUT_VTABLE_ABI_VERSION, self->GetTypeKey(),
+      TVM_TIRX_LAYOUT_VTABLE_ATTR);
 }
 
 template <typename Result>

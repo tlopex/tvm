@@ -31,9 +31,20 @@ use tvm_ffi::{
 
 type FConstructorPrepare = unsafe extern "C" fn(*const TVMFFIAny, i32) -> TVMFFIAny;
 
+pub(crate) const C_ABI_VTABLE_VERSION: u32 = 1;
+
+/// Common prefix shared by every versioned C ABI function table.
+#[repr(C)]
+struct VTableHeader {
+    abi_version: u32,
+    struct_size: u32,
+}
+
 /// Rust mirror of `TVMIRConstructorVTable`.
 #[repr(C)]
 struct ConstructorVTable {
+    _abi_version: u32,
+    _struct_size: u32,
     num_args: i32,
     prepare: Option<FConstructorPrepare>,
 }
@@ -86,6 +97,7 @@ pub(crate) fn opaque_type_vtable<T>(
     cache: &'static AtomicPtr<TVMFFITypeAttrColumn>,
     attr_name: &'static str,
     type_index: i32,
+    expected_version: u32,
 ) -> Result<&'static T> {
     let mut column = cache.load(Ordering::Acquire);
     if column.is_null() {
@@ -127,15 +139,53 @@ pub(crate) fn opaque_type_vtable<T>(
             "",
         ));
     }
-    let pointer = unsafe { attr.data_union.v_ptr.cast::<T>() };
-    unsafe { pointer.as_ref() }.ok_or_else(|| {
-        let type_key = runtime_type_key(type_index);
-        Error::new(
+    let pointer = unsafe { attr.data_union.v_ptr };
+    let type_key = runtime_type_key(type_index);
+    if pointer.is_null() {
+        return Err(Error::new(
             TYPE_ERROR,
             &format!("type `{type_key}` registers a null `{attr_name}` vtable"),
             "",
-        )
-    })
+        ));
+    }
+    let address = pointer as usize;
+    if !address.is_multiple_of(std::mem::align_of::<VTableHeader>()) {
+        return Err(Error::new(
+            TYPE_ERROR,
+            &format!("type `{type_key}` registers a misaligned `{attr_name}` vtable"),
+            "",
+        ));
+    }
+    let header = unsafe { &*pointer.cast::<VTableHeader>() };
+    if header.abi_version != expected_version {
+        return Err(Error::new(
+            TYPE_ERROR,
+            &format!(
+                "type `{type_key}` registers `{attr_name}` ABI version {}, but this binding requires {expected_version}",
+                header.abi_version
+            ),
+            "",
+        ));
+    }
+    if (header.struct_size as usize) < std::mem::size_of::<T>() {
+        return Err(Error::new(
+            TYPE_ERROR,
+            &format!(
+                "type `{type_key}` registers a {}-byte `{attr_name}` table, but this binding requires at least {} bytes",
+                header.struct_size,
+                std::mem::size_of::<T>()
+            ),
+            "",
+        ));
+    }
+    if !address.is_multiple_of(std::mem::align_of::<T>()) {
+        return Err(Error::new(
+            TYPE_ERROR,
+            &format!("type `{type_key}` registers a misaligned `{attr_name}` vtable"),
+            "",
+        ));
+    }
+    Ok(unsafe { &*pointer.cast::<T>() })
 }
 
 fn runtime_type_key(type_index: i32) -> std::string::String {
@@ -161,6 +211,7 @@ pub(crate) fn prepare_constructor<N: ConstructorRecipe>(
         &CONSTRUCTOR_VTABLE_COLUMN,
         "__constructor_vtable__",
         N::type_index(),
+        C_ABI_VTABLE_VERSION,
     )?;
     if args.len() != N::NUM_INPUTS {
         return Err(Error::new(
