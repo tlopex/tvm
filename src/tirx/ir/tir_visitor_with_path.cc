@@ -77,20 +77,25 @@ void TIRVisitorWithPath::Visit(const IRModule& mod, AccessPath path) {
 }
 
 void TIRVisitorWithPath::Visit(const PrimFunc& func, AccessPath path) {
+  VisitPrimFuncFields(func->params, func->body, path);
+}
+
+void TIRVisitorWithPath::VisitPrimFuncFields(const ffi::Array<Var>& params, const Stmt& body,
+                                             AccessPath path) {
   // BufferType metadata may introduce symbolic dimensions.  Define those
   // symbols before entering the buffer parameter itself.
   std::vector<std::variant<DefContext<Var>, DefContext<BufferVar>>> context;
 
   auto ppath = path->Attr("params");
-  for (size_t i = 0; i < func->params.size(); i++) {
-    const Var& param = func->params[i];
+  for (size_t i = 0; i < params.size(); i++) {
+    const Var& param = params[i];
     if (!param->ty.as<BufferTypeNode>()) {
       context.push_back(WithDef(param, ppath->ArrayItem(i)));
     }
   }
 
-  for (size_t i = 0; i < func->params.size(); i++) {
-    if (auto opt = func->params[i].as<BufferVar>()) {
+  for (size_t i = 0; i < params.size(); i++) {
+    if (auto opt = params[i].as<BufferVar>()) {
       auto buf = opt.value();
       auto buf_path = ppath->ArrayItem(i)->Attr("ty");
 
@@ -102,13 +107,13 @@ void TIRVisitorWithPath::Visit(const PrimFunc& func, AccessPath path) {
 
   // Only after all the implicit definitions have been visited can we
   // visit the buffer definition itself.
-  for (size_t i = 0; i < func->params.size(); i++) {
-    if (auto opt = func->params[i].as<BufferVar>()) {
+  for (size_t i = 0; i < params.size(); i++) {
+    if (auto opt = params[i].as<BufferVar>()) {
       context.push_back(WithDef(opt.value(), ppath->ArrayItem(i)));
     }
   }
 
-  bind_scope_.WithNewScope([&]() { Visit(func->body, path->Attr("body")); });
+  bind_scope_.WithNewScope([&]() { Visit(body, path->Attr("body")); });
 
   while (context.size()) context.pop_back();
 }

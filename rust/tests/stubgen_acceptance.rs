@@ -26,7 +26,7 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use tvm::ir::{BaseFuncObj, Expr, ExprObj, IntImm, IntImmObj, PrimType, Var, VarObj};
+use tvm::ir::{BaseFuncObj, Expr, ExprObj, IntImm, IntImmObj, PrimType, Type, Var, VarObj};
 use tvm::tirx::{Add, AddObj, Evaluate, EvaluateObj, PrimFunc, PrimFuncObj, StmtObj};
 use tvm::tvm_ffi::tvm_ffi_sys::{
     TVMFFIFieldFlagBitMask, TVMFFIFieldInfo, TVMFFIGetTypeInfo, TVMFFITypeInfo,
@@ -184,44 +184,107 @@ fn minimal_bindings_match_the_runtime_contract() {
 #[test]
 fn direct_and_semantic_constructors_round_trip() {
     load_tvm_compiler();
-    // These constructors intentionally remain registered-function overrides:
-    // PrimType is interned, TypeMissing is a singleton, and PrimFunc derives
-    // additional semantic state.
-    for name in ["ir.PrimType", "ir.TypeMissing", "tirx.PrimFunc"] {
-        Function::get_global(name)
-            .unwrap_or_else(|error| panic!("missing semantic constructor `{name}`: {error}"));
-    }
+    let missing = Type::missing();
+    assert!(missing.is_missing());
+    let cpp_recognizes_missing = Function::get_global("ir.TypeIsMissing")
+        .unwrap()
+        .call_packed(&[AnyView::from(&missing)])
+        .unwrap();
+    assert!(bool::try_from(cpp_recognizes_missing).unwrap());
 
+    // PrimFunc's ergonomic constructor derives fields through its direct C ABI
+    // table, while both it and the lossless path allocate the final node in Rust.
     let function = sample_function();
-    let parameter = function.params().unwrap().get(0).unwrap();
-    assert_eq!(parameter.name().unwrap().as_str(), "x");
-    assert!(parameter.span().unwrap().is_none());
+    let cpp_function: PrimFunc = Function::get_global("tirx.PrimFunc")
+        .expect("missing reference semantic constructor")
+        .call_packed(&[
+            AnyView::from(&function.params),
+            AnyView::from(&function.body),
+            AnyView::from(&Type::missing()),
+            AnyView::from(&function.attrs),
+            AnyView::from(&()),
+        ])
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert_ne!(object_pointer(&function), object_pointer(&cpp_function));
+    assert_cpp_structural_equal(&function, &cpp_function);
+
+    let rust_rebuilt = PrimFunc::from_complete_fields(
+        function.span.clone(),
+        function.ty.clone(),
+        function.attrs.clone(),
+        function.params.clone(),
+        function.ret_type.clone(),
+        function.body.clone(),
+    );
+    assert_cpp_structural_equal(&function, &rust_rebuilt);
+
+    let parameter = function.params.get(0).unwrap();
+    assert_eq!(parameter.name.as_str(), "x");
+    assert!(parameter.span.is_none());
     assert_eq!(
         parameter
-            .ty()
-            .unwrap()
+            .ty
+            .clone()
             .try_cast::<PrimType>()
             .unwrap()
-            .dtype()
-            .unwrap()
+            .dtype
             .bits,
         32
     );
 
-    let body = function.body().unwrap().try_cast::<Evaluate>().unwrap();
-    assert!(body.span().unwrap().is_none());
-    let addition = body.value().unwrap().try_cast::<Add>().unwrap();
-    let lhs = addition.lhs().unwrap().try_cast::<Var>().unwrap();
-    let rhs = addition.rhs().unwrap().try_cast::<IntImm>().unwrap();
+    let body = function.body.clone().try_cast::<Evaluate>().unwrap();
+    assert!(body.span.is_none());
+    let addition = body.value.clone().try_cast::<Add>().unwrap();
+    let lhs_count = ObjectArc::strong_count(<Expr as ObjectRefCore>::data(&addition.a));
+    let borrowed_lhs: &Expr = &addition.a;
+    assert_eq!(object_pointer(borrowed_lhs), object_pointer(&addition.a));
+    assert_eq!(
+        ObjectArc::strong_count(<Expr as ObjectRefCore>::data(&addition.a)),
+        lhs_count,
+        "borrowing a generated public field must not clone its object handle"
+    );
+    let lhs = addition.a.clone().try_cast::<Var>().unwrap();
+    let rhs = addition.b.clone().try_cast::<IntImm>().unwrap();
     assert_eq!(object_pointer(&lhs), object_pointer(&parameter));
-    assert_eq!(rhs.value().unwrap(), 0);
-    assert!(rhs.span().unwrap().is_none());
+    assert_eq!(rhs.value, 0);
+    assert!(rhs.span.is_none());
 
-    function.attrs().unwrap();
-    function.ret_type().unwrap();
-    function.ty().unwrap();
-    assert!(function.span().unwrap().is_none());
+    let moved_lhs = Expr::int("int32", 3).unwrap();
+    let lhs_tracker = moved_lhs.clone();
+    let lhs_count = ObjectArc::strong_count(<Expr as ObjectRefCore>::data(&lhs_tracker));
+    let moved_rhs = Expr::int("int32", 4).unwrap();
+    let result_type = moved_lhs.ty.clone();
+    let direct_add = Add::from_complete_fields(None, result_type, moved_lhs, moved_rhs);
+    assert_eq!(object_pointer(&direct_add.a), object_pointer(&lhs_tracker));
+    assert_eq!(
+        ObjectArc::strong_count(<Expr as ObjectRefCore>::data(&lhs_tracker)),
+        lhs_count,
+        "moving a handle into a complete-field allocator must not clone it"
+    );
+
+    let _borrowed_attrs = &function.attrs;
+    let _borrowed_return_type = &function.ret_type;
+    let _borrowed_checked_type = &function.ty;
+    assert!(function.span.is_none());
     assert!(IntImm::new("int8", 128).is_err());
+
+    // C++ accepts values stored in IntImm's i64 payload for wider integer
+    // types.  The generated Rust validation must not invent a 64-bit type
+    // limit merely because the payload itself is i64.
+    let wide = IntImm::new("int128", 42).unwrap();
+    let cpp_wide: IntImm = Function::get_global("ir.IntImm")
+        .unwrap()
+        .call_packed(&[
+            AnyView::from(&wide.ty.clone().try_cast::<PrimType>().unwrap().dtype),
+            AnyView::from(&42_i64),
+            AnyView::from(&()),
+        ])
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert_cpp_structural_equal(&wide, &cpp_wide);
 }
 
 #[test]
@@ -243,7 +306,7 @@ fn rust_allocated_nodes_are_consumed_by_cpp_abi() {
     let cpp_lhs = Function::get_global("ir.IntImm")
         .unwrap()
         .call_packed(&[
-            AnyView::from(&PrimType::new("int32").unwrap().dtype().unwrap()),
+            AnyView::from(&PrimType::new("int32").unwrap().dtype),
             AnyView::from(&7_i64),
             AnyView::from(&none),
         ])
@@ -251,7 +314,7 @@ fn rust_allocated_nodes_are_consumed_by_cpp_abi() {
     let cpp_rhs = Function::get_global("ir.IntImm")
         .unwrap()
         .call_packed(&[
-            AnyView::from(&PrimType::new("int32").unwrap().dtype().unwrap()),
+            AnyView::from(&PrimType::new("int32").unwrap().dtype),
             AnyView::from(&9_i64),
             AnyView::from(&none),
         ])
@@ -285,7 +348,7 @@ fn generated_bindings_support_structural_walk() {
                 WalkResult::Advance
             },
             |value: &tvm::ir::IntImmObj| -> Result<WalkResult> {
-                integer_literals.push(value.value()?);
+                integer_literals.push(value.value);
                 Ok(WalkResult::Advance)
             },
             |_: &VarObj, kind: DefRegionKind| {
@@ -313,14 +376,13 @@ fn generated_bindings_support_structural_map() {
     let mapped = structural_map(
         original.clone(),
         |addition: Add| -> Result<Any> {
-            let lhs = addition.lhs()?;
-            let rhs = addition.rhs()?;
+            let lhs = addition.a.clone();
+            let rhs = addition.b.clone();
             let rhs_is_zero = rhs
                 .clone()
                 .try_cast::<IntImm>()
                 .ok()
-                .map(|value| value.value())
-                .transpose()?
+                .map(|value| value.value)
                 == Some(0);
             Ok(Any::from(if rhs_is_zero { lhs } else { addition.into() }))
         },
@@ -330,25 +392,25 @@ fn generated_bindings_support_structural_map() {
     .unwrap();
 
     let mapped_value = mapped
-        .body()
-        .unwrap()
+        .body
+        .clone()
         .try_cast::<Evaluate>()
         .unwrap()
-        .value()
-        .unwrap();
+        .value
+        .clone();
     let mapped_variable = mapped_value.try_cast::<Var>().unwrap();
-    assert_eq!(mapped_variable.name().unwrap().as_str(), "x");
+    assert_eq!(mapped_variable.name.as_str(), "x");
     assert_eq!(
         object_pointer(&mapped_variable),
-        object_pointer(&mapped.params().unwrap().get(0).unwrap())
+        object_pointer(&mapped.params.get(0).unwrap())
     );
 
     let original_value = original
-        .body()
-        .unwrap()
+        .body
+        .clone()
         .try_cast::<Evaluate>()
         .unwrap()
-        .value()
-        .unwrap();
+        .value
+        .clone();
     assert!(original_value.try_cast::<Add>().is_ok());
 }

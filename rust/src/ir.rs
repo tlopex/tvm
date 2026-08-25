@@ -17,10 +17,13 @@
  * under the License.
  */
 
+use std::sync::atomic::AtomicPtr;
+
 use tvm_ffi::derive::{Object, ObjectRef};
+use tvm_ffi::tvm_ffi_sys::{TVMFFIAny, TVMFFITypeAttrColumn};
 use tvm_ffi::{
-    AnyCompatible, AnyMap, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Map,
-    ObjectArc, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
+    Any, AnyCompatible, AnyMap, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error,
+    Map, ObjectArc, ObjectRefCast, ObjectRefCore, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
 /// ABI-complete Rust representation of TVM's `ExprNode` prefix.
@@ -29,9 +32,13 @@ use tvm_ffi::{
 #[type_key = "ir.Expr"]
 pub struct ExprObj {
     base: tvm_ffi::Object,
-    span: Option<Span>,
-    ty: Type,
+    pub span: Option<Span>,
+    pub ty: Type,
 }
+crate::abi::impl_object_layout!(ExprObj {
+    "span" => span: Option<Span>,
+    "ty" => ty: Type,
+});
 
 /// Reference-counted handle to any TVM expression.
 #[repr(C)]
@@ -49,22 +56,12 @@ impl std::ops::Deref for Expr {
 }
 
 impl ExprObj {
-    pub(crate) fn new(ty: Type, span: Option<Span>) -> Self {
+    pub(crate) fn new(span: Option<Span>, ty: Type) -> Self {
         Self {
             base: tvm_ffi::Object::new(),
             span,
             ty,
         }
-    }
-
-    /// Return optional source metadata carried by this expression.
-    pub fn span(&self) -> Result<Option<Span>> {
-        Ok(self.span.clone())
-    }
-
-    /// Return the static type annotation carried by this expression.
-    pub fn ty(&self) -> Result<Type> {
-        Ok(self.ty.clone())
     }
 }
 
@@ -74,8 +71,11 @@ impl ExprObj {
 #[type_key = "ir.BaseFunc"]
 pub struct BaseFuncObj {
     base: ExprObj,
-    attrs: DictAttrs,
+    pub attrs: DictAttrs,
 }
+crate::abi::impl_object_layout!(BaseFuncObj {
+    "attrs" => attrs: DictAttrs,
+});
 
 /// Reference-counted handle to any TVM base function.
 #[repr(C)]
@@ -101,9 +101,11 @@ impl std::ops::Deref for BaseFuncObj {
 }
 
 impl BaseFuncObj {
-    /// Return the function attributes.
-    pub fn attrs(&self) -> Result<DictAttrs> {
-        Ok(self.attrs.clone())
+    pub(crate) fn new(span: Option<Span>, ty: Type, attrs: DictAttrs) -> Self {
+        Self {
+            base: ExprObj::new(span, ty),
+            attrs,
+        }
     }
 }
 
@@ -114,8 +116,11 @@ impl BaseFuncObj {
 #[type_final]
 pub struct GlobalVarObj {
     base: ExprObj,
-    name_hint: String,
+    pub name_hint: String,
 }
+crate::abi::impl_object_layout!(GlobalVarObj {
+    "name_hint" => name_hint: String,
+});
 
 /// Reference-counted handle to a global function name.
 #[repr(C)]
@@ -140,21 +145,17 @@ impl std::ops::Deref for GlobalVarObj {
     }
 }
 
-impl GlobalVarObj {
-    /// Return the module-level symbol name hint.
-    pub fn name_hint(&self) -> Result<String> {
-        Ok(self.name_hint.clone())
-    }
-}
-
 /// ABI-complete Rust representation of TVM's `VarNode` prefix.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Var"]
 pub struct VarObj {
     base: ExprObj,
-    name: String,
+    pub name: String,
 }
+crate::abi::impl_object_layout!(VarObj {
+    "name" => name: String,
+});
 
 /// Reference-counted handle to a TVM variable.
 #[repr(C)]
@@ -179,24 +180,20 @@ impl std::ops::Deref for VarObj {
     }
 }
 
-impl VarObj {
-    /// Return the display name hint.  Variable identity is still pointer-based.
-    pub fn name(&self) -> Result<String> {
-        Ok(self.name.clone())
-    }
-}
-
-/// ABI-complete Rust view of TVM's interned source name.
+/// ABI-complete Rust representation of a TVM source name.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.SourceName"]
 #[type_final]
 pub struct SourceNameObj {
     base: tvm_ffi::Object,
-    name: String,
+    pub name: String,
 }
+crate::abi::impl_object_layout!(SourceNameObj {
+    "name" => name: String,
+});
 
-/// Reference-counted handle to an interned source name.
+/// Reference-counted handle to a source name.
 #[repr(C)]
 #[derive(ObjectRef, Clone)]
 pub struct SourceName {
@@ -211,31 +208,42 @@ impl std::ops::Deref for SourceName {
     }
 }
 
-impl SourceNameObj {
-    /// Return the interned source name text.
-    pub fn name(&self) -> Result<String> {
-        Ok(self.name.clone())
-    }
-}
-
 impl SourceName {
-    /// Return TVM's process-wide interned source name for `name`.
-    pub fn get(name: &str) -> Result<Self> {
-        let name = String::from(name);
-        crate::global_function!("ir.SourceName")?
-            .call_packed(&[AnyView::from(&name)])?
-            .try_into()
+    /// Allocate a source name directly in Rust.
+    ///
+    /// Source names compare and hash by text across language boundaries, so
+    /// correctness does not depend on allocation identity or an interning cache.
+    pub fn get(name: &str) -> Self {
+        Self::from_complete_fields(String::from(name))
+    }
+
+    /// Allocate a source name directly from its complete physical state.
+    pub fn from_complete_fields(name: String) -> Self {
+        Self {
+            data: crate::abi::allocate_object(SourceNameObj {
+                base: tvm_ffi::Object::new(),
+                name,
+            }),
+        }
     }
 }
 
-/// Opaque Rust view of TVM's `SourceNode`.
+/// ABI-complete Rust representation of TVM's `SourceNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Source"]
 #[type_final]
 pub struct SourceObj {
     base: tvm_ffi::Object,
+    pub source_name: SourceName,
+    pub source: String,
+    pub line_map: Array<i64>,
 }
+crate::abi::impl_object_layout!(SourceObj {
+    "source_name" => source_name: SourceName,
+    "source" => source: String,
+    "line_map" => line_map: Array<i64>,
+});
 
 /// Reference-counted handle to one program source fragment.
 #[repr(C)]
@@ -253,14 +261,67 @@ impl std::ops::Deref for Source {
 }
 
 impl SourceObj {
-    /// Return the interned name of this source fragment.
-    pub fn source_name(&self) -> Result<SourceName> {
-        crate::reflected_field!(self, "source_name")?.try_into()
+    /// Return the one-based source line requested by `line`.
+    pub fn get_line(&self, line: usize) -> Result<String> {
+        let pair_index = line
+            .checked_sub(1)
+            .and_then(|line| line.checked_mul(2))
+            .filter(|index| {
+                index
+                    .checked_add(1)
+                    .is_some_and(|last| last < self.line_map.len())
+            })
+            .ok_or_else(|| Error::new(VALUE_ERROR, "source line is out of range", ""))?;
+        let start = usize::try_from(self.line_map.get(pair_index).unwrap())
+            .map_err(|_| Error::new(VALUE_ERROR, "source line offset is negative", ""))?;
+        let length = usize::try_from(self.line_map.get(pair_index + 1).unwrap())
+            .map_err(|_| Error::new(VALUE_ERROR, "source line length is negative", ""))?;
+        let bytes = self.source.as_str().as_bytes();
+        let end = start
+            .checked_add(length)
+            .filter(|end| *end <= bytes.len())
+            .ok_or_else(|| Error::new(VALUE_ERROR, "source line metadata is invalid", ""))?;
+        let text = std::str::from_utf8(&bytes[start..end])
+            .map_err(|_| Error::new(VALUE_ERROR, "source line is not valid UTF-8", ""))?;
+        Ok(String::from(text))
+    }
+}
+
+impl Source {
+    /// Construct a source fragment and its line index directly in Rust.
+    pub fn new(source_name: &SourceName, source: &str) -> Self {
+        let mut line_map = Vec::new();
+        let mut start = 0usize;
+        for (index, byte) in source.as_bytes().iter().enumerate() {
+            if *byte == b'\n' {
+                line_map.push(start as i64);
+                line_map.push((index - start) as i64);
+                start = index + 1;
+            }
+        }
+        line_map.push(start as i64);
+        line_map.push((source.len() - start) as i64);
+        Self::from_complete_fields(
+            source_name.clone(),
+            String::from(source),
+            Array::new(line_map),
+        )
     }
 
-    /// Return the complete source text.
-    pub fn source(&self) -> Result<String> {
-        crate::reflected_field!(self, "source")?.try_into()
+    /// Construct a source fragment from every physical field without rebuilding its line index.
+    pub fn from_complete_fields(
+        source_name: SourceName,
+        source: String,
+        line_map: Array<i64>,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(SourceObj {
+                base: tvm_ffi::Object::new(),
+                source_name,
+                source,
+                line_map,
+            }),
+        }
     }
 }
 
@@ -271,8 +332,11 @@ impl SourceObj {
 #[type_final]
 pub struct SourceMapObj {
     base: tvm_ffi::Object,
-    source_map: Map<SourceName, Source>,
+    pub source_map: Map<SourceName, Source>,
 }
+crate::abi::impl_object_layout!(SourceMapObj {
+    "source_map" => source_map: Map<SourceName, Source>,
+});
 
 /// Reference-counted handle to TVM's source-name-to-source mapping.
 #[repr(C)]
@@ -289,35 +353,35 @@ impl std::ops::Deref for SourceMap {
     }
 }
 
-impl SourceMapObj {
-    /// Return the typed source-name-to-source mapping.
-    pub fn source_map(&self) -> Result<Map<SourceName, Source>> {
-        Ok(self.source_map.clone())
-    }
-}
-
 impl SourceMap {
     /// Construct an empty source map directly in Rust.
     pub fn new() -> Self {
+        Self::from_map(Map::new())
+    }
+
+    /// Construct a source map directly from its complete backing map.
+    pub fn from_map(source_map: Map<SourceName, Source>) -> Self {
+        Self::from_complete_fields(source_map)
+    }
+
+    /// Construct a source map from its complete physical state.
+    pub fn from_complete_fields(source_map: Map<SourceName, Source>) -> Self {
         Self {
-            data: ObjectArc::new(SourceMapObj {
+            data: crate::abi::allocate_object(SourceMapObj {
                 base: tvm_ffi::Object::new(),
-                source_map: Map::new(),
+                source_map,
             }),
         }
     }
 
-    /// Add a named source fragment through TVM's registered source-map API.
-    pub fn add(&self, name: &str, content: &str) -> Result<SourceName> {
-        let name = String::from(name);
-        let content = String::from(content);
-        crate::global_function!("SourceMapAdd")?
-            .call_packed(&[
-                AnyView::from(self),
-                AnyView::from(&name),
-                AnyView::from(&content),
-            ])?
-            .try_into()
+    /// Add a Rust-allocated source fragment to this map.
+    pub fn add(&mut self, name: &str, content: &str) -> SourceName {
+        let source_name = SourceName::get(name);
+        let source = Source::new(&source_name, content);
+        let mut entries = self.source_map.iter().collect::<Vec<_>>();
+        entries.push((source_name.clone(), source));
+        *self = Self::from_map(entries.into_iter().collect());
+        source_name
     }
 }
 
@@ -327,12 +391,19 @@ impl SourceMap {
 #[type_key = "ir.Span"]
 pub struct SpanObj {
     base: tvm_ffi::Object,
-    source_name: SourceName,
-    line: i32,
-    column: i32,
-    end_line: i32,
-    end_column: i32,
+    pub source_name: SourceName,
+    pub line: i32,
+    pub column: i32,
+    pub end_line: i32,
+    pub end_column: i32,
 }
+crate::abi::impl_object_layout!(SpanObj {
+    "source_name" => source_name: SourceName,
+    "line" => line: i32,
+    "column" => column: i32,
+    "end_line" => end_line: i32,
+    "end_column" => end_column: i32,
+});
 
 /// Reference-counted handle to source-span metadata.
 #[repr(C)]
@@ -341,58 +412,48 @@ pub struct Span {
     data: ObjectArc<SpanObj>,
 }
 
-impl SpanObj {
-    /// Return the source fragment containing this span.
-    pub fn source_name(&self) -> Result<SourceName> {
-        Ok(self.source_name.clone())
-    }
-
-    /// Return the first source line.
-    pub fn line(&self) -> Result<i64> {
-        Ok(i64::from(self.line))
-    }
-
-    /// Return the first source column.
-    pub fn column(&self) -> Result<i64> {
-        Ok(i64::from(self.column))
-    }
-
-    /// Return the last source line.
-    pub fn end_line(&self) -> Result<i64> {
-        Ok(i64::from(self.end_line))
-    }
-
-    /// Return the last source column.
-    pub fn end_column(&self) -> Result<i64> {
-        Ok(i64::from(self.end_column))
-    }
-}
-
 impl Span {
-    /// Construct source-location metadata.
+    /// Construct source-location metadata in TVM's `(line, end_line, column, end_column)` order.
     pub fn new(
         source_name: &SourceName,
         line: i64,
-        column: i64,
         end_line: i64,
+        column: i64,
         end_column: i64,
     ) -> Result<Self> {
         let line = i32::try_from(line).map_err(|_| integer_field_overflow("line", line))?;
-        let column = i32::try_from(column).map_err(|_| integer_field_overflow("column", column))?;
         let end_line =
             i32::try_from(end_line).map_err(|_| integer_field_overflow("end_line", end_line))?;
+        let column = i32::try_from(column).map_err(|_| integer_field_overflow("column", column))?;
         let end_column = i32::try_from(end_column)
             .map_err(|_| integer_field_overflow("end_column", end_column))?;
-        Ok(Self {
-            data: ObjectArc::new(SpanObj {
+        Ok(Self::from_complete_fields(
+            source_name.clone(),
+            line,
+            column,
+            end_line,
+            end_column,
+        ))
+    }
+
+    /// Construct a span from the exact-width values stored by the native object.
+    pub fn from_complete_fields(
+        source_name: SourceName,
+        line: i32,
+        column: i32,
+        end_line: i32,
+        end_column: i32,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(SpanObj {
                 base: tvm_ffi::Object::new(),
-                source_name: source_name.clone(),
+                source_name,
                 line,
                 column,
                 end_line,
                 end_column,
             }),
-        })
+        }
     }
 }
 
@@ -411,6 +472,15 @@ fn integer_field_overflow(field: &str, value: i64) -> Error {
 pub struct PrimExprConvertibleObj {
     base: tvm_ffi::Object,
 }
+crate::abi::impl_object_layout!(PrimExprConvertibleObj {});
+
+impl PrimExprConvertibleObj {
+    pub(crate) fn new() -> Self {
+        Self {
+            base: tvm_ffi::Object::new(),
+        }
+    }
+}
 
 /// Reference-counted handle to a primitive-expression-convertible object.
 #[repr(C)]
@@ -419,11 +489,43 @@ pub struct PrimExprConvertible {
     data: ObjectArc<PrimExprConvertibleObj>,
 }
 
+type FToPrimExpr = unsafe extern "C" fn(TVMFFIAny) -> TVMFFIAny;
+
+/// Rust mirror of `TVMIRPrimExprConvertibleVTable`.
+#[repr(C)]
+struct PrimExprConvertibleVTable {
+    to_prim_expr: Option<FToPrimExpr>,
+}
+
+static PRIM_EXPR_CONVERTIBLE_VTABLE_COLUMN: AtomicPtr<TVMFFITypeAttrColumn> =
+    AtomicPtr::new(std::ptr::null_mut());
+
 impl std::ops::Deref for PrimExprConvertible {
     type Target = PrimExprConvertibleObj;
 
     fn deref(&self) -> &Self::Target {
         &self.data
+    }
+}
+
+impl PrimExprConvertible {
+    /// Convert through the concrete type's registered C ABI behavior table.
+    pub fn to_prim_expr(&self) -> Result<Expr> {
+        let value = AnyView::from(self);
+        let vtable = crate::abi::opaque_type_vtable::<PrimExprConvertibleVTable>(
+            &PRIM_EXPR_CONVERTIBLE_VTABLE_COLUMN,
+            "__to_prim_expr__",
+            value.type_index(),
+        )?;
+        let callback = vtable.to_prim_expr.ok_or_else(|| {
+            Error::new(
+                TYPE_ERROR,
+                "PrimExpr conversion vtable has no to_prim_expr entry",
+                "",
+            )
+        })?;
+        let raw = unsafe { callback(crate::abi::borrowed_raw(value)) };
+        Expr::try_from(unsafe { crate::abi::result_from_raw(raw) }?)
     }
 }
 
@@ -434,10 +536,15 @@ impl std::ops::Deref for PrimExprConvertible {
 #[type_final]
 pub struct RangeObj {
     base: tvm_ffi::Object,
-    min: Expr,
-    extent: Expr,
-    span: Option<Span>,
+    pub min: Expr,
+    pub extent: Expr,
+    pub span: Option<Span>,
 }
+crate::abi::impl_object_layout!(RangeObj {
+    "min" => min: Expr,
+    "extent" => extent: Expr,
+    "span" => span: Option<Span>,
+});
 
 /// Reference-counted handle to `min .. min + extent`.
 #[repr(C)]
@@ -454,47 +561,53 @@ impl std::ops::Deref for Range {
     }
 }
 
-impl RangeObj {
-    /// Return the first value in the range.
-    pub fn minimum(&self) -> Result<Expr> {
-        Ok(self.min.clone())
-    }
-
-    /// Return the number of values in the range.
-    pub fn extent(&self) -> Result<Expr> {
-        Ok(self.extent.clone())
-    }
-
-    /// Return optional source metadata.
-    pub fn span(&self) -> Result<Option<Span>> {
-        Ok(self.span.clone())
-    }
-}
-
 impl Range {
     /// Construct a range from its minimum and extent.
     pub fn from_min_extent(minimum: &Expr, extent: &Expr) -> Result<Self> {
+        Self::from_min_extent_with_span(minimum, extent, None)
+    }
+
+    /// Construct a range from all of its physical fields.
+    pub fn from_min_extent_with_span(
+        minimum: &Expr,
+        extent: &Expr,
+        span: Option<&Span>,
+    ) -> Result<Self> {
         require_primitive_expr(minimum, "Range minimum")?;
         require_primitive_expr(extent, "Range extent")?;
-        Ok(Self {
-            data: ObjectArc::new(RangeObj {
+        Ok(Self::from_complete_fields(
+            minimum.clone(),
+            extent.clone(),
+            span.cloned(),
+        ))
+    }
+
+    /// Construct a range from every physical field after external validation.
+    pub fn from_complete_fields(min: Expr, extent: Expr, span: Option<Span>) -> Self {
+        Self {
+            data: crate::abi::allocate_object(RangeObj {
                 base: tvm_ffi::Object::new(),
-                min: minimum.clone(),
-                extent: extent.clone(),
-                span: None,
+                min,
+                extent,
+                span,
             }),
-        })
+        }
     }
 }
 
 fn require_primitive_expr(value: &Expr, context: &str) -> Result<()> {
-    value.ty()?.try_cast::<PrimType>().map(|_| ()).map_err(|_| {
-        Error::new(
-            TYPE_ERROR,
-            &format!("{context} must have a primitive type"),
-            "",
-        )
-    })
+    value
+        .ty
+        .clone()
+        .try_cast::<PrimType>()
+        .map(|_| ())
+        .map_err(|_| {
+            Error::new(
+                TYPE_ERROR,
+                &format!("{context} must have a primitive type"),
+                "",
+            )
+        })
 }
 
 impl std::ops::Deref for Span {
@@ -512,11 +625,17 @@ impl std::ops::Deref for Span {
 #[type_final]
 pub struct CallObj {
     base: ExprObj,
-    op: Expr,
-    args: Array<Expr>,
-    attrs: Option<Attrs>,
-    ty_args: Array<Type>,
+    pub op: Expr,
+    pub args: Array<Expr>,
+    pub attrs: Option<Attrs>,
+    pub ty_args: Array<Type>,
 }
+crate::abi::impl_object_layout!(CallObj {
+    "op" => op: Expr,
+    "args" => args: Array<Expr>,
+    "attrs" => attrs: Option<Attrs>,
+    "ty_args" => ty_args: Array<Type>,
+});
 
 /// Reference-counted handle to a call expression shared by TIR and Relax.
 #[repr(C)]
@@ -541,36 +660,17 @@ impl std::ops::Deref for CallObj {
     }
 }
 
-impl CallObj {
-    /// Return the callable expression.
-    pub fn operator(&self) -> Result<Expr> {
-        Ok(self.op.clone())
-    }
-
-    /// Return the call arguments.
-    pub fn arguments(&self) -> Result<Array<Expr>> {
-        Ok(self.args.clone())
-    }
-
-    /// Return optional operator-specific attributes.
-    pub fn attrs(&self) -> Result<Option<Attrs>> {
-        Ok(self.attrs.clone())
-    }
-
-    /// Return explicit type arguments.
-    pub fn type_arguments(&self) -> Result<Array<Type>> {
-        Ok(self.ty_args.clone())
-    }
-}
-
 /// ABI-complete Rust representation of TVM's `TypeNode` prefix.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Type"]
 pub struct TypeObj {
     base: tvm_ffi::Object,
-    span: Option<Span>,
+    pub span: Option<Span>,
 }
+crate::abi::impl_object_layout!(TypeObj {
+    "span" => span: Option<Span>,
+});
 
 /// Reference-counted handle to any TVM type.
 #[repr(C)]
@@ -594,11 +694,6 @@ impl TypeObj {
             span,
         }
     }
-
-    /// Return optional source metadata carried by this type.
-    pub fn span(&self) -> Result<Option<Span>> {
-        Ok(self.span.clone())
-    }
 }
 
 /// ABI-complete Rust representation of TVM's `PrimTypeNode`.
@@ -608,8 +703,11 @@ impl TypeObj {
 #[type_final]
 pub struct PrimTypeObj {
     base: TypeObj,
-    dtype: DLDataType,
+    pub dtype: DLDataType,
 }
+crate::abi::impl_object_layout!(PrimTypeObj {
+    "dtype" => dtype: DLDataType,
+});
 
 /// Reference-counted handle to a primitive TVM type.
 #[repr(C)]
@@ -634,10 +732,66 @@ impl std::ops::Deref for PrimTypeObj {
     }
 }
 
-impl PrimTypeObj {
-    /// Return the DLPack dtype stored by this primitive type.
-    pub fn dtype(&self) -> Result<DLDataType> {
-        Ok(self.dtype)
+/// ABI-complete Rust representation of TVM's `TupleTypeNode`.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "ir.TupleType"]
+#[type_final]
+pub struct TupleTypeObj {
+    base: TypeObj,
+    pub fields: Array<Type>,
+}
+crate::abi::impl_object_layout!(TupleTypeObj {
+    "fields" => fields: Array<Type>,
+});
+
+/// Reference-counted handle to a tuple type.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct TupleType {
+    data: ObjectArc<TupleTypeObj>,
+}
+
+impl std::ops::Deref for TupleType {
+    type Target = TupleTypeObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for TupleTypeObj {
+    type Target = TypeObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl TupleType {
+    /// Construct a tuple type directly in Rust.
+    pub fn new(fields: Vec<Type>) -> Self {
+        Self::with_span(fields, None)
+    }
+
+    /// Construct a tuple type with optional source metadata.
+    pub fn with_span(fields: Vec<Type>, span: Option<&Span>) -> Self {
+        Self::from_complete_fields(span.cloned(), Array::new(fields))
+    }
+
+    /// Construct a tuple type from every physical field.
+    pub fn from_complete_fields(span: Option<Span>, fields: Array<Type>) -> Self {
+        Self {
+            data: crate::abi::allocate_object(TupleTypeObj {
+                base: TypeObj::new(span),
+                fields,
+            }),
+        }
+    }
+
+    /// Construct the empty tuple type used as TVM's void type.
+    pub fn empty() -> Self {
+        Self::new(Vec::new())
     }
 }
 
@@ -648,8 +802,11 @@ impl PrimTypeObj {
 #[type_final]
 pub struct IntImmObj {
     base: ExprObj,
-    value: i64,
+    pub value: i64,
 }
+crate::abi::impl_object_layout!(IntImmObj {
+    "value" => value: i64,
+});
 
 /// Reference-counted handle to an integer literal.
 #[repr(C)]
@@ -674,20 +831,14 @@ impl std::ops::Deref for IntImmObj {
     }
 }
 
-impl IntImmObj {
-    /// Return the literal value.
-    pub fn value(&self) -> Result<i64> {
-        Ok(self.value)
-    }
-}
-
-/// Opaque Rust view of TVM's `AttrsNode` prefix.
+/// ABI-complete fieldless base for TVM attribute objects.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Attrs"]
 pub struct AttrsObj {
     base: tvm_ffi::Object,
 }
+crate::abi::impl_object_layout!(AttrsObj {});
 
 /// Reference-counted handle to any TVM attributes object.
 #[repr(C)]
@@ -704,15 +855,18 @@ impl std::ops::Deref for Attrs {
     }
 }
 
-/// Opaque Rust view of TVM's `DictAttrsNode`.
+/// ABI-complete representation of TVM's dictionary-backed attributes.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.DictAttrs"]
 #[type_final]
 pub struct DictAttrsObj {
     base: AttrsObj,
-    dict: AnyMap<String>,
+    pub dict: AnyMap<String>,
 }
+crate::abi::impl_object_layout!(DictAttrsObj {
+    "__dict__" => dict: AnyMap<String>,
+});
 
 /// Reference-counted handle to dictionary-backed TVM attributes.
 #[repr(C)]
@@ -737,20 +891,14 @@ impl std::ops::Deref for DictAttrsObj {
     }
 }
 
-impl DictAttrsObj {
-    /// Return the heterogeneous string-to-value attribute dictionary.
-    pub fn dictionary(&self) -> Result<AnyMap<String>> {
-        Ok(self.dict.clone())
-    }
-}
-
-/// Opaque Rust view of TVM's `GlobalInfoNode` base class.
+/// ABI-complete fieldless base for module-level global metadata.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.GlobalInfo"]
 pub struct GlobalInfoObj {
     base: tvm_ffi::Object,
 }
+crate::abi::impl_object_layout!(GlobalInfoObj {});
 
 /// Reference-counted handle to module-level global metadata.
 #[repr(C)]
@@ -767,7 +915,7 @@ impl std::ops::Deref for GlobalInfo {
     }
 }
 
-/// Opaque Rust view of TVM's fieldless test global-info object.
+/// ABI-complete representation of TVM's fieldless test global-info object.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.DummyGlobalInfo"]
@@ -775,6 +923,7 @@ impl std::ops::Deref for GlobalInfo {
 pub struct DummyGlobalInfoObj {
     base: GlobalInfoObj,
 }
+crate::abi::impl_object_layout!(DummyGlobalInfoObj {});
 
 /// Reference-counted handle to a dummy global-info value.
 #[repr(C)]
@@ -801,14 +950,25 @@ impl std::ops::Deref for DummyGlobalInfoObj {
 
 impl DummyGlobalInfo {
     /// Construct TVM's fieldless global-info test value directly in Rust.
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            data: ObjectArc::new(DummyGlobalInfoObj {
+    pub fn new() -> Self {
+        Self::from_complete_fields()
+    }
+
+    /// Construct the fieldless value from its complete physical state.
+    pub fn from_complete_fields() -> Self {
+        Self {
+            data: crate::abi::allocate_object(DummyGlobalInfoObj {
                 base: GlobalInfoObj {
                     base: tvm_ffi::Object::new(),
                 },
             }),
-        })
+        }
+    }
+}
+
+impl Default for DummyGlobalInfo {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -827,12 +987,19 @@ impl From<DummyGlobalInfo> for GlobalInfo {
 #[type_final]
 pub struct IRModuleObj {
     base: tvm_ffi::Object,
-    functions: Map<GlobalVar, BaseFunc>,
-    source_map: SourceMap,
-    attrs: DictAttrs,
-    global_infos: Map<String, Array<GlobalInfo>>,
-    global_var_map: Map<String, GlobalVar>,
+    pub functions: Map<GlobalVar, BaseFunc>,
+    pub source_map: SourceMap,
+    pub attrs: DictAttrs,
+    pub global_infos: Map<String, Array<GlobalInfo>>,
+    pub global_var_map: Map<String, GlobalVar>,
 }
+crate::abi::impl_object_layout!(IRModuleObj {
+    "functions" => functions: Map<GlobalVar, BaseFunc>,
+    "source_map" => source_map: SourceMap,
+    "attrs" => attrs: DictAttrs,
+    "global_infos" => global_infos: Map<String, Array<GlobalInfo>>,
+    "global_var_map_" => global_var_map: Map<String, GlobalVar>,
+});
 
 /// Reference-counted handle to a TVM IRModule.
 #[repr(C)]
@@ -849,40 +1016,13 @@ impl std::ops::Deref for IRModule {
     }
 }
 
-impl IRModuleObj {
-    /// Return the module's global-function table.
-    pub fn functions(&self) -> Result<Map<GlobalVar, BaseFunc>> {
-        Ok(self.functions.clone())
-    }
-
-    /// Return TVM's derived name-to-global-variable index.
-    pub fn global_var_map(&self) -> Result<Map<String, GlobalVar>> {
-        Ok(self.global_var_map.clone())
-    }
-
-    /// Return the module's typed source map.
-    pub fn source_map(&self) -> Result<SourceMap> {
-        Ok(self.source_map.clone())
-    }
-
-    /// Return the module attributes.
-    pub fn attrs(&self) -> Result<DictAttrs> {
-        Ok(self.attrs.clone())
-    }
-
-    /// Return typed module-level global metadata groups.
-    pub fn global_infos(&self) -> Result<Map<String, Array<GlobalInfo>>> {
-        Ok(self.global_infos.clone())
-    }
-}
-
 impl Expr {
-    /// Construct an integer literal through TVM's registered IR constructor.
+    /// Construct an integer literal.
     pub fn int(dtype: &str, value: i64) -> Result<Self> {
         Ok(IntImm::new(dtype, value)?.into())
     }
 
-    /// Construct an addition expression through TVM's registered IR constructor.
+    /// Construct an addition expression.
     pub fn add(lhs: &Expr, rhs: &Expr) -> Result<Self> {
         Ok(crate::tirx::Add::new(lhs, rhs)?.into())
     }
@@ -896,14 +1036,32 @@ impl IntImm {
 
     /// Construct an integer literal from a parsed DLPack dtype.
     pub fn from_dtype(dtype: DLDataType, value: i64) -> Result<Self> {
+        Self::from_dtype_with_span(dtype, value, None)
+    }
+
+    /// Construct an integer literal directly in Rust with source metadata.
+    pub fn from_dtype_with_span(
+        dtype: DLDataType,
+        value: i64,
+        span: Option<&Span>,
+    ) -> Result<Self> {
         validate_integer_literal(dtype, value)?;
         let value_type = PrimType::from_dtype(dtype)?;
-        Ok(Self {
-            data: ObjectArc::new(IntImmObj {
-                base: ExprObj::new(value_type.into(), None),
+        Ok(Self::from_complete_fields(
+            span.cloned(),
+            value_type.into(),
+            value,
+        ))
+    }
+
+    /// Construct an integer literal from every physical field after external validation.
+    pub fn from_complete_fields(span: Option<Span>, ty: Type, value: i64) -> Self {
+        Self {
+            data: crate::abi::allocate_object(IntImmObj {
+                base: ExprObj::new(span, ty),
                 value,
             }),
-        })
+        }
     }
 }
 
@@ -927,7 +1085,7 @@ fn validate_integer_literal(dtype: DLDataType, value: i64) -> Result<()> {
         ));
     }
     let bits = u32::from(dtype.bits);
-    if bits == 0 || bits > 64 {
+    if bits == 0 {
         return Err(Error::new(
             VALUE_ERROR,
             &format!("invalid integer bit width in {dtype_text}"),
@@ -935,10 +1093,10 @@ fn validate_integer_literal(dtype: DLDataType, value: i64) -> Result<()> {
         ));
     }
     let in_range = if is_uint {
-        value >= 0 && (bits == 64 || (value as u64) < (1_u64 << bits))
+        value >= 0 && (bits >= 64 || (value as u64) < (1_u64 << bits))
     } else if is_bool || bits == 1 {
         value == 0 || value == 1
-    } else if bits == 64 {
+    } else if bits >= 64 {
         true
     } else {
         let bound = 1_i64 << (bits - 1);
@@ -961,59 +1119,129 @@ impl PrimType {
         Self::from_dtype(DLDataType::try_from_str(dtype)?)
     }
 
-    /// Return TVM's canonical primitive type for a parsed DLPack dtype.
-    ///
-    /// Primitive types are intentionally obtained from TVM because C++ interns
-    /// these nodes; ordinary IR data nodes are allocated directly in Rust.
+    /// Construct a primitive type from a parsed DLPack dtype directly in Rust.
     pub fn from_dtype(dtype: DLDataType) -> Result<Self> {
-        crate::global_function!("ir.PrimType")?
-            .call_packed(&[AnyView::from(&dtype)])?
-            .try_into()
+        Self::from_dtype_with_span(dtype, None)
+    }
+
+    /// Construct a primitive type from all of its physical fields.
+    pub fn from_dtype_with_span(dtype: DLDataType, span: Option<&Span>) -> Result<Self> {
+        let is_opaque_handle = dtype.code == DLDataTypeCode::kDLOpaqueHandle as u8;
+        let is_void = is_opaque_handle && dtype.bits == 0 && dtype.lanes == 0;
+        if is_opaque_handle && !is_void {
+            return Err(Error::new(
+                TYPE_ERROR,
+                "PrimType cannot represent an opaque pointer; use a pointer type",
+                "",
+            ));
+        }
+        Ok(Self::from_complete_fields(span.cloned(), dtype))
+    }
+
+    /// Construct a primitive type from every physical field after external validation.
+    pub fn from_complete_fields(span: Option<Span>, dtype: DLDataType) -> Self {
+        Self {
+            data: crate::abi::allocate_object(PrimTypeObj {
+                base: TypeObj::new(span),
+                dtype,
+            }),
+        }
+    }
+
+    /// Construct TVM's void primitive type without parsing a user-supplied dtype string.
+    pub fn void() -> Self {
+        Self::from_complete_fields(
+            None,
+            DLDataType {
+                code: DLDataTypeCode::kDLOpaqueHandle as u8,
+                bits: 0,
+                lanes: 0,
+            },
+        )
     }
 }
 
 impl Type {
-    /// Construct TVM's sentinel for an unavailable static type.
-    pub fn missing() -> Result<Self> {
-        crate::global_function!("ir.TypeMissing")?
-            .call_packed(&[])?
-            .try_into()
+    /// Construct TVM's language-independent sentinel for an unavailable static type.
+    pub fn missing() -> Self {
+        Self::from_complete_fields(None)
+    }
+
+    /// Construct the exact missing-type sentinel from its complete physical state.
+    pub fn from_complete_fields(span: Option<Span>) -> Self {
+        Self {
+            data: crate::abi::allocate_object(TypeObj::new(span)),
+        }
+    }
+
+    /// Return whether this value is the exact `ir.Type` missing-type sentinel.
+    pub fn is_missing(&self) -> bool {
+        AnyView::from(self).type_index() == <TypeObj as tvm_ffi::ObjectCore>::type_index()
     }
 }
 
 impl Var {
     /// Construct a variable directly in Rust with an explicit primitive type.
     pub fn new(name: &str, dtype: &str) -> Result<Self> {
-        Self::with_type(name, &PrimType::new(dtype)?.into())
+        Ok(Self::with_type(name, &PrimType::new(dtype)?.into()))
     }
 
     /// Construct a variable with an arbitrary TVM type annotation.
-    pub fn with_type(name: &str, ty: &Type) -> Result<Self> {
-        Ok(Self {
-            data: ObjectArc::new(VarObj {
-                base: ExprObj::new(ty.clone(), None),
-                name: String::from(name),
+    pub fn with_type(name: &str, ty: &Type) -> Self {
+        Self::with_type_and_span(name, ty, None)
+    }
+
+    /// Construct a variable directly in Rust with its complete base fields.
+    pub fn with_type_and_span(name: &str, ty: &Type, span: Option<&Span>) -> Self {
+        Self::with_optional_type_and_span(name, Some(ty), span)
+    }
+
+    /// Construct a variable with the native constructor's optional type annotation.
+    pub fn with_optional_type_and_span(name: &str, ty: Option<&Type>, span: Option<&Span>) -> Self {
+        Self::from_complete_fields(
+            span.cloned(),
+            ty.cloned().unwrap_or_else(Type::missing),
+            String::from(name),
+        )
+    }
+
+    /// Construct a variable from every physical field.
+    pub fn from_complete_fields(span: Option<Span>, ty: Type, name: String) -> Self {
+        Self {
+            data: crate::abi::allocate_object(VarObj {
+                base: ExprObj::new(span, ty),
+                name,
             }),
-        })
+        }
     }
 }
 
 impl GlobalVar {
     /// Construct a module-level symbol directly in Rust.
-    pub fn new(name_hint: &str) -> Result<Self> {
-        Ok(Self {
-            data: ObjectArc::new(GlobalVarObj {
-                base: ExprObj::new(Type::missing()?, None),
-                name_hint: String::from(name_hint),
+    pub fn new(name_hint: &str) -> Self {
+        Self::with_span(name_hint, None)
+    }
+
+    /// Construct a module-level symbol with optional source metadata.
+    pub fn with_span(name_hint: &str, span: Option<&Span>) -> Self {
+        Self::from_complete_fields(span.cloned(), Type::missing(), String::from(name_hint))
+    }
+
+    /// Construct a module-level symbol from all physical fields without re-deriving its type.
+    pub fn from_complete_fields(span: Option<Span>, ty: Type, name_hint: String) -> Self {
+        Self {
+            data: crate::abi::allocate_object(GlobalVarObj {
+                base: ExprObj::new(span, ty),
+                name_hint,
             }),
-        })
+        }
     }
 }
 
 impl Call {
     /// Construct a call directly in Rust with no attributes or explicit type arguments.
-    pub fn new(ret_type: &Type, operator: &Expr, arguments: Vec<Expr>) -> Result<Self> {
-        Self::with_metadata(ret_type, operator, arguments, None, Vec::new())
+    pub fn new(ret_type: &Type, operator: &Expr, arguments: Vec<Expr>) -> Self {
+        Self::with_metadata(ret_type, operator, arguments, None, Vec::new(), None)
     }
 
     /// Construct a call with all reflected metadata supplied explicitly.
@@ -1023,19 +1251,36 @@ impl Call {
         arguments: Vec<Expr>,
         attrs: Option<&Attrs>,
         type_arguments: Vec<Type>,
-    ) -> Result<Self> {
-        let arguments = Array::new(arguments);
-        let attrs = attrs.cloned();
-        let type_arguments = Array::new(type_arguments);
-        Ok(Self {
-            data: ObjectArc::new(CallObj {
-                base: ExprObj::new(ret_type.clone(), None),
-                op: operator.clone(),
-                args: arguments,
+        span: Option<&Span>,
+    ) -> Self {
+        Self::from_complete_fields(
+            span.cloned(),
+            ret_type.clone(),
+            operator.clone(),
+            Array::new(arguments),
+            attrs.cloned(),
+            Array::new(type_arguments),
+        )
+    }
+
+    /// Construct a call from every physical field.
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        ty: Type,
+        op: Expr,
+        args: Array<Expr>,
+        attrs: Option<Attrs>,
+        ty_args: Array<Type>,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(CallObj {
+                base: ExprObj::new(span, ty),
+                op,
+                args,
                 attrs,
-                ty_args: type_arguments,
+                ty_args,
             }),
-        })
+        }
     }
 }
 
@@ -1052,6 +1297,14 @@ impl From<PrimType> for Type {
         value
             .try_cast()
             .expect("ir.PrimType must be a subtype of ir.Type")
+    }
+}
+
+impl From<TupleType> for Type {
+    fn from(value: TupleType) -> Self {
+        value
+            .try_cast()
+            .expect("ir.TupleType must be a subtype of ir.Type")
     }
 }
 
@@ -1089,19 +1342,84 @@ impl From<DictAttrs> for Attrs {
 
 impl IRModule {
     /// Wrap a function expression in an IRModule whose entry is `main`.
-    pub fn from_expr<E: AnyCompatible>(expr: &E) -> Result<Self> {
-        let empty_functions = Map::<GlobalVar, BaseFunc>::new();
-        crate::global_function!("ir.Module_FromExpr")?
-            .call_packed(&[AnyView::from(expr), AnyView::from(&empty_functions)])?
-            .try_into()
+    pub fn from_expr<E: AnyCompatible + Clone>(expr: &E) -> Result<Self> {
+        let function = BaseFunc::try_from(Any::from(expr.clone()))?;
+        let global_symbol = function
+            .attrs
+            .dict
+            .get(&String::from("global_symbol"))?
+            .map(String::try_from)
+            .transpose()?;
+        let global_name = global_symbol
+            .as_deref()
+            .filter(|name| !name.is_empty())
+            .unwrap_or("main");
+        let global_var = GlobalVar::new(global_name);
+        Self::with_metadata(
+            [(global_var, function)].into_iter().collect(),
+            SourceMap::new(),
+            DictAttrs::empty(),
+            Map::new(),
+        )
+    }
+
+    /// Construct a module directly in Rust from all of its stored state.
+    ///
+    /// The derived name-to-global-variable index is rebuilt and checked here;
+    /// callers never supply it independently.
+    pub fn with_metadata(
+        functions: Map<GlobalVar, BaseFunc>,
+        source_map: SourceMap,
+        attrs: DictAttrs,
+        global_infos: Map<String, Array<GlobalInfo>>,
+    ) -> Result<Self> {
+        let mut indexed_globals = Vec::with_capacity(functions.len());
+        let mut names = std::collections::HashSet::with_capacity(functions.len());
+        for (global_var, _) in functions.iter() {
+            let name = global_var.name_hint.clone();
+            if !names.insert(name.as_str().to_owned()) {
+                return Err(Error::new(
+                    VALUE_ERROR,
+                    &format!("duplicate global function name {}", name.as_str()),
+                    "",
+                ));
+            }
+            indexed_globals.push((name, global_var));
+        }
+        Ok(Self::from_complete_fields(
+            functions,
+            source_map,
+            attrs,
+            global_infos,
+            indexed_globals.into_iter().collect(),
+        ))
+    }
+
+    /// Allocate a module from every physical field without rebuilding derived indexes.
+    pub fn from_complete_fields(
+        functions: Map<GlobalVar, BaseFunc>,
+        source_map: SourceMap,
+        attrs: DictAttrs,
+        global_infos: Map<String, Array<GlobalInfo>>,
+        global_var_map: Map<String, GlobalVar>,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(IRModuleObj {
+                base: tvm_ffi::Object::new(),
+                functions,
+                source_map,
+                attrs,
+                global_infos,
+                global_var_map,
+            }),
+        }
     }
 
     /// Return an independently updatable module with one function replaced.
     ///
-    /// The module node is copied before TVM updates its function table, so
-    /// other Rust handles that share `self` remain unchanged.  Structural
-    /// mapping the reflected maps directly would also fail to maintain TVM's
-    /// derived global-name index.
+    /// Rust rebuilds both immutable maps and the module node, so other handles
+    /// that share `self` remain unchanged and the derived global-name index
+    /// cannot become stale.
     pub fn with_updated_function(
         &self,
         global_var: &GlobalVar,
@@ -1117,21 +1435,28 @@ impl IRModule {
         name: &str,
         global_info: Vec<GlobalInfo>,
     ) -> Result<Self> {
-        let module = self.copy_for_update()?;
         let name = String::from(name);
-        let global_info = Array::new(global_info);
-        crate::global_function!("ir.Module_UpdateGlobalInfo")?.call_packed(&[
-            AnyView::from(&module),
-            AnyView::from(&name),
-            AnyView::from(&global_info),
-        ])?;
-        Ok(module)
+        let mut global_infos = self
+            .global_infos
+            .iter()
+            .filter(|(existing, _)| existing.as_str() != name.as_str())
+            .collect::<Vec<_>>();
+        global_infos.push((name, Array::new(global_info)));
+        Self::with_metadata(
+            self.functions.clone(),
+            self.source_map.clone(),
+            self.attrs.clone(),
+            global_infos.into_iter().collect(),
+        )
     }
 
     pub(crate) fn copy_for_update(&self) -> Result<Self> {
-        crate::global_function!("ir.Module_Clone")?
-            .call_packed(&[AnyView::from(self)])?
-            .try_into()
+        Self::with_metadata(
+            self.functions.clone(),
+            self.source_map.clone(),
+            self.attrs.clone(),
+            self.global_infos.clone(),
+        )
     }
 
     pub(crate) fn update_function_owned(
@@ -1139,34 +1464,63 @@ impl IRModule {
         global_var: &GlobalVar,
         function: &BaseFunc,
     ) -> Result<Self> {
-        let update = true;
-        crate::global_function!("ir.Module_Add")?
-            .call_packed(&[
-                AnyView::from(&self),
-                AnyView::from(global_var),
-                AnyView::from(function),
-                AnyView::from(&update),
-            ])?
-            .try_into()
+        let name = global_var.name_hint.clone();
+        let mut functions = Vec::with_capacity(self.functions.len() + 1);
+        for (existing_var, existing_function) in self.functions.iter() {
+            if existing_var.name_hint.as_str() == name.as_str() {
+                if !same_object(&existing_var, global_var) {
+                    return Err(Error::new(
+                        VALUE_ERROR,
+                        &format!("duplicate global function name {}", name.as_str()),
+                        "",
+                    ));
+                }
+            } else {
+                functions.push((existing_var, existing_function));
+            }
+        }
+        functions.push((global_var.clone(), function.clone()));
+        Self::with_metadata(
+            functions.into_iter().collect(),
+            self.source_map.clone(),
+            self.attrs.clone(),
+            self.global_infos.clone(),
+        )
+    }
+}
+
+fn same_object<T: ObjectRefCore>(lhs: &T, rhs: &T) -> bool {
+    // Both raw pointers are borrowed from live handles for the duration of
+    // this comparison; no ownership is transferred or reconstructed.
+    unsafe {
+        std::ptr::eq(
+            ObjectArc::as_raw(T::data(lhs)),
+            ObjectArc::as_raw(T::data(rhs)),
+        )
     }
 }
 
 impl DictAttrs {
     /// Construct a defined, empty DictAttrs object.
-    pub fn empty() -> Result<Self> {
+    pub fn empty() -> Self {
         Self::from_dictionary(&AnyMap::new())
     }
 
     /// Construct DictAttrs from a heterogeneous string-to-value map.
-    pub fn from_dictionary(dictionary: &AnyMap<String>) -> Result<Self> {
-        Ok(Self {
-            data: ObjectArc::new(DictAttrsObj {
+    pub fn from_dictionary(dictionary: &AnyMap<String>) -> Self {
+        Self::from_complete_fields(dictionary.clone())
+    }
+
+    /// Construct dictionary attributes from their complete physical state.
+    pub fn from_complete_fields(dict: AnyMap<String>) -> Self {
+        Self {
+            data: crate::abi::allocate_object(DictAttrsObj {
                 base: AttrsObj {
                     base: tvm_ffi::Object::new(),
                 },
-                dict: dictionary.clone(),
+                dict,
             }),
-        })
+        }
     }
 }
 
@@ -1175,3 +1529,21 @@ impl Default for SourceMap {
         Self::new()
     }
 }
+
+crate::abi::impl_rust_allocatable!(
+    GlobalVarObj,
+    VarObj,
+    SourceNameObj,
+    SourceObj,
+    SourceMapObj,
+    SpanObj,
+    RangeObj,
+    CallObj,
+    TypeObj,
+    PrimTypeObj,
+    TupleTypeObj,
+    IntImmObj,
+    DictAttrsObj,
+    DummyGlobalInfoObj,
+    IRModuleObj,
+);

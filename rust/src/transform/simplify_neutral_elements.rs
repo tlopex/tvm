@@ -46,33 +46,28 @@ struct NeutralElementSimplifier;
 #[tvm_ffi::dispatch(map)]
 impl NeutralElementSimplifier {
     fn map_add(&mut self, value: Add) -> Result<Any> {
-        let lhs = value.lhs()?;
-        let rhs = value.rhs()?;
-        if int_value(&lhs)? == Some(0) {
-            return Ok(Any::from(rhs));
+        if int_value(&value.a)? == Some(0) {
+            return Ok(Any::from(value.b.clone()));
         }
-        if int_value(&rhs)? == Some(0) {
-            return Ok(Any::from(lhs));
+        if int_value(&value.b)? == Some(0) {
+            return Ok(Any::from(value.a.clone()));
         }
         Ok(Any::from(value))
     }
 
     fn map_subtract(&mut self, value: Sub) -> Result<Any> {
-        let rhs = value.rhs()?;
-        if int_value(&rhs)? == Some(0) {
-            return Ok(Any::from(value.lhs()?));
+        if int_value(&value.b)? == Some(0) {
+            return Ok(Any::from(value.a.clone()));
         }
         Ok(Any::from(value))
     }
 
     fn map_multiply(&mut self, value: Mul) -> Result<Any> {
-        let lhs = value.lhs()?;
-        let rhs = value.rhs()?;
-        if int_value(&lhs)? == Some(1) {
-            return Ok(Any::from(rhs));
+        if int_value(&value.a)? == Some(1) {
+            return Ok(Any::from(value.b.clone()));
         }
-        if int_value(&rhs)? == Some(1) {
-            return Ok(Any::from(lhs));
+        if int_value(&value.b)? == Some(1) {
+            return Ok(Any::from(value.a.clone()));
         }
         Ok(Any::from(value))
     }
@@ -106,35 +101,34 @@ fn mutate_loop(
     value: TirFor,
     mutator: &mut MutateContext<'_, LoopBodyMutationState>,
 ) -> Result<Any> {
-    let loop_var =
-        Var::try_from(mutator.mutate_with(&value.loop_var()?, DefRegionKind::Recursive)?)?;
-    let minimum = Expr::try_from(mutator.mutate(&value.minimum()?)?)?;
-    let extent = Expr::try_from(mutator.mutate(&value.extent()?)?)?;
+    let loop_var = Var::try_from(mutator.mutate_with(&value.loop_var, DefRegionKind::Recursive)?)?;
+    let minimum = Expr::try_from(mutator.mutate(&value.min)?)?;
+    let extent = Expr::try_from(mutator.mutate(&value.extent)?)?;
 
     mutator.state_mut().depth += 1;
-    let body_result = mutator.mutate(&value.body()?);
+    let body_result = mutator.mutate(&value.body);
     mutator.state_mut().depth -= 1;
     let body = Stmt::try_from(body_result?)?;
 
     let thread_binding =
-        Option::<crate::tirx::IterVar>::try_from(mutator.mutate(&value.thread_binding()?)?)?;
-    let annotations = AnyMap::<String>::try_from(mutator.mutate(&value.annotations()?)?)?;
+        Option::<crate::tirx::IterVar>::try_from(mutator.mutate(&value.thread_binding)?)?;
+    let annotations = AnyMap::<String>::try_from(mutator.mutate(&value.annotations)?)?;
     let step = value
-        .step()?
-        .map(|step| mutator.mutate(&step).and_then(Expr::try_from))
+        .step
+        .as_ref()
+        .map(|step| mutator.mutate(step).and_then(Expr::try_from))
         .transpose()?;
-    let span = value.span()?;
 
     Ok(Any::from(TirFor::with_metadata(
         &loop_var,
         &minimum,
         &extent,
-        value.kind()?,
+        value.kind,
         &body,
         thread_binding.as_ref(),
         &annotations,
         step.as_ref(),
-        span.as_ref(),
+        value.span.as_ref(),
     )?))
 }
 
@@ -146,13 +140,11 @@ fn mutate_scoped_add(
     if mutator.state().depth == 0 {
         return Ok(Any::from(value));
     }
-    let lhs = value.lhs()?;
-    let rhs = value.rhs()?;
-    if int_value(&lhs)? == Some(0) {
-        return Ok(Any::from(rhs));
+    if int_value(&value.a)? == Some(0) {
+        return Ok(Any::from(value.b.clone()));
     }
-    if int_value(&rhs)? == Some(0) {
-        return Ok(Any::from(lhs));
+    if int_value(&value.b)? == Some(0) {
+        return Ok(Any::from(value.a.clone()));
     }
     Ok(Any::from(value))
 }
@@ -162,8 +154,8 @@ fn mutate_scoped_subtract(
     mutator: &mut MutateContext<'_, LoopBodyMutationState>,
 ) -> Result<Any> {
     let value = Sub::try_from(mutator.default_mutate()?)?;
-    if mutator.state().depth > 0 && int_value(&value.rhs()?)? == Some(0) {
-        return Ok(Any::from(value.lhs()?));
+    if mutator.state().depth > 0 && int_value(&value.b)? == Some(0) {
+        return Ok(Any::from(value.a.clone()));
     }
     Ok(Any::from(value))
 }
@@ -176,13 +168,11 @@ fn mutate_scoped_multiply(
     if mutator.state().depth == 0 {
         return Ok(Any::from(value));
     }
-    let lhs = value.lhs()?;
-    let rhs = value.rhs()?;
-    if int_value(&lhs)? == Some(1) {
-        return Ok(Any::from(rhs));
+    if int_value(&value.a)? == Some(1) {
+        return Ok(Any::from(value.b.clone()));
     }
-    if int_value(&rhs)? == Some(1) {
-        return Ok(Any::from(lhs));
+    if int_value(&value.b)? == Some(1) {
+        return Ok(Any::from(value.a.clone()));
     }
     Ok(Any::from(value))
 }

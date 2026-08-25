@@ -23,6 +23,7 @@
 #include <tvm/arith/analyzer.h>
 #include <tvm/ffi/function.h>
 #include <tvm/ffi/reflection/registry.h>
+#include <tvm/ir/constructor_c_api.h>
 #include <tvm/runtime/device_api.h>
 #include <tvm/tirx/analysis.h>
 #include <tvm/tirx/buffer.h>
@@ -31,36 +32,139 @@
 #include <tvm/tirx/op.h>
 
 #include <iterator>
+#include <limits>
 #include <list>
 #include <stack>
 
 #include "../../arith/pattern_match.h"
+#include "../../ir/c_abi_utils.h"
 
 namespace tvm {
 namespace tirx {
 
-TVM_FFI_STATIC_INIT_BLOCK() { BufferTypeNode::RegisterReflection(); }
-
 using IndexMod = tirx::FloorModNode;
 using IndexDiv = tirx::FloorDivNode;
+
+namespace {
+
+struct BufferTypeDerivedFields {
+  ffi::String storage_scope;
+  PrimExpr elem_offset;
+  int data_alignment;
+  int offset_factor;
+};
+
+BufferTypeDerivedFields DeriveBufferTypeFields(ffi::String storage_scope,
+                                               const ffi::Array<PrimExpr>& shape,
+                                               ffi::Optional<PrimExpr> elem_offset,
+                                               int data_alignment, int offset_factor) {
+  if (storage_scope.empty()) {
+    storage_scope = "global";
+  }
+  if (!elem_offset.has_value()) {
+    DLDataType index_dtype = shape.empty() ? DefaultIndexType() : shape[0].ty()->dtype;
+    elem_offset = IntImm(PrimType(index_dtype), 0);
+  }
+  if (data_alignment <= 0) {
+    data_alignment = runtime::kAllocAlignment;
+  }
+  if (offset_factor == 0) {
+    offset_factor = 1;
+  }
+  return {std::move(storage_scope), elem_offset.value(), data_alignment, offset_factor};
+}
+
+int NativeIntFromABI(TVMFFIAny value, const char* field_name) {
+  int64_t raw = ir_abi::FromABI<int64_t>(value);
+  TVM_FFI_CHECK_GE(raw, std::numeric_limits<int>::min(), ValueError)
+      << field_name << " is below the native int range";
+  TVM_FFI_CHECK_LE(raw, std::numeric_limits<int>::max(), ValueError)
+      << field_name << " is above the native int range";
+  return static_cast<int>(raw);
+}
+
+TVMFFIAny PrepareBufferType(const TVMFFIAny* args, int32_t num_args) noexcept {
+  return ir_abi::ReturnExpected([&]() {
+    ir_abi::CheckArity(num_args, 5);
+    TVM_FFI_CHECK(args != nullptr, TypeError) << "BufferType constructor arguments are null";
+    BufferTypeDerivedFields fields = DeriveBufferTypeFields(
+        ir_abi::FromABI<ffi::String>(args[0]), ir_abi::FromABI<ffi::Array<PrimExpr>>(args[1]),
+        ir_abi::FromABI<ffi::Optional<PrimExpr>>(args[2]),
+        NativeIntFromABI(args[3], "data_alignment"), NativeIntFromABI(args[4], "offset_factor"));
+    return ffi::Map<ffi::String, ffi::Any>{{"storage_scope", fields.storage_scope},
+                                           {"elem_offset", fields.elem_offset},
+                                           {"data_alignment", fields.data_alignment},
+                                           {"offset_factor", fields.offset_factor}};
+  });
+}
+
+const TVMIRConstructorVTable kBufferTypeConstructorVTable{5, &PrepareBufferType};
+
+const TVMTIRXDataProducerVTable* GetDataProducerVTable(const DataProducerNode* self) {
+  static ffi::reflection::TypeAttrColumn column(TVM_TIRX_DATA_PRODUCER_VTABLE_ATTR);
+  ffi::AnyView attr = column[self->type_index()];
+  TVM_FFI_CHECK(attr.type_index() == ffi::TypeIndex::kTVMFFIOpaquePtr, TypeError)
+      << "DataProducer type " << self->GetTypeKey()
+      << " does not register a C ABI data-producer vtable";
+  auto* vtable = static_cast<const TVMTIRXDataProducerVTable*>(attr.cast<void*>());
+  TVM_FFI_CHECK(vtable != nullptr, TypeError)
+      << "DataProducer type " << self->GetTypeKey() << " registers a null vtable";
+  return vtable;
+}
+
+template <typename Result>
+Result CallDataProducer(const DataProducerNode* self, TVMTIRXDataProducerCall callback,
+                        const char* name) {
+  TVM_FFI_CHECK(callback != nullptr, TypeError) << "DataProducer vtable is missing " << name;
+  TVMFFIAny value = ir_abi::ToBorrowedABI(ffi::GetRef<DataProducer>(self));
+  return ffi::details::ExpectedUnsafe::MoveFromTVMFFIAny<Result>(callback(value)).value();
+}
+
+}  // namespace
+
+TVM_FFI_STATIC_INIT_BLOCK() {
+  namespace refl = tvm::ffi::reflection;
+  refl::ObjectDef<DataProducerNode>();
+  BufferTypeNode::RegisterReflection();
+  refl::EnsureTypeAttrColumn(TVM_IR_CONSTRUCTOR_VTABLE_ATTR);
+  refl::TypeAttrDef<BufferTypeNode>().attr(
+      TVM_IR_CONSTRUCTOR_VTABLE_ATTR,
+      reinterpret_cast<void*>(const_cast<TVMIRConstructorVTable*>(&kBufferTypeConstructorVTable)));
+}
+
+ffi::Array<PrimExpr> DataProducerNode::GetShape() const {
+  const auto* vtable = GetDataProducerVTable(this);
+  return CallDataProducer<ffi::Array<PrimExpr>>(this, vtable->get_shape, "get_shape");
+}
+
+PrimType DataProducerNode::GetDataType() const {
+  const auto* vtable = GetDataProducerVTable(this);
+  return CallDataProducer<PrimType>(this, vtable->get_data_type, "get_data_type");
+}
+
+ffi::String DataProducerNode::GetNameHint() const {
+  const auto* vtable = GetDataProducerVTable(this);
+  return CallDataProducer<ffi::String>(this, vtable->get_name_hint, "get_name_hint");
+}
 
 BufferType::BufferType(ffi::String storage_scope, PrimType dtype, ffi::Array<PrimExpr> shape,
                        ffi::Array<PrimExpr> strides, PrimExpr elem_offset, int data_alignment,
                        int offset_factor, ffi::Optional<Layout> layout,
                        ffi::Array<PrimExpr> allocated_addr, Span span)
     : Type(ffi::UnsafeInit{}) {
+  ffi::Optional<PrimExpr> optional_elem_offset =
+      elem_offset.defined() ? ffi::Optional<PrimExpr>(elem_offset) : std::nullopt;
+  BufferTypeDerivedFields fields =
+      DeriveBufferTypeFields(std::move(storage_scope), shape, std::move(optional_elem_offset),
+                             data_alignment, offset_factor);
   auto n = ffi::make_object<BufferTypeNode>();
   n->dtype = std::move(dtype);
-  n->storage_scope = storage_scope.empty() ? ffi::String("global") : std::move(storage_scope);
+  n->storage_scope = std::move(fields.storage_scope);
   n->shape = std::move(shape);
   n->strides = std::move(strides);
-  if (!elem_offset.defined()) {
-    elem_offset = IntImm(PrimType(n->DefaultIndexType()), 0);
-  }
-  n->elem_offset = std::move(elem_offset);
-  n->data_alignment =
-      data_alignment <= 0 ? static_cast<int>(runtime::kAllocAlignment) : data_alignment;
-  n->offset_factor = offset_factor == 0 ? 1 : offset_factor;
+  n->elem_offset = std::move(fields.elem_offset);
+  n->data_alignment = fields.data_alignment;
+  n->offset_factor = fields.offset_factor;
   n->layout = std::move(layout);
   n->allocated_addr = std::move(allocated_addr);
   n->span = std::move(span);

@@ -17,8 +17,14 @@
  * under the License.
  */
 
+use std::sync::atomic::AtomicPtr;
+
 use tvm_ffi::derive::{Object, ObjectRef};
-use tvm_ffi::{AnyView, Array, Error, Map, ObjectArc, ObjectRefCast, Result, String, VALUE_ERROR};
+use tvm_ffi::tvm_ffi_sys::{TVMFFIAny, TVMFFITypeAttrColumn};
+use tvm_ffi::{
+    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Map, ObjectArc,
+    ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
+};
 
 use super::{primitive_type, Stmt, StmtObj};
 use crate::ir::{
@@ -26,12 +32,117 @@ use crate::ir::{
     TypeObj, Var,
 };
 
-/// Opaque Rust view of TVM's abstract layout base class.
+/// ABI-complete prefix for objects that expose tensor-like producer behavior.
+///
+/// This base is intentionally not Rust-allocatable on its own. Concrete
+/// producers must register the shared C ABI behavior table.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "tirx.DataProducer"]
+pub struct DataProducerObj {
+    base: PrimExprConvertibleObj,
+}
+crate::abi::impl_object_layout!(DataProducerObj {});
+
+/// Reference-counted handle to any concrete data producer.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct DataProducer {
+    data: ObjectArc<DataProducerObj>,
+}
+
+type DataProducerCall = unsafe extern "C" fn(TVMFFIAny) -> TVMFFIAny;
+
+/// Rust mirror of `TVMTIRXDataProducerVTable`.
+#[repr(C)]
+struct DataProducerVTable {
+    get_shape: Option<DataProducerCall>,
+    get_data_type: Option<DataProducerCall>,
+    get_name_hint: Option<DataProducerCall>,
+}
+
+static DATA_PRODUCER_VTABLE_COLUMN: AtomicPtr<TVMFFITypeAttrColumn> =
+    AtomicPtr::new(std::ptr::null_mut());
+
+impl std::ops::Deref for DataProducer {
+    type Target = DataProducerObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for DataProducerObj {
+    type Target = PrimExprConvertibleObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DataProducer {
+    fn vtable(&self) -> Result<&'static DataProducerVTable> {
+        let value = AnyView::from(self);
+        crate::abi::opaque_type_vtable(
+            &DATA_PRODUCER_VTABLE_COLUMN,
+            "__data_producer_vtable__",
+            value.type_index(),
+        )
+    }
+
+    fn call<T>(&self, name: &str, callback: Option<DataProducerCall>) -> Result<T>
+    where
+        T: TryFrom<Any, Error = Error>,
+    {
+        let callback = callback.ok_or_else(|| {
+            Error::new(
+                TYPE_ERROR,
+                &format!("data-producer vtable has no `{name}` entry"),
+                "",
+            )
+        })?;
+        decode_abi_result(unsafe { callback(crate::abi::borrowed_raw(AnyView::from(self))) })
+    }
+
+    /// Return the producer's logical result shape.
+    pub fn shape(&self) -> Result<Array<Expr>> {
+        self.call("get_shape", self.vtable()?.get_shape)
+    }
+
+    /// Return the producer's primitive element type.
+    pub fn data_type(&self) -> Result<PrimType> {
+        self.call("get_data_type", self.vtable()?.get_data_type)
+    }
+
+    /// Return the producer's diagnostic name.
+    pub fn name_hint(&self) -> Result<String> {
+        self.call("get_name_hint", self.vtable()?.get_name_hint)
+    }
+}
+
+impl From<DataProducer> for PrimExprConvertible {
+    fn from(value: DataProducer) -> Self {
+        value
+            .try_cast()
+            .expect("tirx.DataProducer must be a subtype of ir.PrimExprConvertible")
+    }
+}
+
+/// ABI-complete Rust representation of TVM's layout base class.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.Layout"]
 pub struct LayoutObj {
     base: tvm_ffi::Object,
+}
+crate::abi::impl_object_layout!(LayoutObj {});
+
+impl LayoutObj {
+    fn new() -> Self {
+        Self {
+            base: tvm_ffi::Object::new(),
+        }
+    }
 }
 
 /// Reference-counted handle to a TIRx buffer layout.
@@ -41,6 +152,33 @@ pub struct Layout {
     data: ObjectArc<LayoutObj>,
 }
 
+type LayoutCall0 = unsafe extern "C" fn(TVMFFIAny) -> TVMFFIAny;
+type LayoutCall1 = unsafe extern "C" fn(TVMFFIAny, TVMFFIAny) -> TVMFFIAny;
+type LayoutCall2 = unsafe extern "C" fn(TVMFFIAny, TVMFFIAny, TVMFFIAny) -> TVMFFIAny;
+type LayoutCall3 = unsafe extern "C" fn(TVMFFIAny, TVMFFIAny, TVMFFIAny, TVMFFIAny) -> TVMFFIAny;
+
+/// Rust mirror of `TVMTIRXLayoutVTable`.
+#[repr(C)]
+struct LayoutVTable {
+    compatible_with_shape: Option<LayoutCall1>,
+    verify_well_formed: Option<LayoutCall0>,
+    get_size: Option<LayoutCall1>,
+    get_span: Option<LayoutCall1>,
+    apply: Option<LayoutCall1>,
+    apply_linear: Option<LayoutCall1>,
+    apply_with_shape: Option<LayoutCall2>,
+    canonicalize: Option<LayoutCall0>,
+    tile: Option<LayoutCall3>,
+    slice: Option<LayoutCall2>,
+    direct_sum: Option<LayoutCall3>,
+    is_tile_inner: Option<LayoutCall3>,
+    is_tile_outer: Option<LayoutCall3>,
+    is_direct_sum_right: Option<LayoutCall3>,
+    is_direct_sum_left: Option<LayoutCall3>,
+}
+
+static LAYOUT_VTABLE_COLUMN: AtomicPtr<TVMFFITypeAttrColumn> = AtomicPtr::new(std::ptr::null_mut());
+
 impl std::ops::Deref for Layout {
     type Target = LayoutObj;
 
@@ -49,16 +187,293 @@ impl std::ops::Deref for Layout {
     }
 }
 
-/// Opaque Rust view of one interned TIRx layout axis.
+fn decode_abi_result<T>(raw: TVMFFIAny) -> Result<T>
+where
+    T: TryFrom<Any, Error = Error>,
+{
+    T::try_from(unsafe { crate::abi::result_from_raw(raw) }?)
+}
+
+impl Layout {
+    fn vtable(&self) -> Result<&'static LayoutVTable> {
+        let value = AnyView::from(self);
+        crate::abi::opaque_type_vtable(
+            &LAYOUT_VTABLE_COLUMN,
+            "__layout_vtable__",
+            value.type_index(),
+        )
+    }
+
+    fn missing_vtable_entry(name: &str) -> Error {
+        Error::new(
+            TYPE_ERROR,
+            &format!("layout vtable has no `{name}` entry"),
+            "",
+        )
+    }
+
+    #[inline]
+    fn call0<T>(&self, name: &str, callback: Option<LayoutCall0>) -> Result<T>
+    where
+        T: TryFrom<Any, Error = Error>,
+    {
+        let callback = callback.ok_or_else(|| Self::missing_vtable_entry(name))?;
+        decode_abi_result(unsafe { callback(crate::abi::borrowed_raw(AnyView::from(self))) })
+    }
+
+    #[inline]
+    fn call1<T>(&self, name: &str, callback: Option<LayoutCall1>, arg0: AnyView<'_>) -> Result<T>
+    where
+        T: TryFrom<Any, Error = Error>,
+    {
+        let callback = callback.ok_or_else(|| Self::missing_vtable_entry(name))?;
+        decode_abi_result(unsafe {
+            callback(
+                crate::abi::borrowed_raw(AnyView::from(self)),
+                crate::abi::borrowed_raw(arg0),
+            )
+        })
+    }
+
+    #[inline]
+    fn call2<T>(
+        &self,
+        name: &str,
+        callback: Option<LayoutCall2>,
+        arg0: AnyView<'_>,
+        arg1: AnyView<'_>,
+    ) -> Result<T>
+    where
+        T: TryFrom<Any, Error = Error>,
+    {
+        let callback = callback.ok_or_else(|| Self::missing_vtable_entry(name))?;
+        decode_abi_result(unsafe {
+            callback(
+                crate::abi::borrowed_raw(AnyView::from(self)),
+                crate::abi::borrowed_raw(arg0),
+                crate::abi::borrowed_raw(arg1),
+            )
+        })
+    }
+
+    #[inline]
+    fn call3<T>(
+        &self,
+        name: &str,
+        callback: Option<LayoutCall3>,
+        arg0: AnyView<'_>,
+        arg1: AnyView<'_>,
+        arg2: AnyView<'_>,
+    ) -> Result<T>
+    where
+        T: TryFrom<Any, Error = Error>,
+    {
+        let callback = callback.ok_or_else(|| Self::missing_vtable_entry(name))?;
+        decode_abi_result(unsafe {
+            callback(
+                crate::abi::borrowed_raw(AnyView::from(self)),
+                crate::abi::borrowed_raw(arg0),
+                crate::abi::borrowed_raw(arg1),
+                crate::abi::borrowed_raw(arg2),
+            )
+        })
+    }
+
+    /// Check whether this layout can describe the supplied logical shape.
+    pub fn compatible_with_shape(&self, shape: &Array<Expr>) -> Result<bool> {
+        self.call1(
+            "compatible_with_shape",
+            self.vtable()?.compatible_with_shape,
+            AnyView::from(shape),
+        )
+    }
+
+    /// Validate the concrete layout through its direct C ABI function table.
+    pub fn verify_well_formed(&self) -> Result<bool> {
+        self.call0("verify_well_formed", self.vtable()?.verify_well_formed)
+    }
+
+    /// Return the logical size for all axes or one named axis.
+    pub fn get_size(&self, axis_name: Option<&str>) -> Result<Expr> {
+        let axis_name = axis_name.map(String::from);
+        self.call1(
+            "get_size",
+            self.vtable()?.get_size,
+            AnyView::from(&axis_name),
+        )
+    }
+
+    /// Return the physical span for all axes or one named axis.
+    pub fn get_span(&self, axis_name: Option<&str>) -> Result<Expr> {
+        let axis_name = axis_name.map(String::from);
+        self.call1(
+            "get_span",
+            self.vtable()?.get_span,
+            AnyView::from(&axis_name),
+        )
+    }
+
+    /// Map one structured coordinate through this layout.
+    pub fn apply(&self, coord: &Array<Expr>) -> Result<Map<String, Expr>> {
+        self.call1("apply", self.vtable()?.apply, AnyView::from(coord))
+    }
+
+    /// Map one flattened coordinate through this layout.
+    pub fn apply_linear(&self, coord: &Expr) -> Result<Map<String, Expr>> {
+        self.call1(
+            "apply_linear",
+            self.vtable()?.apply_linear,
+            AnyView::from(coord),
+        )
+    }
+
+    /// Map a coordinate whose dimensions are grouped by `shape`.
+    pub fn apply_with_shape(
+        &self,
+        coord: &Array<Expr>,
+        shape: &Array<Expr>,
+    ) -> Result<Map<String, Expr>> {
+        self.call2(
+            "apply_with_shape",
+            self.vtable()?.apply_with_shape,
+            AnyView::from(coord),
+            AnyView::from(shape),
+        )
+    }
+
+    /// Return the canonical form of this layout.
+    pub fn canonicalize(&self) -> Result<Layout> {
+        self.call0("canonicalize", self.vtable()?.canonicalize)
+    }
+
+    /// Tile this layout with an outer tile.
+    pub fn tile(
+        &self,
+        outer: &TileLayout,
+        outer_shape: &Array<Expr>,
+        inner_shape: &Array<Expr>,
+    ) -> Result<Layout> {
+        self.call3(
+            "tile",
+            self.vtable()?.tile,
+            AnyView::from(outer),
+            AnyView::from(outer_shape),
+            AnyView::from(inner_shape),
+        )
+    }
+
+    /// Restrict this layout to one region.
+    pub fn slice(&self, shape: &Array<Expr>, region: &Array<Range>) -> Result<Option<Layout>> {
+        self.call2(
+            "slice",
+            self.vtable()?.slice,
+            AnyView::from(shape),
+            AnyView::from(region),
+        )
+    }
+
+    /// Form the layout direct sum with a left tile.
+    pub fn direct_sum(
+        &self,
+        left: &TileLayout,
+        left_shape: &Array<Expr>,
+        right_shape: &Array<Expr>,
+    ) -> Result<Layout> {
+        self.call3(
+            "direct_sum",
+            self.vtable()?.direct_sum,
+            AnyView::from(left),
+            AnyView::from(left_shape),
+            AnyView::from(right_shape),
+        )
+    }
+
+    /// Recover an outer tile when this layout is the tiled inner component.
+    pub fn is_tile_inner(
+        &self,
+        layout: &Layout,
+        tiled_shape: &Array<Expr>,
+        inner_shape: &Array<Expr>,
+    ) -> Result<Option<TileLayout>> {
+        self.call3(
+            "is_tile_inner",
+            self.vtable()?.is_tile_inner,
+            AnyView::from(layout),
+            AnyView::from(tiled_shape),
+            AnyView::from(inner_shape),
+        )
+    }
+
+    /// Recover an inner layout when this layout is the tiled outer component.
+    pub fn is_tile_outer(
+        &self,
+        layout: &Layout,
+        tiled_shape: &Array<Expr>,
+        outer_shape: &Array<Expr>,
+    ) -> Result<Option<Layout>> {
+        self.call3(
+            "is_tile_outer",
+            self.vtable()?.is_tile_outer,
+            AnyView::from(layout),
+            AnyView::from(tiled_shape),
+            AnyView::from(outer_shape),
+        )
+    }
+
+    /// Recover the left direct-sum component when this layout is the right one.
+    pub fn is_direct_sum_right(
+        &self,
+        layout: &Layout,
+        interleaved_shape: &Array<Expr>,
+        right_shape: &Array<Expr>,
+    ) -> Result<Option<TileLayout>> {
+        self.call3(
+            "is_direct_sum_right",
+            self.vtable()?.is_direct_sum_right,
+            AnyView::from(layout),
+            AnyView::from(interleaved_shape),
+            AnyView::from(right_shape),
+        )
+    }
+
+    /// Recover the right direct-sum component when this layout is the left one.
+    pub fn is_direct_sum_left(
+        &self,
+        layout: &Layout,
+        interleaved_shape: &Array<Expr>,
+        left_shape: &Array<Expr>,
+    ) -> Result<Option<Layout>> {
+        self.call3(
+            "is_direct_sum_left",
+            self.vtable()?.is_direct_sum_left,
+            AnyView::from(layout),
+            AnyView::from(interleaved_shape),
+            AnyView::from(left_shape),
+        )
+    }
+}
+
+/// ABI-complete Rust representation of one registered TIRx layout axis.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.Axis"]
 #[type_final]
 pub struct AxisObj {
     base: tvm_ffi::Object,
+    pub name: String,
+    pub registry_index: u32,
+}
+crate::abi::impl_object_layout!(AxisObj {
+    "name" => name: String,
+    "registry_index" => registry_index: u32,
+});
+
+impl crate::abi::ConstructorRecipe for AxisObj {
+    const NUM_INPUTS: usize = 1;
+    const DERIVED_FIELDS: &'static [&'static str] = &["registry_index"];
 }
 
-/// Reference-counted handle to an interned layout axis.
+/// Reference-counted handle identified by the shared axis registry index.
 #[repr(C)]
 #[derive(ObjectRef, Clone)]
 pub struct Axis {
@@ -73,22 +488,38 @@ impl std::ops::Deref for Axis {
     }
 }
 
-impl AxisObj {
-    /// Return the registered axis name.
-    pub fn name(&self) -> Result<String> {
-        crate::reflected_field!(self, "name")?.try_into()
+impl Axis {
+    /// Resolve registry metadata and allocate the axis handle in Rust.
+    pub fn get(name: &str) -> Result<Self> {
+        let name = String::from(name);
+        let prepared = crate::abi::prepare_constructor::<AxisObj>(&[AnyView::from(&name)])?;
+        let registry_index =
+            crate::abi::prepared_field::<i64>(&prepared, AxisObj::TYPE_KEY, "registry_index")
+                .and_then(|index| {
+                    u32::try_from(index).map_err(|_| {
+                        Error::new(VALUE_ERROR, "axis registry index does not fit u32", "")
+                    })
+                })?;
+        Ok(Self::from_prepared_fields(name, registry_index))
+    }
+
+    // Keep this allocator private: an arbitrary name/index pair can alias the
+    // wrong entry in C++ attribute tables.  `get` first asks the shared axis
+    // registry for the index and is the only safe public construction path.
+    fn from_prepared_fields(name: String, registry_index: u32) -> Self {
+        Self {
+            data: crate::abi::allocate_object(AxisObj {
+                base: tvm_ffi::Object::new(),
+                name,
+                registry_index,
+            }),
+        }
     }
 }
 
-impl Axis {
-    /// Return TVM's process-wide interned axis for `name`.
-    pub fn get(name: &str) -> Result<Self> {
-        let name = String::from(name);
-        crate::global_function!("tirx.AxisGet")?
-            .call_packed(&[AnyView::from(&name)])?
-            .try_into()
-    }
-}
+// Compile-check the generated owned allocator contract without making the raw
+// registry identity constructor part of the public API.
+const _: fn(String, u32) -> Axis = Axis::from_prepared_fields;
 
 /// ABI-complete Rust representation of one layout extent/stride/axis component.
 #[repr(C)]
@@ -97,10 +528,15 @@ impl Axis {
 #[type_final]
 pub struct IterObj {
     base: tvm_ffi::Object,
-    extent: Expr,
-    stride: Expr,
-    axis: Axis,
+    pub extent: Expr,
+    pub stride: Expr,
+    pub axis: Axis,
 }
+crate::abi::impl_object_layout!(IterObj {
+    "extent" => extent: Expr,
+    "stride" => stride: Expr,
+    "axis" => axis: Axis,
+});
 
 /// Reference-counted handle to one layout iterator.
 #[repr(C)]
@@ -117,47 +553,47 @@ impl std::ops::Deref for Iter {
     }
 }
 
-impl IterObj {
-    /// Return the number of logical positions.
-    pub fn extent(&self) -> Result<Expr> {
-        Ok(self.extent.clone())
-    }
-
-    /// Return the physical stride.
-    pub fn stride(&self) -> Result<Expr> {
-        Ok(self.stride.clone())
-    }
-
-    /// Return the target layout axis.
-    pub fn axis(&self) -> Result<Axis> {
-        Ok(self.axis.clone())
-    }
-}
-
 impl Iter {
     /// Construct one layout iterator directly in Rust.
     pub fn new(extent: &Expr, stride: &Expr, axis: &Axis) -> Result<Self> {
         primitive_type(extent, "layout iterator extent")?;
         primitive_type(stride, "layout iterator stride")?;
-        Ok(Self {
-            data: ObjectArc::new(IterObj {
+        Ok(Self::from_complete_fields(
+            extent.clone(),
+            stride.clone(),
+            axis.clone(),
+        ))
+    }
+
+    /// Construct one layout iterator from every physical field after external validation.
+    pub fn from_complete_fields(extent: Expr, stride: Expr, axis: Axis) -> Self {
+        Self {
+            data: crate::abi::allocate_object(IterObj {
                 base: tvm_ffi::Object::new(),
-                extent: extent.clone(),
-                stride: stride.clone(),
-                axis: axis.clone(),
+                extent,
+                stride,
+                axis,
             }),
-        })
+        }
     }
 }
 
-/// Opaque Rust view of TVM's concrete tiled layout.
+/// ABI-complete Rust representation of TVM's concrete tiled layout.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.TileLayout"]
 #[type_final]
 pub struct TileLayoutObj {
     base: LayoutObj,
+    pub shard: Array<Iter>,
+    pub replica: Array<Iter>,
+    pub offset: Map<Axis, Expr>,
 }
+crate::abi::impl_object_layout!(TileLayoutObj {
+    "shard" => shard: Array<Iter>,
+    "replica" => replica: Array<Iter>,
+    "offset" => offset: Map<Axis, Expr>,
+});
 
 /// Reference-counted handle to a tiled layout.
 #[repr(C)]
@@ -182,35 +618,26 @@ impl std::ops::Deref for TileLayoutObj {
     }
 }
 
-impl TileLayoutObj {
-    /// Return iterators that partition the logical tile.
-    pub fn shard(&self) -> Result<Array<Iter>> {
-        crate::reflected_field!(self, "shard")?.try_into()
-    }
-
-    /// Return replicated layout iterators.
-    pub fn replica(&self) -> Result<Array<Iter>> {
-        crate::reflected_field!(self, "replica")?.try_into()
-    }
-
-    /// Return per-axis physical offsets.
-    pub fn offset(&self) -> Result<Map<Axis, Expr>> {
-        crate::reflected_field!(self, "offset")?.try_into()
-    }
-}
-
 impl TileLayout {
-    /// Construct a tile layout through C++ because `LayoutNode` is polymorphic.
-    pub fn new(shard: Vec<Iter>, replica: Vec<Iter>, offset: Map<Axis, Expr>) -> Result<Self> {
-        let shard = Array::new(shard);
-        let replica = Array::new(replica);
-        crate::global_function!("tirx.TileLayout")?
-            .call_packed(&[
-                AnyView::from(&shard),
-                AnyView::from(&replica),
-                AnyView::from(&offset),
-            ])?
-            .try_into()
+    /// Construct a tile layout directly in Rust.
+    pub fn new(shard: Vec<Iter>, replica: Vec<Iter>, offset: Map<Axis, Expr>) -> Self {
+        Self::from_complete_fields(Array::new(shard), Array::new(replica), offset)
+    }
+
+    /// Construct a tile layout from every physical field.
+    pub fn from_complete_fields(
+        shard: Array<Iter>,
+        replica: Array<Iter>,
+        offset: Map<Axis, Expr>,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(TileLayoutObj {
+                base: LayoutObj::new(),
+                shard,
+                replica,
+                offset,
+            }),
+        }
     }
 }
 
@@ -229,15 +656,36 @@ impl From<TileLayout> for Layout {
 #[type_final]
 pub struct BufferTypeObj {
     base: TypeObj,
-    dtype: PrimType,
-    storage_scope: String,
-    shape: Array<Expr>,
-    strides: Array<Expr>,
-    elem_offset: Expr,
-    data_alignment: i32,
-    offset_factor: i32,
-    layout: Option<Layout>,
-    allocated_addr: Array<Expr>,
+    pub dtype: PrimType,
+    pub storage_scope: String,
+    pub shape: Array<Expr>,
+    pub strides: Array<Expr>,
+    pub elem_offset: Expr,
+    pub data_alignment: i32,
+    pub offset_factor: i32,
+    pub layout: Option<Layout>,
+    pub allocated_addr: Array<Expr>,
+}
+crate::abi::impl_object_layout!(BufferTypeObj {
+    "dtype" => dtype: PrimType,
+    "storage_scope" => storage_scope: String,
+    "shape" => shape: Array<Expr>,
+    "strides" => strides: Array<Expr>,
+    "elem_offset" => elem_offset: Expr,
+    "data_alignment" => data_alignment: i32,
+    "offset_factor" => offset_factor: i32,
+    "layout" => layout: Option<Layout>,
+    "allocated_addr" => allocated_addr: Array<Expr>,
+});
+
+impl crate::abi::ConstructorRecipe for BufferTypeObj {
+    const NUM_INPUTS: usize = 5;
+    const DERIVED_FIELDS: &'static [&'static str] = &[
+        "storage_scope",
+        "elem_offset",
+        "data_alignment",
+        "offset_factor",
+    ];
 }
 
 /// Reference-counted buffer type carried by an ordinary `ir.Var`.
@@ -263,64 +711,18 @@ impl std::ops::Deref for BufferTypeObj {
     }
 }
 
-impl BufferTypeObj {
-    /// Return the primitive element type.
-    pub fn dtype(&self) -> Result<PrimType> {
-        Ok(self.dtype.clone())
-    }
-
-    /// Return the logical address space.
-    pub fn storage_scope(&self) -> Result<String> {
-        Ok(self.storage_scope.clone())
-    }
-
-    /// Return logical extents for every accessed dimension.
-    pub fn shape(&self) -> Result<Array<Expr>> {
-        Ok(self.shape.clone())
-    }
-
-    /// Return explicit strides, or an empty array for compact storage.
-    pub fn strides(&self) -> Result<Array<Expr>> {
-        Ok(self.strides.clone())
-    }
-
-    /// Return the element offset from the physical base pointer.
-    pub fn element_offset(&self) -> Result<Expr> {
-        Ok(self.elem_offset.clone())
-    }
-
-    /// Return the required data-pointer alignment in bytes.
-    pub fn data_alignment(&self) -> Result<i64> {
-        Ok(i64::from(self.data_alignment))
-    }
-
-    /// Return the divisibility guarantee for the element offset.
-    pub fn offset_factor(&self) -> Result<i64> {
-        Ok(i64::from(self.offset_factor))
-    }
-
-    /// Return the optional physical layout.
-    pub fn layout(&self) -> Result<Option<Layout>> {
-        Ok(self.layout.clone())
-    }
-
-    /// Return any explicitly allocated multidimensional address.
-    pub fn allocated_addresses(&self) -> Result<Array<Expr>> {
-        Ok(self.allocated_addr.clone())
-    }
-}
-
 impl BufferType {
-    /// Construct a compact buffer type with TVM's standard alignment metadata.
+    /// Construct a compact buffer type directly in Rust.
     pub fn new(storage_scope: &str, dtype: &str, shape: Vec<Expr>) -> Result<Self> {
-        Self::with_metadata(
+        let dtype = PrimType::new(dtype)?;
+        Self::prepare_and_allocate(
             storage_scope,
-            &PrimType::new(dtype)?,
+            &dtype,
             shape,
             Vec::new(),
-            &Expr::int("int64", 0)?,
-            64,
-            1,
+            None,
+            0,
+            0,
             None,
             Vec::new(),
             None,
@@ -335,8 +737,35 @@ impl BufferType {
         shape: Vec<Expr>,
         strides: Vec<Expr>,
         element_offset: &Expr,
-        data_alignment: i64,
-        offset_factor: i64,
+        data_alignment: i32,
+        offset_factor: i32,
+        layout: Option<&Layout>,
+        allocated_addresses: Vec<Expr>,
+        span: Option<&Span>,
+    ) -> Result<Self> {
+        Self::prepare_and_allocate(
+            storage_scope,
+            dtype,
+            shape,
+            strides,
+            Some(element_offset),
+            data_alignment,
+            offset_factor,
+            layout,
+            allocated_addresses,
+            span,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_and_allocate(
+        storage_scope: &str,
+        dtype: &PrimType,
+        shape: Vec<Expr>,
+        strides: Vec<Expr>,
+        element_offset: Option<&Expr>,
+        data_alignment: i32,
+        offset_factor: i32,
         layout: Option<&Layout>,
         allocated_addresses: Vec<Expr>,
         span: Option<&Span>,
@@ -347,47 +776,83 @@ impl BufferType {
         for stride in &strides {
             primitive_type(stride, "buffer stride")?;
         }
-        primitive_type(element_offset, "buffer element offset")?;
+        if let Some(element_offset) = element_offset {
+            primitive_type(element_offset, "buffer element offset")?;
+        }
         for address in &allocated_addresses {
             primitive_type(address, "buffer allocated address")?;
         }
-        let storage_scope = String::from(if storage_scope.is_empty() {
-            "global"
-        } else {
-            storage_scope
-        });
+        let storage_scope = String::from(storage_scope);
         let shape = Array::new(shape);
         let strides = Array::new(strides);
         let allocated_addresses = Array::new(allocated_addresses);
         let layout = layout.cloned();
-        let data_alignment = if data_alignment <= 0 {
-            64
-        } else {
-            i32::try_from(data_alignment).map_err(|_| integer_overflow("data_alignment"))?
-        };
-        let offset_factor = if offset_factor == 0 {
-            1
-        } else {
-            i32::try_from(offset_factor).map_err(|_| integer_overflow("offset_factor"))?
-        };
-        Ok(Self {
-            data: ObjectArc::new(BufferTypeObj {
-                base: TypeObj::new(span.cloned()),
-                dtype: dtype.clone(),
+        let element_offset = element_offset.cloned();
+        let prepared = crate::abi::prepare_constructor::<BufferTypeObj>(&[
+            AnyView::from(&storage_scope),
+            AnyView::from(&shape),
+            AnyView::from(&element_offset),
+            AnyView::from(&data_alignment),
+            AnyView::from(&offset_factor),
+        ])?;
+        let storage_scope: String =
+            crate::abi::prepared_field(&prepared, BufferTypeObj::TYPE_KEY, "storage_scope")?;
+        let element_offset: Expr =
+            crate::abi::prepared_field(&prepared, BufferTypeObj::TYPE_KEY, "elem_offset")?;
+        let data_alignment: i64 =
+            crate::abi::prepared_field(&prepared, BufferTypeObj::TYPE_KEY, "data_alignment")?;
+        let offset_factor: i64 =
+            crate::abi::prepared_field(&prepared, BufferTypeObj::TYPE_KEY, "offset_factor")?;
+        let data_alignment =
+            i32::try_from(data_alignment).map_err(|_| integer_overflow("data_alignment"))?;
+        let offset_factor =
+            i32::try_from(offset_factor).map_err(|_| integer_overflow("offset_factor"))?;
+        Ok(Self::from_complete_fields(
+            span.cloned(),
+            dtype.clone(),
+            storage_scope,
+            shape,
+            strides,
+            element_offset,
+            data_alignment,
+            offset_factor,
+            layout,
+            allocated_addresses,
+        ))
+    }
+
+    /// Construct a buffer type from every physical field without applying defaults.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        dtype: PrimType,
+        storage_scope: String,
+        shape: Array<Expr>,
+        strides: Array<Expr>,
+        elem_offset: Expr,
+        data_alignment: i32,
+        offset_factor: i32,
+        layout: Option<Layout>,
+        allocated_addr: Array<Expr>,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(BufferTypeObj {
+                base: TypeObj::new(span),
+                dtype,
                 storage_scope,
                 shape,
                 strides,
-                elem_offset: element_offset.clone(),
+                elem_offset,
                 data_alignment,
                 offset_factor,
                 layout,
-                allocated_addr: allocated_addresses,
+                allocated_addr,
             }),
-        })
+        }
     }
 
     /// Construct a buffer variable.  Its runtime identity is an ordinary `ir.Var`.
-    pub fn new_var(&self, name: &str) -> Result<Var> {
+    pub fn new_var(&self, name: &str) -> Var {
         Var::with_type(name, &self.clone().into())
     }
 }
@@ -415,10 +880,15 @@ impl From<BufferType> for Type {
 #[type_final]
 pub struct BufferLoadObj {
     base: ExprObj,
-    buffer: Var,
-    indices: Array<Expr>,
-    predicate: Option<Expr>,
+    pub buffer: Var,
+    pub indices: Array<Expr>,
+    pub predicate: Option<Expr>,
 }
+crate::abi::impl_object_layout!(BufferLoadObj {
+    "buffer" => buffer: Var,
+    "indices" => indices: Array<Expr>,
+    "predicate" => predicate: Option<Expr>,
+});
 
 /// Reference-counted handle to a TIR buffer read.
 #[repr(C)]
@@ -443,37 +913,59 @@ impl std::ops::Deref for BufferLoadObj {
     }
 }
 
-impl BufferLoadObj {
-    /// Return the ordinary variable carrying this access's `BufferType`.
-    pub fn buffer(&self) -> Result<Var> {
-        Ok(self.buffer.clone())
-    }
-
-    /// Return one index per accessed dimension.
-    pub fn indices(&self) -> Result<Array<Expr>> {
-        Ok(self.indices.clone())
-    }
-
-    /// Return an optional vector access predicate.
-    pub fn predicate(&self) -> Result<Option<Expr>> {
-        Ok(self.predicate.clone())
-    }
-}
-
 impl BufferLoad {
-    /// Construct a buffer read through C++ index/predicate validation and dtype legalization.
+    /// Construct a buffer read directly in Rust after validating its access types.
     pub fn new(buffer: &Var, indices: Vec<Expr>, predicate: Option<&Expr>) -> Result<Self> {
-        let indices = Array::new(indices);
-        let predicate = predicate.cloned();
-        let none = ();
-        crate::global_function!("tirx.BufferLoad")?
-            .call_packed(&[
-                AnyView::from(buffer),
-                AnyView::from(&indices),
-                AnyView::from(&predicate),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        Self::with_span(buffer, indices, predicate, None)
+    }
+
+    /// Construct a validated buffer read with optional source metadata.
+    pub fn with_span(
+        buffer: &Var,
+        indices: Vec<Expr>,
+        predicate: Option<&Expr>,
+        span: Option<&Span>,
+    ) -> Result<Self> {
+        let buffer_type = buffer_type(buffer)?;
+        validate_access_dimensions(buffer, &buffer_type, &indices)?;
+        validate_nonfinal_indices(&indices)?;
+
+        let buffer_dtype = buffer_type.dtype.clone();
+        let result_type = if let Some(index) = indices.last() {
+            let index_type = primitive_type(index, "buffer load index")?;
+            vectorized_buffer_type(&buffer_dtype, &index_type)?
+        } else {
+            buffer_dtype.clone()
+        };
+        if let Some(predicate) = predicate {
+            validate_load_predicate(&buffer_dtype, indices.last(), predicate)?;
+        }
+
+        Ok(Self::from_complete_fields(
+            span.cloned(),
+            result_type.into(),
+            buffer.clone(),
+            Array::new(indices),
+            predicate.cloned(),
+        ))
+    }
+
+    /// Construct a buffer load from every physical field without re-deriving its result type.
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        ty: Type,
+        buffer: Var,
+        indices: Array<Expr>,
+        predicate: Option<Expr>,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(BufferLoadObj {
+                base: ExprObj::new(span, ty),
+                buffer,
+                indices,
+                predicate,
+            }),
+        }
     }
 }
 
@@ -492,11 +984,17 @@ impl From<BufferLoad> for Expr {
 #[type_final]
 pub struct BufferStoreObj {
     base: StmtObj,
-    buffer: Var,
-    value: Expr,
-    indices: Array<Expr>,
-    predicate: Option<Expr>,
+    pub buffer: Var,
+    pub value: Expr,
+    pub indices: Array<Expr>,
+    pub predicate: Option<Expr>,
 }
+crate::abi::impl_object_layout!(BufferStoreObj {
+    "buffer" => buffer: Var,
+    "value" => value: Expr,
+    "indices" => indices: Array<Expr>,
+    "predicate" => predicate: Option<Expr>,
+});
 
 /// Reference-counted handle to a TIR buffer write.
 #[repr(C)]
@@ -521,49 +1019,252 @@ impl std::ops::Deref for BufferStoreObj {
     }
 }
 
-impl BufferStoreObj {
-    /// Return the ordinary variable carrying this access's `BufferType`.
-    pub fn buffer(&self) -> Result<Var> {
-        Ok(self.buffer.clone())
-    }
-
-    /// Return the value written by this store.
-    pub fn value(&self) -> Result<Expr> {
-        Ok(self.value.clone())
-    }
-
-    /// Return one index per accessed dimension.
-    pub fn indices(&self) -> Result<Array<Expr>> {
-        Ok(self.indices.clone())
-    }
-
-    /// Return an optional vector access predicate.
-    pub fn predicate(&self) -> Result<Option<Expr>> {
-        Ok(self.predicate.clone())
-    }
-}
-
 impl BufferStore {
-    /// Construct a buffer write through C++ shape, lane, and predicate validation.
+    /// Construct a buffer write directly in Rust after validating its access types.
     pub fn new(
         buffer: &Var,
         value: &Expr,
         indices: Vec<Expr>,
         predicate: Option<&Expr>,
     ) -> Result<Self> {
-        let indices = Array::new(indices);
-        let predicate = predicate.cloned();
-        let none = ();
-        crate::global_function!("tirx.BufferStore")?
-            .call_packed(&[
-                AnyView::from(buffer),
-                AnyView::from(value),
-                AnyView::from(&indices),
-                AnyView::from(&predicate),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        Self::with_span(buffer, value, indices, predicate, None)
     }
+
+    /// Construct a validated buffer write with optional source metadata.
+    pub fn with_span(
+        buffer: &Var,
+        value: &Expr,
+        indices: Vec<Expr>,
+        predicate: Option<&Expr>,
+        span: Option<&Span>,
+    ) -> Result<Self> {
+        let buffer_type = buffer_type(buffer)?;
+        validate_access_dimensions(buffer, &buffer_type, &indices)?;
+        validate_nonfinal_indices(&indices)?;
+
+        let buffer_dtype = buffer_type.dtype.clone();
+        let value_dtype = primitive_type(value, "buffer store value")?;
+        let index_dtype = indices
+            .last()
+            .map(|index| primitive_type(index, "buffer store index"))
+            .transpose()?;
+        let expected_dtype = match &index_dtype {
+            Some(index_dtype) => vectorized_buffer_type(&buffer_dtype, index_dtype)?,
+            None => buffer_dtype.clone(),
+        };
+        if expected_dtype.dtype != value_dtype.dtype {
+            return Err(Error::new(
+                TYPE_ERROR,
+                &format!(
+                    "dtype mismatch on BufferStore: expected {}, got {}",
+                    expected_dtype.dtype.to_string(),
+                    value_dtype.dtype.to_string()
+                ),
+                "",
+            ));
+        }
+        if let Some(predicate) = predicate {
+            validate_store_predicate(&value_dtype, predicate)?;
+        }
+
+        Ok(Self::from_complete_fields(
+            span.cloned(),
+            buffer.clone(),
+            value.clone(),
+            Array::new(indices),
+            predicate.cloned(),
+        ))
+    }
+
+    /// Construct a buffer write from every physical field after external validation.
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        buffer: Var,
+        value: Expr,
+        indices: Array<Expr>,
+        predicate: Option<Expr>,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(BufferStoreObj {
+                base: StmtObj::new(span),
+                buffer,
+                value,
+                indices,
+                predicate,
+            }),
+        }
+    }
+}
+
+fn buffer_type(buffer: &Var) -> Result<BufferType> {
+    buffer.ty.clone().try_cast::<BufferType>().map_err(|_| {
+        Error::new(
+            TYPE_ERROR,
+            "buffer access requires a variable whose type is tirx.BufferType",
+            "",
+        )
+    })
+}
+
+fn validate_access_dimensions(
+    buffer: &Var,
+    buffer_type: &BufferType,
+    indices: &[Expr],
+) -> Result<()> {
+    if buffer_type.shape.len() == indices.len() {
+        Ok(())
+    } else {
+        Err(Error::new(
+            VALUE_ERROR,
+            &format!(
+                "buffer {} is {}-dimensional but received {} indices",
+                buffer.name.as_str(),
+                buffer_type.shape.len(),
+                indices.len()
+            ),
+            "",
+        ))
+    }
+}
+
+fn validate_nonfinal_indices(indices: &[Expr]) -> Result<()> {
+    for index in indices.iter().take(indices.len().saturating_sub(1)) {
+        let dtype = primitive_type(index, "buffer index")?.dtype;
+        if encoded_lanes(dtype) != 1 {
+            return Err(Error::new(
+                TYPE_ERROR,
+                "only the last index of a buffer access may be a vector type",
+                "",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn vectorized_buffer_type(buffer: &PrimType, index: &PrimType) -> Result<PrimType> {
+    let buffer_lanes = encoded_lanes(buffer.dtype);
+    let index_lanes = encoded_lanes(index.dtype);
+    let buffer_scalable = buffer_lanes < -1;
+    let index_scalable = index_lanes < -1;
+    if buffer_scalable && index_scalable {
+        return Err(Error::new(
+            TYPE_ERROR,
+            "index dtype and buffer dtype cannot both be scalable",
+            "",
+        ));
+    }
+    let lanes = lane_factor(buffer.dtype)?
+        .checked_mul(lane_factor(index.dtype)?)
+        .ok_or_else(|| Error::new(VALUE_ERROR, "buffer access lane count overflow", ""))?;
+    vector_type_like(buffer.dtype, lanes, buffer_scalable || index_scalable)
+}
+
+fn validate_load_predicate(
+    buffer: &PrimType,
+    index: Option<&Expr>,
+    predicate: &Expr,
+) -> Result<()> {
+    let index = index
+        .map(|index| primitive_type(index, "buffer load index"))
+        .transpose()?;
+    let predicate = primitive_type(predicate, "buffer load predicate")?;
+    let index_scalable = index
+        .as_ref()
+        .is_some_and(|index| encoded_lanes(index.dtype) < -1);
+    let predicate_scalable = encoded_lanes(predicate.dtype) < -1;
+    if index_scalable != predicate_scalable {
+        return Err(Error::new(
+            TYPE_ERROR,
+            "predicate mask dtype and load indices must both be scalable",
+            "",
+        ));
+    }
+    let index_lanes = index
+        .as_ref()
+        .map(|index| lane_factor(index.dtype))
+        .transpose()?
+        .unwrap_or(1);
+    let expected_lanes = index_lanes
+        .checked_mul(lane_factor(buffer.dtype)?)
+        .ok_or_else(|| Error::new(VALUE_ERROR, "buffer load lane count overflow", ""))?;
+    if lane_factor(predicate.dtype)? != expected_lanes {
+        return Err(Error::new(
+            TYPE_ERROR,
+            "predicate mask lanes must match the loaded value lanes",
+            "",
+        ));
+    }
+    validate_predicate_element_type(&predicate)
+}
+
+fn validate_store_predicate(value: &PrimType, predicate: &Expr) -> Result<()> {
+    let predicate = primitive_type(predicate, "buffer store predicate")?;
+    if (encoded_lanes(value.dtype) < -1) != (encoded_lanes(predicate.dtype) < -1) {
+        return Err(Error::new(
+            TYPE_ERROR,
+            "predicate mask dtype and value dtype must both be scalable",
+            "",
+        ));
+    }
+    if lane_factor(value.dtype)? != lane_factor(predicate.dtype)? {
+        return Err(Error::new(
+            TYPE_ERROR,
+            "predicate mask lanes must match the stored value lanes",
+            "",
+        ));
+    }
+    validate_predicate_element_type(&predicate)
+}
+
+fn validate_predicate_element_type(predicate: &PrimType) -> Result<()> {
+    let dtype = predicate.dtype;
+    let is_boolean = dtype.code == DLDataTypeCode::kDLBool as u8;
+    let is_uint1 = dtype.code == DLDataTypeCode::kDLUInt as u8 && dtype.bits == 1;
+    if is_boolean || is_uint1 {
+        Ok(())
+    } else {
+        Err(Error::new(
+            TYPE_ERROR,
+            "predicate mask elements must be boolean values",
+            "",
+        ))
+    }
+}
+
+fn vector_type_like(element: DLDataType, lanes: i32, scalable: bool) -> Result<PrimType> {
+    if lanes <= 0 || lanes > i32::from(i16::MAX) {
+        return Err(Error::new(
+            VALUE_ERROR,
+            "buffer access lane count does not fit the DLPack encoding",
+            "",
+        ));
+    }
+    let encoded = if scalable {
+        i16::try_from(-lanes)
+    } else {
+        i16::try_from(lanes)
+    }
+    .map_err(|_| Error::new(VALUE_ERROR, "invalid buffer access lane count", ""))?;
+    PrimType::from_dtype(DLDataType {
+        code: element.code,
+        bits: element.bits,
+        lanes: encoded as u16,
+    })
+}
+
+fn lane_factor(dtype: DLDataType) -> Result<i32> {
+    let encoded = encoded_lanes(dtype);
+    if encoded < -1 {
+        Ok(i32::from(-encoded))
+    } else if encoded > 0 {
+        Ok(i32::from(encoded))
+    } else {
+        Err(Error::new(TYPE_ERROR, "invalid vector lane encoding", ""))
+    }
+}
+
+fn encoded_lanes(dtype: DLDataType) -> i16 {
+    dtype.lanes as i16
 }
 
 impl From<BufferStore> for Stmt {
@@ -574,14 +1275,20 @@ impl From<BufferStore> for Stmt {
     }
 }
 
-/// Opaque Rust view of one declared buffer region.
+/// ABI-complete Rust representation of one declared buffer region.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.BufferRegion"]
 #[type_final]
 pub struct BufferRegionObj {
     base: PrimExprConvertibleObj,
+    pub buffer: Var,
+    pub region: Array<Range>,
 }
+crate::abi::impl_object_layout!(BufferRegionObj {
+    "buffer" => buffer: Var,
+    "region" => region: Array<Range>,
+});
 
 /// Reference-counted handle to a multidimensional buffer region.
 #[repr(C)]
@@ -606,25 +1313,33 @@ impl std::ops::Deref for BufferRegionObj {
     }
 }
 
-impl BufferRegionObj {
-    /// Return the ordinary variable carrying the region's `BufferType`.
-    pub fn buffer(&self) -> Result<Var> {
-        crate::reflected_field!(self, "buffer")?.try_into()
-    }
-
-    /// Return one range per declared dimension.
-    pub fn region(&self) -> Result<Array<Range>> {
-        crate::reflected_field!(self, "region")?.try_into()
-    }
-}
-
 impl BufferRegion {
-    /// Construct a declared region through its polymorphic C++ base.
+    /// Validate and construct a declared region directly in Rust.
     pub fn new(buffer: &Var, region: Vec<Range>) -> Result<Self> {
         let region = Array::new(region);
-        crate::global_function!("tirx.BufferRegion")?
-            .call_packed(&[AnyView::from(buffer), AnyView::from(&region)])?
-            .try_into()
+        let dimensions = buffer_type(buffer)?.shape.len();
+        if dimensions != region.len() {
+            return Err(Error::new(
+                VALUE_ERROR,
+                &format!(
+                    "BufferRegion dimension mismatch: buffer has {dimensions}, region has {}",
+                    region.len()
+                ),
+                "",
+            ));
+        }
+        Ok(Self::from_complete_fields(buffer.clone(), region))
+    }
+
+    /// Construct a buffer region from every physical field after external validation.
+    pub fn from_complete_fields(buffer: Var, region: Array<Range>) -> Self {
+        Self {
+            data: crate::abi::allocate_object(BufferRegionObj {
+                base: PrimExprConvertibleObj::new(),
+                buffer,
+                region,
+            }),
+        }
     }
 }
 
@@ -643,8 +1358,17 @@ impl From<BufferRegion> for PrimExprConvertible {
 #[type_final]
 pub struct MatchBufferRegionObj {
     base: tvm_ffi::Object,
-    buffer: Var,
-    source: BufferRegion,
+    pub buffer: Var,
+    pub source: BufferRegion,
+}
+crate::abi::impl_object_layout!(MatchBufferRegionObj {
+    "buffer" => buffer: Var,
+    "source" => source: BufferRegion,
+});
+
+impl crate::abi::ConstructorRecipe for MatchBufferRegionObj {
+    const NUM_INPUTS: usize = 2;
+    const DERIVED_FIELDS: &'static [&'static str] = &[];
 }
 
 /// Reference-counted handle to a match-buffer declaration.
@@ -662,23 +1386,38 @@ impl std::ops::Deref for MatchBufferRegion {
     }
 }
 
-impl MatchBufferRegionObj {
-    /// Return the target buffer variable introduced by this declaration.
-    pub fn buffer(&self) -> Result<Var> {
-        Ok(self.buffer.clone())
-    }
-
-    /// Return the source region matched by the target buffer.
-    pub fn source(&self) -> Result<BufferRegion> {
-        Ok(self.source.clone())
-    }
-}
-
 impl MatchBufferRegion {
-    /// Construct through C++ scope, dtype, alignment, and region validation.
+    /// Validate the declaration and allocate the object directly in Rust.
+    ///
+    /// Analyzer-backed validation runs through the type's direct C ABI
+    /// constructor-preparation table; it never allocates the final node.
     pub fn new(buffer: &Var, source: &BufferRegion) -> Result<Self> {
-        crate::global_function!("tirx.MatchBufferRegion")?
-            .call_packed(&[AnyView::from(buffer), AnyView::from(source)])?
-            .try_into()
+        let _ = crate::abi::prepare_constructor::<MatchBufferRegionObj>(&[
+            AnyView::from(buffer),
+            AnyView::from(source),
+        ])?;
+        Ok(Self::from_complete_fields(buffer.clone(), source.clone()))
+    }
+
+    /// Allocate a match-buffer declaration directly after its invariants have been validated.
+    pub fn from_complete_fields(buffer: Var, source: BufferRegion) -> Self {
+        Self {
+            data: crate::abi::allocate_object(MatchBufferRegionObj {
+                base: tvm_ffi::Object::new(),
+                buffer,
+                source,
+            }),
+        }
     }
 }
+
+crate::abi::impl_rust_allocatable!(
+    AxisObj,
+    IterObj,
+    TileLayoutObj,
+    BufferTypeObj,
+    BufferLoadObj,
+    BufferStoreObj,
+    BufferRegionObj,
+    MatchBufferRegionObj,
+);

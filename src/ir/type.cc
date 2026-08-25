@@ -90,7 +90,12 @@ Type Type::Missing() {
   return missing;
 }
 
-bool Type::IsMissing() const { return this->same_as(Type::Missing()); }
+bool Type::IsMissing() const {
+  // TypeNode itself is the language-independent missing-type sentinel.  Use
+  // the exact runtime type instead of one process-local object address so
+  // frontends can construct the sentinel through the shared object ABI.
+  return this->type_index() == TypeNode::RuntimeTypeIndex();
+}
 
 OpaqueType::OpaqueType() : Type(ffi::UnsafeInit{}) { data_ = ffi::make_object<OpaqueTypeNode>(); }
 

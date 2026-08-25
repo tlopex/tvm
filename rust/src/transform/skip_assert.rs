@@ -39,9 +39,9 @@ impl AssertSkipper {
 
     fn map_sequence(&mut self, value: SeqStmt) -> Result<Any> {
         let mut flattened = Vec::new();
-        for statement in value.statements()?.iter() {
+        for statement in value.seq.iter() {
             if let Ok(sequence) = statement.clone().try_cast::<SeqStmt>() {
-                flattened.extend(sequence.statements()?.iter());
+                flattened.extend(sequence.seq.iter());
             } else if !is_evaluate_zero(&statement)? {
                 flattened.push(statement);
             }
@@ -58,7 +58,7 @@ fn is_evaluate_zero(statement: &Stmt) -> Result<bool> {
     let Ok(evaluate) = statement.clone().try_cast::<Evaluate>() else {
         return Ok(false);
     };
-    Ok(int_value(&evaluate.value()?)? == Some(0))
+    Ok(int_value(&evaluate.value)? == Some(0))
 }
 
 /// Build the Rust implementation of `tirx.SkipAssert` as a normal TVM pass.

@@ -28,6 +28,7 @@
 #include <tvm/ffi/reflection/registry.h>
 #include <tvm/ffi/string.h>
 #include <tvm/ir/expr.h>
+#include <tvm/tirx/data_producer_c_api.h>
 #include <tvm/tirx/layout.h>
 #include <tvm/tirx/var.h>
 

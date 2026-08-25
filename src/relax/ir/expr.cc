@@ -17,12 +17,15 @@
  * under the License.
  */
 #include <tvm/ffi/reflection/registry.h>
+#include <tvm/ir/constructor_c_api.h>
 #include <tvm/relax/analysis.h>
 #include <tvm/relax/block_builder.h>
 #include <tvm/relax/expr.h>
 #include <tvm/relax/type.h>
 
 #include <unordered_set>
+
+#include "../../ir/c_abi_utils.h"
 
 namespace tvm {
 namespace relax {
@@ -287,8 +290,16 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   });
 }
 
-Function::Function(ffi::Array<Var> params, Expr body, ffi::Optional<Type> ret_ty, bool is_pure,
-                   DictAttrs attrs, Span span) {
+namespace {
+
+struct FunctionDerivedFields {
+  SeqExpr body;
+  Type ret_ty;
+  Type function_ty;
+};
+
+FunctionDerivedFields DeriveFunctionFields(const ffi::Array<Var>& params, const Expr& body,
+                                           ffi::Optional<Type> ret_ty, bool is_pure) {
   // Set the function type.
   // For function, we take a conservative approach and require the function type
   // to be known at construction time.
@@ -334,15 +345,42 @@ Function::Function(ffi::Array<Var> params, Expr body, ffi::Optional<Type> ret_ty
     ret_ty = EraseToWellDefined(body_ty.value(), f_var_map);
   }
 
-  FuncType func_ty(param_ty, ret_ty.value(), is_pure);
+  Type normalized_ret_ty = ret_ty.value();
+  return {SeqExpr(body), normalized_ret_ty, FuncType(param_ty, normalized_ret_ty, is_pure)};
+}
+
+ffi::Map<ffi::String, ffi::Any> PrepareFunctionFields(const ffi::Array<Var>& params,
+                                                      const Expr& body, ffi::Optional<Type> ret_ty,
+                                                      bool is_pure) {
+  FunctionDerivedFields fields = DeriveFunctionFields(params, body, std::move(ret_ty), is_pure);
+  return {{"body", fields.body}, {"ret_ty", fields.ret_ty}, {"ty", fields.function_ty}};
+}
+
+TVMFFIAny PrepareFunction(const TVMFFIAny* args, int32_t num_args) noexcept {
+  return ir_abi::ReturnExpected([&]() {
+    ir_abi::CheckArity(num_args, 4);
+    TVM_FFI_CHECK(args != nullptr, TypeError) << "Relax Function constructor arguments are null";
+    return PrepareFunctionFields(
+        ir_abi::FromABI<ffi::Array<Var>>(args[0]), ir_abi::FromABI<Expr>(args[1]),
+        ir_abi::FromABI<ffi::Optional<Type>>(args[2]), ir_abi::FromABI<bool>(args[3]));
+  });
+}
+
+const TVMIRConstructorVTable kFunctionConstructorVTable{4, &PrepareFunction};
+
+}  // namespace
+
+Function::Function(ffi::Array<Var> params, Expr body, ffi::Optional<Type> ret_ty, bool is_pure,
+                   DictAttrs attrs, Span span) {
+  FunctionDerivedFields fields = DeriveFunctionFields(params, body, std::move(ret_ty), is_pure);
 
   // set the fields
   ffi::ObjectPtr<FunctionNode> n = ffi::make_object<FunctionNode>();
   n->params = std::move(params);
-  n->body = std::move(body);
-  n->ret_ty = ret_ty.value();
+  n->body = std::move(fields.body);
+  n->ret_ty = std::move(fields.ret_ty);
   n->is_pure = is_pure;
-  n->ty = std::move(func_ty);
+  n->ty = std::move(fields.function_ty);
   n->attrs = std::move(attrs);
   n->span = std::move(span);
   data_ = std::move(n);
@@ -350,6 +388,10 @@ Function::Function(ffi::Array<Var> params, Expr body, ffi::Optional<Type> ret_ty
 
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
+  refl::EnsureTypeAttrColumn(TVM_IR_CONSTRUCTOR_VTABLE_ATTR);
+  refl::TypeAttrDef<FunctionNode>().attr(
+      TVM_IR_CONSTRUCTOR_VTABLE_ATTR,
+      reinterpret_cast<void*>(const_cast<TVMIRConstructorVTable*>(&kFunctionConstructorVTable)));
   refl::GlobalDef().def("relax.Function",
                         [](ffi::Array<Var> params, Expr body, ffi::Optional<Type> ret_ty,
                            bool is_pure, DictAttrs attrs, Span span) {

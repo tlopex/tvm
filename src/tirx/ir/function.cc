@@ -23,11 +23,14 @@
  */
 #include <tvm/ffi/function.h>
 #include <tvm/ffi/reflection/registry.h>
+#include <tvm/ir/constructor_c_api.h>
 #include <tvm/relax/expr.h>
 #include <tvm/relax/type.h>
 #include <tvm/s_tir/analysis.h>
 #include <tvm/tirx/function.h>
 #include <tvm/tirx/op.h>
+
+#include "../../ir/c_abi_utils.h"
 
 namespace tvm {
 namespace tirx {
@@ -38,9 +41,10 @@ TVM_FFI_STATIC_INIT_BLOCK() {
 }
 
 namespace {
-tvm::Type InferType(const PrimFunc& prim_func) {
+tvm::Type InferType(const ffi::Array<tirx::Var>& function_params, const Type& function_ret_type,
+                    const Stmt& function_body) {
   ffi::Array<tvm::Type> params;
-  for (const auto& param : prim_func->params) {
+  for (const auto& param : function_params) {
     tvm::Type param_ty = [&]() -> tvm::Type {
       if (param->ty.as<BufferTypeNode>()) {
         BufferVar buf(param);
@@ -63,38 +67,64 @@ tvm::Type InferType(const PrimFunc& prim_func) {
   }
 
   tvm::Type ret = [&]() -> tvm::Type {
-    if (const auto* prim = prim_func->ret_type.as<PrimTypeNode>()) {
+    if (const auto* prim = function_ret_type.as<PrimTypeNode>()) {
       return tvm::PrimType(prim->dtype);
-    } else if (IsVoidType(prim_func->ret_type)) {
+    } else if (IsVoidType(function_ret_type)) {
       return relax::TupleType(ffi::Array<tvm::Type>{});
     } else {
       return relax::AnyType();
     }
   }();
 
-  bool purity = prim_func->body.defined() ? s_tir::IsPureFunction(prim_func) : false;
+  bool purity =
+      function_body.defined() ? s_tir::IsPureFunctionFields(function_params, function_body) : false;
 
   return relax::FuncType(params, ret, purity);
 }
+
+struct PrimFuncDerivedFields {
+  Type ret_type;
+  Type function_type;
+};
+
+PrimFuncDerivedFields DerivePrimFuncTypes(const ffi::Array<tirx::Var>& params, const Stmt& body,
+                                          Type ret_type) {
+  if (ret_type.IsMissing()) {
+    ret_type = VoidType();
+  }
+  return {ret_type, InferType(params, ret_type, body)};
+}
+
+TVMFFIAny PreparePrimFunc(const TVMFFIAny* args, int32_t num_args) noexcept {
+  return ir_abi::ReturnExpected([&]() {
+    ir_abi::CheckArity(num_args, 3);
+    TVM_FFI_CHECK(args != nullptr, TypeError) << "PrimFunc constructor arguments are null";
+    PrimFuncDerivedFields derived =
+        DerivePrimFuncTypes(ir_abi::FromABI<ffi::Array<tirx::Var>>(args[0]),
+                            ir_abi::FromABI<Stmt>(args[1]), ir_abi::FromABI<Type>(args[2]));
+    return ffi::Map<ffi::String, ffi::Any>{{"ret_type", derived.ret_type},
+                                           {"ty", derived.function_type}};
+  });
+}
+
+const TVMIRConstructorVTable kPrimFuncConstructorVTable{3, &PreparePrimFunc};
 }  // namespace
 
 // Get the function type of a PrimFunc
 PrimFunc::PrimFunc(ffi::Array<tirx::Var> params, Stmt body, Type ret_type, DictAttrs attrs,
                    Span span) {
-  if (ret_type.IsMissing()) {
-    ret_type = VoidType();
-  }
+  PrimFuncDerivedFields derived = DerivePrimFuncTypes(params, body, std::move(ret_type));
+  ret_type = std::move(derived.ret_type);
+  Type function_type = std::move(derived.function_type);
 
   auto n = ffi::make_object<PrimFuncNode>();
   n->params = std::move(params);
   n->body = std::move(body);
   n->ret_type = std::move(ret_type);
   n->attrs = std::move(attrs);
-  n->ty = relax::FuncType::OpaqueFunc();
+  n->ty = std::move(function_type);
   n->span = std::move(span);
   data_ = std::move(n);
-
-  (*this)->ty = InferType(*this);
 }
 
 FuncType PrimFuncNode::func_type_annotation() const {
@@ -161,6 +191,10 @@ ffi::Optional<TensorIntrin> TensorIntrin::Get(ffi::String name, bool allow_missi
 
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
+  refl::EnsureTypeAttrColumn(TVM_IR_CONSTRUCTOR_VTABLE_ATTR);
+  refl::TypeAttrDef<PrimFuncNode>().attr(
+      TVM_IR_CONSTRUCTOR_VTABLE_ATTR,
+      reinterpret_cast<void*>(const_cast<TVMIRConstructorVTable*>(&kPrimFuncConstructorVTable)));
   refl::GlobalDef()
       .def("tirx.PrimFunc",
            [](ffi::Array<tirx::Var> params, Stmt body, Type ret_type, DictAttrs attrs, Span span) {

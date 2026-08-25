@@ -20,10 +20,37 @@
 /*
  * Axis definitions, attributes, fusers/splitters, and registrations.
  */
+#include <tvm/ir/constructor_c_api.h>
+
+#include "../../../ir/c_abi_utils.h"
 #include "utils.h"
 
 namespace tvm {
 namespace tirx {
+
+namespace {
+
+int64_t AxisAnyHash(const ffi::Any& src) {
+  return static_cast<int64_t>(src.cast<Axis>()->registry_index());
+}
+
+bool AxisAnyEqual(const ffi::Any& lhs, const ffi::Any& rhs) {
+  return lhs.cast<Axis>()->registry_index() == rhs.cast<Axis>()->registry_index();
+}
+
+TVMFFIAny PrepareAxis(const TVMFFIAny* args, int32_t num_args) noexcept {
+  return ir_abi::ReturnExpected([&]() {
+    ir_abi::CheckArity(num_args, 1);
+    TVM_FFI_CHECK(args != nullptr, TypeError) << "Axis constructor arguments are null";
+    int64_t registry_index =
+        static_cast<int64_t>(Axis::Get(ir_abi::FromABI<ffi::String>(args[0]))->registry_index());
+    return ffi::Map<ffi::String, ffi::Any>{{"registry_index", registry_index}};
+  });
+}
+
+const TVMIRConstructorVTable kAxisConstructorVTable{1, &PrepareAxis};
+
+}  // namespace
 
 /**************** Axis ****************/
 // AxisNode
@@ -88,7 +115,9 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
   refl::TypeAttrDef<AxisNode>()
       .def("__data_to_json__", [](const AxisNode* node) -> ffi::String { return node->name; })
-      .def("__data_from_json__", [](const ffi::String& name) -> Axis { return Axis::Get(name); });
+      .def("__data_from_json__", [](const ffi::String& name) -> Axis { return Axis::Get(name); })
+      .attr(refl::type_attr::kAnyHash, reinterpret_cast<void*>(&AxisAnyHash))
+      .attr(refl::type_attr::kAnyEqual, reinterpret_cast<void*>(&AxisAnyEqual));
 }
 
 // Axis
@@ -349,6 +378,10 @@ TVM_REGISTER_AXIS("TLane").set_attr<bool>("thread", false);
 
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
+  refl::EnsureTypeAttrColumn(TVM_IR_CONSTRUCTOR_VTABLE_ATTR);
+  refl::TypeAttrDef<AxisNode>().attr(
+      TVM_IR_CONSTRUCTOR_VTABLE_ATTR,
+      reinterpret_cast<void*>(const_cast<TVMIRConstructorVTable*>(&kAxisConstructorVTable)));
   refl::GlobalDef().def("tirx.AxisGet", [](ffi::String name) -> Axis { return Axis::Get(name); });
 }
 

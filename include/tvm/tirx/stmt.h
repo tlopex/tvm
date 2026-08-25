@@ -787,7 +787,7 @@ class BufferRegionNode : public PrimExprConvertibleNode {
         .def_ro("region", &BufferRegionNode::region);
   }
 
-  TVM_DLL PrimExpr ToPrimExpr() const final;
+  TVM_DLL PrimExpr ToPrimExpr() const;
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.BufferRegion", BufferRegionNode, PrimExprConvertibleNode);

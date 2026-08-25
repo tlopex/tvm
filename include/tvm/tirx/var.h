@@ -168,8 +168,6 @@ class IterVarNode : public PrimExprConvertibleNode {
    */
   mutable Span span;
 
-  PrimExpr ToPrimExpr() const final { return var; }
-
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<IterVarNode>()

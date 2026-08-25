@@ -65,7 +65,7 @@ impl BoundVariableRenamer {
         if kind == DefRegionKind::None {
             return Ok(Any::from(value));
         }
-        let name = format!("{}{}", value.name()?.as_str(), self.suffix);
-        Ok(Any::from(Var::with_type(&name, &value.ty()?)?))
+        let name = format!("{}{}", value.name.as_str(), self.suffix);
+        Ok(Any::from(Var::with_type(&name, &value.ty)))
     }
 }

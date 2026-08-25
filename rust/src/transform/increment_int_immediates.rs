@@ -32,7 +32,7 @@ struct IncrementIntImmediates;
 #[tvm_ffi::dispatch(map)]
 impl IncrementIntImmediates {
     fn map_integer(&mut self, value: IntImm) -> Result<Any> {
-        let dtype = value.ty()?.try_cast::<PrimType>()?.dtype()?;
-        Ok(Any::from(IntImm::from_dtype(dtype, value.value()? + 1)?))
+        let dtype = value.ty.clone().try_cast::<PrimType>()?.dtype;
+        Ok(Any::from(IntImm::from_dtype(dtype, value.value + 1)?))
     }
 }

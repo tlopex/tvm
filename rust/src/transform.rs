@@ -24,6 +24,27 @@ use crate::ir::IRModule;
 use crate::relax::RelaxFunction;
 use crate::tirx::PrimFunc;
 
+// Packed functions are intentionally confined to pass integration. Generated
+// IR objects and their semantic constructors use direct Rust allocation and C
+// ABI type vtables instead.
+macro_rules! pass_global_function {
+    ($name:literal) => {{
+        static FUNCTION: std::sync::OnceLock<tvm_ffi::Function> = std::sync::OnceLock::new();
+
+        if let Some(function) = FUNCTION.get() {
+            Ok::<&'static tvm_ffi::Function, tvm_ffi::Error>(function)
+        } else {
+            // Do not cache failures: the dynamic TVM library may be loaded and
+            // register this function before a later call.
+            let function = tvm_ffi::Function::get_global($name)?;
+            let _ = FUNCTION.set(function);
+            Ok(FUNCTION
+                .get()
+                .expect("a successful global-function lookup must populate its cache"))
+        }
+    }};
+}
+
 mod eliminate_unit_loops;
 mod increment_int_immediates;
 mod rename_bound_variables;
@@ -97,10 +118,11 @@ impl std::ops::Deref for PassContext {
 impl Pass {
     /// Run this pass on an IRModule using TVM's current PassContext.
     ///
-    /// This consumes the Rust handle.  The current Rust FFI still transports it
-    /// as an lvalue, so C++ may perform one copy-on-write step at the boundary.
+    /// This consumes the Rust module handle. The current Rust FFI still
+    /// transports it as an lvalue, so C++ may perform one copy-on-write step at
+    /// the boundary.
     pub fn run(&self, module: IRModule) -> Result<IRModule> {
-        crate::global_function!("transform.RunPass")?
+        pass_global_function!("transform.RunPass")?
             .call_tuple_with_len::<2, _>((self, module))?
             .try_into()
     }
@@ -138,7 +160,7 @@ where
 
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
-    crate::global_function!("tirx.transform.CreatePrimFuncPass")?
+    pass_global_function!("tirx.transform.CreatePrimFuncPass")?
         .call_packed(&[
             tvm_ffi::AnyView::from(&pass_func),
             tvm_ffi::AnyView::from(&pass_info),
@@ -172,7 +194,7 @@ where
     });
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
-    crate::global_function!("relax.transform.MakeFunctionPass")?
+    pass_global_function!("relax.transform.MakeFunctionPass")?
         .call_packed(&[
             tvm_ffi::AnyView::from(&pass_func),
             tvm_ffi::AnyView::from(&pass_info),
@@ -206,7 +228,7 @@ where
     });
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
-    crate::global_function!("transform.MakeModulePass")?
+    pass_global_function!("transform.MakeModulePass")?
         .call_packed(&[
             tvm_ffi::AnyView::from(&pass_func),
             tvm_ffi::AnyView::from(&pass_info),
@@ -222,7 +244,7 @@ fn create_pass_info(
 ) -> Result<Any> {
     let required = Array::<String>::new(required.into_iter().map(String::from).collect());
     let name = String::from(name);
-    crate::global_function!("transform.PassInfo")?.call_packed(&[
+    pass_global_function!("transform.PassInfo")?.call_packed(&[
         tvm_ffi::AnyView::from(&opt_level),
         tvm_ffi::AnyView::from(&name),
         tvm_ffi::AnyView::from(&required),

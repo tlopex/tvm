@@ -62,21 +62,21 @@ fn eliminate_unit_loop(
     value: TirFor,
     mutator: &mut MutateContext<'_, UnitLoopEliminationState>,
 ) -> Result<Any> {
-    let minimum = Expr::try_from(mutator.mutate(&value.minimum()?)?)?;
-    let extent = Expr::try_from(mutator.mutate(&value.extent()?)?)?;
-    let annotations = value.annotations()?;
-    let kind = value.kind()?;
+    let minimum = Expr::try_from(mutator.mutate(&value.min)?)?;
+    let extent = Expr::try_from(mutator.mutate(&value.extent)?)?;
+    let annotations = value.annotations.clone();
+    let kind = value.kind;
     let should_eliminate = kind != crate::tirx::ForKind::ThreadBinding
         && int_value(&extent)? == Some(1)
         && annotations.is_empty();
 
     if should_eliminate {
-        let key = object_identity(&value.loop_var()?);
+        let key = object_identity(&value.loop_var);
         let previous = mutator
             .state_mut()
             .replacements
             .insert(key, minimum.clone());
-        let body_result = mutator.mutate(&value.body()?);
+        let body_result = mutator.mutate(&value.body);
         match previous {
             Some(previous) => {
                 mutator.state_mut().replacements.insert(key, previous);
@@ -88,17 +88,16 @@ fn eliminate_unit_loop(
         return body_result;
     }
 
-    let loop_var =
-        Var::try_from(mutator.mutate_with(&value.loop_var()?, DefRegionKind::Recursive)?)?;
-    let body = Stmt::try_from(mutator.mutate(&value.body()?)?)?;
+    let loop_var = Var::try_from(mutator.mutate_with(&value.loop_var, DefRegionKind::Recursive)?)?;
+    let body = Stmt::try_from(mutator.mutate(&value.body)?)?;
     let thread_binding =
-        Option::<crate::tirx::IterVar>::try_from(mutator.mutate(&value.thread_binding()?)?)?;
+        Option::<crate::tirx::IterVar>::try_from(mutator.mutate(&value.thread_binding)?)?;
     let annotations = AnyMap::<String>::try_from(mutator.mutate(&annotations)?)?;
     let step = value
-        .step()?
-        .map(|step| mutator.mutate(&step).and_then(Expr::try_from))
+        .step
+        .as_ref()
+        .map(|step| mutator.mutate(step).and_then(Expr::try_from))
         .transpose()?;
-    let span = value.span()?;
 
     Ok(Any::from(TirFor::with_metadata(
         &loop_var,
@@ -109,7 +108,7 @@ fn eliminate_unit_loop(
         thread_binding.as_ref(),
         &annotations,
         step.as_ref(),
-        span.as_ref(),
+        value.span.as_ref(),
     )?))
 }
 

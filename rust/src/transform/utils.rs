@@ -23,7 +23,7 @@ use crate::ir::{Expr, IntImm};
 
 pub(super) fn int_value(expr: &Expr) -> Result<Option<i64>> {
     match expr.clone().try_cast::<IntImm>() {
-        Ok(value) => Ok(Some(value.value()?)),
+        Ok(value) => Ok(Some(value.value)),
         Err(_) => Ok(None),
     }
 }

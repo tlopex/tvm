@@ -18,9 +18,9 @@
  */
 
 use tvm_ffi::derive::{Object, ObjectRef};
-use tvm_ffi::{AnyView, Array, ObjectArc, ObjectRefCast, Result};
+use tvm_ffi::{AnyView, Array, ObjectArc, ObjectCore, ObjectRefCast, Result};
 
-use crate::ir::{BaseFunc, BaseFuncObj, DictAttrs, Expr, ExprObj, Span, Type, Var};
+use crate::ir::{BaseFunc, BaseFuncObj, DictAttrs, Expr, ExprObj, Span, TupleType, Type, Var};
 /// ABI-complete Rust representation of Relax's tuple expression.
 #[repr(C)]
 #[derive(Object)]
@@ -28,8 +28,11 @@ use crate::ir::{BaseFunc, BaseFuncObj, DictAttrs, Expr, ExprObj, Span, Type, Var
 #[type_final]
 pub struct TupleObj {
     base: ExprObj,
-    fields: Array<Expr>,
+    pub fields: Array<Expr>,
 }
+crate::abi::impl_object_layout!(TupleObj {
+    "fields" => fields: Array<Expr>,
+});
 
 /// Reference-counted handle to a Relax tuple expression.
 #[repr(C)]
@@ -54,21 +57,34 @@ impl std::ops::Deref for TupleObj {
     }
 }
 
-impl TupleObj {
-    /// Return the tuple fields.
-    pub fn fields(&self) -> Result<Array<Expr>> {
-        Ok(self.fields.clone())
-    }
-}
-
 impl Tuple {
-    /// Construct a Relax tuple through C++ so its derived tuple type is preserved.
-    pub fn new(fields: Vec<Expr>) -> Result<Self> {
-        let fields = Array::new(fields);
-        let none = ();
-        crate::global_function!("relax.Tuple")?
-            .call_packed(&[AnyView::from(&fields), AnyView::from(&none)])?
-            .try_into()
+    /// Construct a Relax tuple directly in Rust and derive its tuple type when possible.
+    pub fn new(fields: Vec<Expr>) -> Self {
+        Self::with_span(fields, None)
+    }
+
+    /// Construct a Relax tuple with optional source metadata.
+    pub fn with_span(fields: Vec<Expr>, span: Option<&Span>) -> Self {
+        let tuple_type = fields
+            .iter()
+            .map(|field| field.ty.clone())
+            .collect::<Vec<_>>();
+        let tuple_type = if tuple_type.iter().any(Type::is_missing) {
+            Type::missing()
+        } else {
+            TupleType::new(tuple_type).into()
+        };
+        Self::from_complete_fields(span.cloned(), tuple_type, Array::new(fields))
+    }
+
+    /// Construct a tuple from every physical field without re-deriving its type.
+    pub fn from_complete_fields(span: Option<Span>, ty: Type, fields: Array<Expr>) -> Self {
+        Self {
+            data: crate::abi::allocate_object(TupleObj {
+                base: ExprObj::new(span, ty),
+                fields,
+            }),
+        }
     }
 }
 
@@ -87,10 +103,15 @@ impl From<Tuple> for Expr {
 #[type_final]
 pub struct IfObj {
     base: ExprObj,
-    cond: Expr,
-    true_branch: SeqExpr,
-    false_branch: SeqExpr,
+    pub cond: Expr,
+    pub true_branch: SeqExpr,
+    pub false_branch: SeqExpr,
 }
+crate::abi::impl_object_layout!(IfObj {
+    "cond" => cond: Expr,
+    "true_branch" => true_branch: SeqExpr,
+    "false_branch" => false_branch: SeqExpr,
+});
 
 /// Reference-counted handle to a Relax conditional expression.
 #[repr(C)]
@@ -115,34 +136,46 @@ impl std::ops::Deref for IfObj {
     }
 }
 
-impl IfObj {
-    /// Return the conditional expression.
-    pub fn condition(&self) -> Result<Expr> {
-        Ok(self.cond.clone())
-    }
-
-    /// Return the sequence evaluated when the condition is true.
-    pub fn true_branch(&self) -> Result<SeqExpr> {
-        Ok(self.true_branch.clone())
-    }
-
-    /// Return the sequence evaluated when the condition is false.
-    pub fn false_branch(&self) -> Result<SeqExpr> {
-        Ok(self.false_branch.clone())
-    }
-}
-
 impl If {
     /// Construct a Relax conditional directly in Rust, wrapping each branch in `SeqExpr`.
-    pub fn new(condition: &Expr, true_branch: &Expr, false_branch: &Expr) -> Result<Self> {
-        Ok(Self {
-            data: ObjectArc::new(IfObj {
-                base: ExprObj::new(Type::missing()?, None),
-                cond: condition.clone(),
-                true_branch: SeqExpr::from_expr(true_branch)?,
-                false_branch: SeqExpr::from_expr(false_branch)?,
+    pub fn new(condition: &Expr, true_branch: &Expr, false_branch: &Expr) -> Self {
+        Self::with_span(condition, true_branch, false_branch, None)
+    }
+
+    /// Construct a Relax conditional with optional source metadata.
+    pub fn with_span(
+        condition: &Expr,
+        true_branch: &Expr,
+        false_branch: &Expr,
+        span: Option<&Span>,
+    ) -> Self {
+        let true_branch = SeqExpr::from_expr(true_branch);
+        let false_branch = SeqExpr::from_expr(false_branch);
+        Self::from_complete_fields(
+            span.cloned(),
+            Type::missing(),
+            condition.clone(),
+            true_branch,
+            false_branch,
+        )
+    }
+
+    /// Construct a conditional from every physical field without normalizing its branches.
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        ty: Type,
+        cond: Expr,
+        true_branch: SeqExpr,
+        false_branch: SeqExpr,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(IfObj {
+                base: ExprObj::new(span, ty),
+                cond,
+                true_branch,
+                false_branch,
             }),
-        })
+        }
     }
 }
 
@@ -160,9 +193,13 @@ impl From<If> for Expr {
 #[type_key = "relax.expr.Binding"]
 pub struct BindingObj {
     base: tvm_ffi::Object,
-    span: Option<Span>,
-    var: Var,
+    pub span: Option<Span>,
+    pub var: Var,
 }
+crate::abi::impl_object_layout!(BindingObj {
+    "span" => span: Option<Span>,
+    "var" => var: Var,
+});
 
 /// Reference-counted handle to any Relax binding.
 #[repr(C)]
@@ -179,18 +216,6 @@ impl std::ops::Deref for Binding {
     }
 }
 
-impl BindingObj {
-    /// Return optional source metadata carried by this binding.
-    pub fn span(&self) -> Result<Option<crate::ir::Span>> {
-        Ok(self.span.clone())
-    }
-
-    /// Return the variable defined by this binding.
-    pub fn variable(&self) -> Result<Var> {
-        Ok(self.var.clone())
-    }
-}
-
 /// ABI-complete Rust representation of a Relax variable binding.
 #[repr(C)]
 #[derive(Object)]
@@ -198,8 +223,11 @@ impl BindingObj {
 #[type_final]
 pub struct VarBindingObj {
     base: BindingObj,
-    value: Expr,
+    pub value: Expr,
 }
+crate::abi::impl_object_layout!(VarBindingObj {
+    "value" => value: Expr,
+});
 
 /// Reference-counted handle to `var = value` in Relax.
 #[repr(C)]
@@ -224,26 +252,29 @@ impl std::ops::Deref for VarBindingObj {
     }
 }
 
-impl VarBindingObj {
-    /// Return the expression assigned to the binding variable.
-    pub fn value(&self) -> Result<Expr> {
-        Ok(self.value.clone())
-    }
-}
-
 impl VarBinding {
     /// Construct `variable = value` directly in Rust.
-    pub fn new(variable: &Var, value: &Expr) -> Result<Self> {
-        Ok(Self {
-            data: ObjectArc::new(VarBindingObj {
+    pub fn new(variable: &Var, value: &Expr) -> Self {
+        Self::with_span(variable, value, None)
+    }
+
+    /// Construct `variable = value` with optional source metadata.
+    pub fn with_span(variable: &Var, value: &Expr, span: Option<&Span>) -> Self {
+        Self::from_complete_fields(span.cloned(), variable.clone(), value.clone())
+    }
+
+    /// Construct a variable binding from every physical field.
+    pub fn from_complete_fields(span: Option<Span>, var: Var, value: Expr) -> Self {
+        Self {
+            data: crate::abi::allocate_object(VarBindingObj {
                 base: BindingObj {
                     base: tvm_ffi::Object::new(),
-                    span: None,
-                    var: variable.clone(),
+                    span,
+                    var,
                 },
-                value: value.clone(),
+                value,
             }),
-        })
+        }
     }
 }
 
@@ -261,9 +292,13 @@ impl From<VarBinding> for Binding {
 #[type_key = "relax.expr.BindingBlock"]
 pub struct BindingBlockObj {
     base: tvm_ffi::Object,
-    bindings: Array<Binding>,
-    span: Option<Span>,
+    pub bindings: Array<Binding>,
+    pub span: Option<Span>,
 }
+crate::abi::impl_object_layout!(BindingBlockObj {
+    "bindings" => bindings: Array<Binding>,
+    "span" => span: Option<Span>,
+});
 
 /// Reference-counted handle to an ordered Relax binding block.
 #[repr(C)]
@@ -280,28 +315,26 @@ impl std::ops::Deref for BindingBlock {
     }
 }
 
-impl BindingBlockObj {
-    /// Return bindings in evaluation order.
-    pub fn bindings(&self) -> Result<Array<Binding>> {
-        Ok(self.bindings.clone())
-    }
-
-    /// Return optional source metadata carried by this block.
-    pub fn span(&self) -> Result<Option<crate::ir::Span>> {
-        Ok(self.span.clone())
-    }
-}
-
 impl BindingBlock {
     /// Construct an ordinary (non-dataflow) binding block directly in Rust.
-    pub fn new(bindings: Vec<Binding>) -> Result<Self> {
-        Ok(Self {
-            data: ObjectArc::new(BindingBlockObj {
+    pub fn new(bindings: Vec<Binding>) -> Self {
+        Self::with_span(bindings, None)
+    }
+
+    /// Construct an ordinary binding block with optional source metadata.
+    pub fn with_span(bindings: Vec<Binding>, span: Option<&Span>) -> Self {
+        Self::from_complete_fields(Array::new(bindings), span.cloned())
+    }
+
+    /// Construct a binding block from every physical field.
+    pub fn from_complete_fields(bindings: Array<Binding>, span: Option<Span>) -> Self {
+        Self {
+            data: crate::abi::allocate_object(BindingBlockObj {
                 base: tvm_ffi::Object::new(),
-                bindings: Array::new(bindings),
-                span: None,
+                bindings,
+                span,
             }),
-        })
+        }
     }
 }
 
@@ -312,9 +345,13 @@ impl BindingBlock {
 #[type_final]
 pub struct SeqExprObj {
     base: ExprObj,
-    blocks: Array<BindingBlock>,
-    body: Expr,
+    pub blocks: Array<BindingBlock>,
+    pub body: Expr,
 }
+crate::abi::impl_object_layout!(SeqExprObj {
+    "blocks" => blocks: Array<BindingBlock>,
+    "body" => body: Expr,
+});
 
 /// Reference-counted handle to ordered bindings followed by a body expression.
 #[repr(C)]
@@ -339,33 +376,41 @@ impl std::ops::Deref for SeqExprObj {
     }
 }
 
-impl SeqExprObj {
-    /// Return binding blocks in evaluation order.
-    pub fn blocks(&self) -> Result<Array<BindingBlock>> {
-        Ok(self.blocks.clone())
-    }
-
-    /// Return the value produced after all binding blocks execute.
-    pub fn body(&self) -> Result<Expr> {
-        Ok(self.body.clone())
-    }
-}
-
 impl SeqExpr {
     /// Construct ordered binding blocks followed by `body` directly in Rust.
-    pub fn new(blocks: Vec<BindingBlock>, body: &Expr) -> Result<Self> {
-        Ok(Self {
-            data: ObjectArc::new(SeqExprObj {
-                base: ExprObj::new(Type::missing()?, None),
-                blocks: Array::new(blocks),
-                body: body.clone(),
-            }),
-        })
+    pub fn new(blocks: Vec<BindingBlock>, body: &Expr) -> Self {
+        Self::with_span(blocks, body, None)
     }
 
-    fn from_expr(body: &Expr) -> Result<Self> {
+    /// Construct a sequence expression with optional source metadata.
+    pub fn with_span(blocks: Vec<BindingBlock>, body: &Expr, span: Option<&Span>) -> Self {
+        Self::from_complete_fields(
+            span.cloned(),
+            Type::missing(),
+            Array::new(blocks),
+            body.clone(),
+        )
+    }
+
+    /// Construct a sequence expression from every physical field without re-deriving its type.
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        ty: Type,
+        blocks: Array<BindingBlock>,
+        body: Expr,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(SeqExprObj {
+                base: ExprObj::new(span, ty),
+                blocks,
+                body,
+            }),
+        }
+    }
+
+    fn from_expr(body: &Expr) -> Self {
         match body.clone().try_cast::<Self>() {
-            Ok(sequence) => Ok(sequence),
+            Ok(sequence) => sequence,
             Err(_) => Self::new(Vec::new(), body),
         }
     }
@@ -386,10 +431,21 @@ impl From<SeqExpr> for Expr {
 #[type_final]
 pub struct RelaxFunctionObj {
     base: BaseFuncObj,
-    params: Array<Var>,
-    body: SeqExpr,
-    ret_ty: Type,
-    is_pure: bool,
+    pub params: Array<Var>,
+    pub body: SeqExpr,
+    pub ret_ty: Type,
+    pub is_pure: bool,
+}
+crate::abi::impl_object_layout!(RelaxFunctionObj {
+    "params" => params: Array<Var>,
+    "body" => body: SeqExpr,
+    "ret_ty" => ret_ty: Type,
+    "is_pure" => is_pure: bool,
+});
+
+impl crate::abi::ConstructorRecipe for RelaxFunctionObj {
+    const NUM_INPUTS: usize = 4;
+    const DERIVED_FIELDS: &'static [&'static str] = &["body", "ret_ty", "ty"];
 }
 
 /// Reference-counted handle to a Relax function.
@@ -415,45 +471,76 @@ impl std::ops::Deref for RelaxFunctionObj {
     }
 }
 
-impl RelaxFunctionObj {
-    /// Return recursively defined function parameters.
-    pub fn params(&self) -> Result<Array<Var>> {
-        Ok(self.params.clone())
-    }
-
-    /// Return the function's sequence-expression body.
-    pub fn body(&self) -> Result<SeqExpr> {
-        Ok(self.body.clone())
-    }
-
-    /// Return the declared result type.
-    pub fn return_type(&self) -> Result<Type> {
-        Ok(self.ret_ty.clone())
-    }
-
-    /// Return whether the function is declared pure.
-    pub fn is_pure(&self) -> Result<bool> {
-        Ok(self.is_pure)
-    }
-}
-
 impl RelaxFunction {
-    /// Construct a typed Relax function through C++ type inference and validation.
+    /// Construct a typed Relax function in Rust using its C ABI preparation table.
     pub fn new(params: Vec<Var>, body: &Expr, return_type: &Type, is_pure: bool) -> Result<Self> {
+        Self::with_metadata(
+            params,
+            body,
+            Some(return_type),
+            is_pure,
+            &DictAttrs::empty(),
+            None,
+        )
+    }
+
+    /// Construct a Relax function in Rust using its C ABI preparation table.
+    pub fn with_metadata(
+        params: Vec<Var>,
+        body: &Expr,
+        return_type: Option<&Type>,
+        is_pure: bool,
+        attrs: &DictAttrs,
+        span: Option<&Span>,
+    ) -> Result<Self> {
         let params = Array::new(params);
-        let return_type = Some(return_type.clone());
-        let attrs = DictAttrs::empty()?;
-        let none = ();
-        crate::global_function!("relax.Function")?
-            .call_packed(&[
-                AnyView::from(&params),
-                AnyView::from(body),
-                AnyView::from(&return_type),
-                AnyView::from(&is_pure),
-                AnyView::from(&attrs),
-                AnyView::from(&none),
-            ])?
-            .try_into()
+        let return_type = return_type.cloned();
+        let prepared = crate::abi::prepare_constructor::<RelaxFunctionObj>(&[
+            AnyView::from(&params),
+            AnyView::from(body),
+            AnyView::from(&return_type),
+            AnyView::from(&is_pure),
+        ])?;
+        let body = crate::abi::prepared_field(&prepared, RelaxFunctionObj::TYPE_KEY, "body")?;
+        let return_type =
+            crate::abi::prepared_field(&prepared, RelaxFunctionObj::TYPE_KEY, "ret_ty")?;
+        let function_type =
+            crate::abi::prepared_field(&prepared, RelaxFunctionObj::TYPE_KEY, "ty")?;
+        Ok(Self::from_complete_fields(
+            span.cloned(),
+            function_type,
+            attrs.clone(),
+            params,
+            body,
+            return_type,
+            is_pure,
+        ))
+    }
+
+    /// Construct a Relax function allocation entirely in Rust from its complete state.
+    ///
+    /// The caller supplies the already-derived function type and normalized
+    /// `SeqExpr` body.  This is the lossless constructor shape stubgen can emit
+    /// without embedding Relax's type-analysis algorithm in generated code.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        ty: Type,
+        attrs: DictAttrs,
+        params: Array<Var>,
+        body: SeqExpr,
+        ret_ty: Type,
+        is_pure: bool,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(RelaxFunctionObj {
+                base: BaseFuncObj::new(span, ty, attrs),
+                params,
+                body,
+                ret_ty,
+                is_pure,
+            }),
+        }
     }
 }
 
@@ -473,3 +560,12 @@ impl From<RelaxFunction> for Expr {
             .expect("ir.BaseFunc must be a subtype of ir.Expr")
     }
 }
+
+crate::abi::impl_rust_allocatable!(
+    TupleObj,
+    IfObj,
+    VarBindingObj,
+    BindingBlockObj,
+    SeqExprObj,
+    RelaxFunctionObj,
+);

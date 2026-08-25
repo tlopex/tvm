@@ -26,8 +26,32 @@
 #include <tvm/te/operation.h>
 #include <tvm/te/tensor.h>
 
+#include "../ir/c_abi_utils.h"
+
 namespace tvm {
 namespace te {
+
+namespace {
+
+TVMFFIAny TensorGetShape(TVMFFIAny value) noexcept {
+  return ir_abi::ReturnExpected([&]() { return ir_abi::FromABI<Tensor>(value)->GetShape(); });
+}
+
+TVMFFIAny TensorGetDataType(TVMFFIAny value) noexcept {
+  return ir_abi::ReturnExpected([&]() { return ir_abi::FromABI<Tensor>(value)->GetDataType(); });
+}
+
+TVMFFIAny TensorGetNameHint(TVMFFIAny value) noexcept {
+  return ir_abi::ReturnExpected([&]() { return ir_abi::FromABI<Tensor>(value)->GetNameHint(); });
+}
+
+const TVMTIRXDataProducerVTable kTensorDataProducerVTable{
+    &TensorGetShape,
+    &TensorGetDataType,
+    &TensorGetNameHint,
+};
+
+}  // namespace
 
 void TensorNode::RegisterReflection() {
   namespace refl = tvm::ffi::reflection;
@@ -38,7 +62,14 @@ void TensorNode::RegisterReflection() {
       .def_ro("value_index", &TensorNode::value_index);
 }
 
-TVM_FFI_STATIC_INIT_BLOCK() { TensorNode::RegisterReflection(); }
+TVM_FFI_STATIC_INIT_BLOCK() {
+  namespace refl = tvm::ffi::reflection;
+  TensorNode::RegisterReflection();
+  refl::EnsureTypeAttrColumn(TVM_TIRX_DATA_PRODUCER_VTABLE_ATTR);
+  refl::TypeAttrDef<TensorNode>().attr(
+      TVM_TIRX_DATA_PRODUCER_VTABLE_ATTR,
+      reinterpret_cast<void*>(const_cast<TVMTIRXDataProducerVTable*>(&kTensorDataProducerVTable)));
+}
 
 IterVar thread_axis(Range dom, std::string tag) {
   return IterVar(dom, PrimVar(tag, dom.defined() ? dom->extent.ty() : PrimType::Int(32)),
