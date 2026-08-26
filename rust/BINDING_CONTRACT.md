@@ -90,7 +90,7 @@ The first generated slice remains intentionally small:
 | `StmtObj` | `tirx.Stmt` | `span` | base prefix |
 | `EvaluateObj` | `tirx.Evaluate` | `value` | direct after value validation |
 | `BaseFuncObj` | `ir.BaseFunc` | `attrs` | base prefix |
-| `PrimFuncObj` | `tirx.PrimFunc` | `params`, `ret_type`, `body` | C ABI preparation plus direct Rust allocation |
+| `PrimFuncObj` | `tirx.PrimFunc` | `params`, `ret_type`, `body` | reflected preparation plus direct Rust allocation |
 
 `PrimType`, `TupleType`, and the exact-base `Type::Missing` sentinel are now
 constructed directly in Rust. C++ recognizes a missing type by its exact
@@ -109,7 +109,7 @@ A binding is accepted only when every applicable check passes:
 | Complete allocator API | exact stored types by value, direct `Self` return, no hidden clone/conversion work, and visibility that preserves external invariants |
 | Constructor parity | matching defaults, rejection cases, normalization, and derived state |
 | Cross-language ABI | a C++ registered field getter can read a Rust allocation |
-| C ABI behavior tables | headers compile as C, Rust mirrors use `#[repr(C)]`/`extern "C"`, attributes contain opaque table pointers rather than `ffi.Function`, and the version/size prefix is validated before entry access |
+| Reflected behavior methods | C++ uses `ObjectDef::def`/`def_static`, Rust uses `Function::from_type_method`, and signatures use tvm-ffi-compatible values |
 | Cross-language semantics | C++ structural equality accepts Rust- and C++-created equivalents |
 | Ownership | Rust and C++ may clone/drop the handle without leaks, double drops, or dangling fields |
 | Walk/map behavior | exact callback selection, order, definition regions, identity remapping, and COW behavior |
@@ -139,12 +139,12 @@ Broader pass behavior is in
 | Direct scalar/object/optional/array/map fields | `IntImm`, `Call`, `For`, `SBlock`, Relax bindings | **GENERATE / verified** |
 | Heterogeneous `Map<String, Any>` | `DictAttrs`, annotations | **RUNTIME / verified via `AnyMap`** |
 | Direct construction with validation | `IntImm`, binary arithmetic, `SeqStmt`, `SBlockRealize` | **GENERATE or reviewed template** |
-| Complete layout, build-dependent defaults | `BufferType` | **C ABI prepare service + Rust allocation / verified** |
-| Shared registry metadata | `Axis` | **C ABI prepare service + private Rust allocation / verified** |
+| Complete layout, build-dependent defaults | `BufferType` | **reflected static prepare method + Rust allocation / verified** |
+| Shared registry metadata | `Axis` | **reflected static prepare method + private Rust allocation / verified** |
 | Cross-origin value key | `SourceName` | **Rust allocation + value equality without local interning / verified** |
-| Refactored polymorphic behavior | `Layout`, `PrimExprConvertible`, `DataProducer` | **C ABI vtable + complete Rust layout / verified** |
+| Refactored polymorphic behavior | `Layout`, `PrimExprConvertible`, `DataProducer` | **tvm-ffi reflected methods + complete Rust layout / verified** |
 | Former hidden STL storage | `Source` | **ABI-shareable fields + Rust allocation / verified** |
-| Complex semantic constructor | `BufferType`, `PrimFunc`, Relax `Function`, match buffer | **C ABI preparation + complete-field Rust allocation / verified** |
+| Complex semantic constructor | `BufferType`, `PrimFunc`, Relax `Function`, match buffer | **reflected static preparation + complete-field Rust allocation / verified** |
 | Derived mutable indexes | `IRModule` construction/update | **GENERATE rebuild logic / verified** |
 | Consuming `RValueRef<T>` packed argument | pass boundaries | **RUNTIME gap** |
 | Pass examples and analyses | `analysis`, `transform/*` | **PROTOTYPE ONLY** |
@@ -152,7 +152,7 @@ Broader pass behavior is in
 An incomplete type is safe only as a runtime-owned handle. Stubgen must not
 expose `ObjectArc::new` for it or pretend that its reflected fields are the
 complete physical object. A type formerly blocked by a native vptr becomes
-constructible only after its behavior is moved to a registered C ABI table.
+constructible only after its behavior is moved to registered tvm-ffi type methods.
 
 ## Important ABI details
 
@@ -189,8 +189,8 @@ constructible only after its behavior is moved to a registered C ABI table.
   and explicitly clone while delegating to this owned path.
 - A preparation-backed constructor has a generated `ConstructorRecipe`
   contract containing its exact input arity and complete derived-field key
-  set. Runtime calls reject a native table whose declared arity or returned map
-  shape differs, rather than silently ignoring newly derived physical state.
+  set. Runtime calls reject a reflected method whose returned map shape differs,
+  rather than silently ignoring newly derived physical state.
 - A complete-field allocator is an implementation mechanism, not automatically
   a safe public constructor. For registry-identified objects such as `Axis`,
   arbitrary physical fields can create a name/index mismatch, so only the
@@ -199,10 +199,10 @@ constructible only after its behavior is moved to a registered C ABI table.
 - Generated object references must not implement unconditional `DerefMut`.
   Handles can share one allocation, so mutation requires structural mutation
   or an explicit uniqueness/COW mechanism.
-- A behavior-only base that was abstract before its virtual methods moved to a
-  C ABI table remains non-instantiable. Its native default constructor is
+- A behavior-only base that was abstract before its virtual methods moved to
+  reflected type methods remains non-instantiable. Its native default constructor is
   protected, reflection publishes no creator, and Rust constructs its prefix
-  only while allocating a registered concrete child with the required table.
+  only while allocating a registered concrete child with the required methods.
 - `ObjectLayout` and `RustAllocatable` answer different questions: the former
   says Rust knows the bytes of a prefix, while the latter says the complete
   native type may be a final allocation. Base prefixes such as `LayoutObj` and
@@ -227,26 +227,23 @@ constructible only after its behavior is moved to a registered C ABI table.
 - A complete-field allocator and any convenience constructor that only fills
   Rust fields return the object directly. `Result<Self>` is reserved for a
   real failure source: parsing, checked narrowing, semantic validation, a
-  fallible cast, or a C ABI preparation hook. Generated callers must not need
+  fallible cast, or a reflected preparation method. Generated callers must not need
   `?` or `unwrap()` around plain `ObjectArc::new` allocation.
-- A `.cc` file may implement or register a table entry because the underlying
-  compiler algorithm lives in C++, but the table declaration, arguments,
-  result, and calling convention must remain pure C ABI. No C++ class, virtual
-  dispatch, STL value, reference, or exception crosses that boundary.
-- Every C ABI function table starts with `abi_version` and `struct_size`.
-  Readers reject a different ABI version or a table smaller than the prefix
-  they were generated against; append-only growth may retain the version when
-  the existing prefix remains compatible.
+- A `.cc` file may implement a reflected method because the underlying compiler
+  algorithm lives in C++, but registration and calls must use tvm-ffi's typed
+  method mechanism. No C++ class ABI, virtual dispatch, or STL value crosses
+  the language boundary.
 - Acceptance tests enumerate registered runtime types and require every
-  concrete descendant of a behavior-only base to register a complete table.
+  concrete descendant of a behavior-only base to register the complete method
+  set.
 
 ## Stubgen output ownership
 
 - **GENERATE:** ABI-complete ordinary object structs with public physical
   fields, reference wrappers, read-only `Deref`, inheritance, casts, and
   constructor bodies whose semantics are fully available.
-- **RUNTIME:** `ObjectArc`, `AnyMap`, reusable packed argument holders, cached
-  C ABI type-attribute lookup, and direct behavior/preparation vtable calls.
+- **RUNTIME:** `ObjectArc`, `AnyMap`, reusable packed argument holders,
+  `Function::from_type_method`, and reflected behavior/preparation calls.
 - **RECIPE:** reviewed constructor semantics that generate Rust validation,
   defaults, normalization, and derived fields.
 - **ABI BLOCKER:** native vptrs, unreflected members, or non-ABI-shareable
@@ -268,15 +265,15 @@ when all of the following are true:
    conversions or clones, and returns `Self`; identity-bound allocators remain
    private behind their validated or registry-backed constructor;
 3. semantic constructors either contain reviewed Rust validation or call a
-   registered C ABI preparation table before delegating to that allocator;
+   registered reflected preparation method before delegating to that allocator;
 4. no IR constructor calls a packed global, and no generated object wrapper
    exposes cloning getters or unconditional `DerefMut`;
 5. C++ can inspect, traverse, compare, retain, and release Rust allocations,
    while Rust can consume C++ allocations through the same wrappers;
-6. C ABI table headers compile as C and both languages exercise every table
-   entry used by the handwritten slice;
+6. both languages exercise every reflected type method used by the handwritten
+   slice;
 7. behavior-only bases expose no reflection creator and cannot produce a
-   vtable-less standalone object; and
+   method-less standalone object; and
 8. the generated/layout-input fingerprint is checked against the loaded
    library before direct allocation; and
 9. the complete C++, Rust, and Python suites pass against one build.

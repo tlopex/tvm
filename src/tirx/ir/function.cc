@@ -23,14 +23,11 @@
  */
 #include <tvm/ffi/function.h>
 #include <tvm/ffi/reflection/registry.h>
-#include <tvm/ir/constructor_c_api.h>
 #include <tvm/relax/expr.h>
 #include <tvm/relax/type.h>
 #include <tvm/s_tir/analysis.h>
 #include <tvm/tirx/function.h>
 #include <tvm/tirx/op.h>
-
-#include "../../ir/c_abi_utils.h"
 
 namespace tvm {
 namespace tirx {
@@ -95,22 +92,13 @@ PrimFuncDerivedFields DerivePrimFuncTypes(const ffi::Array<tirx::Var>& params, c
   return {ret_type, InferType(params, ret_type, body)};
 }
 
-TVMFFIAny PreparePrimFunc(const TVMFFIAny* args, int32_t num_args) noexcept {
-  return ir_abi::ReturnExpected([&]() {
-    ir_abi::CheckArity(num_args, 3);
-    TVM_FFI_CHECK(args != nullptr, TypeError) << "PrimFunc constructor arguments are null";
-    PrimFuncDerivedFields derived =
-        DerivePrimFuncTypes(ir_abi::FromABI<ffi::Array<tirx::Var>>(args[0]),
-                            ir_abi::FromABI<Stmt>(args[1]), ir_abi::FromABI<Type>(args[2]));
-    return ffi::Map<ffi::String, ffi::Any>{{"ret_type", derived.ret_type},
-                                           {"ty", derived.function_type}};
-  });
-}
-
-const TVMIRConstructorVTable kPrimFuncConstructorVTable{
-    TVM_IR_CONSTRUCTOR_VTABLE_ABI_VERSION, static_cast<uint32_t>(sizeof(TVMIRConstructorVTable)), 3,
-    &PreparePrimFunc};
 }  // namespace
+
+ffi::Map<ffi::String, ffi::Any> PrimFuncNode::PrepareFFI(ffi::Array<tirx::Var> params, Stmt body,
+                                                         Type ret_type) {
+  PrimFuncDerivedFields derived = DerivePrimFuncTypes(params, body, std::move(ret_type));
+  return {{"ret_type", derived.ret_type}, {"ty", derived.function_type}};
+}
 
 // Get the function type of a PrimFunc
 PrimFunc::PrimFunc(ffi::Array<tirx::Var> params, Stmt body, Type ret_type, DictAttrs attrs,
@@ -193,10 +181,6 @@ ffi::Optional<TensorIntrin> TensorIntrin::Get(ffi::String name, bool allow_missi
 
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
-  refl::EnsureTypeAttrColumn(TVM_IR_CONSTRUCTOR_VTABLE_ATTR);
-  refl::TypeAttrDef<PrimFuncNode>().attr(
-      TVM_IR_CONSTRUCTOR_VTABLE_ATTR,
-      reinterpret_cast<void*>(const_cast<TVMIRConstructorVTable*>(&kPrimFuncConstructorVTable)));
   refl::GlobalDef()
       .def("tirx.PrimFunc",
            [](ffi::Array<tirx::Var> params, Stmt body, Type ret_type, DictAttrs attrs, Span span) {

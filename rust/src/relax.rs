@@ -472,7 +472,7 @@ impl std::ops::Deref for RelaxFunctionObj {
 }
 
 impl RelaxFunction {
-    /// Construct a typed Relax function in Rust using its C ABI preparation table.
+    /// Construct a typed Relax function in Rust using its reflected preparation method.
     pub fn new(params: Vec<Var>, body: &Expr, return_type: &Type, is_pure: bool) -> Result<Self> {
         Self::with_metadata(
             params,
@@ -484,7 +484,7 @@ impl RelaxFunction {
         )
     }
 
-    /// Construct a Relax function in Rust using its C ABI preparation table.
+    /// Construct a Relax function in Rust using its reflected preparation method.
     pub fn with_metadata(
         params: Vec<Var>,
         body: &Expr,

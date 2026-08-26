@@ -24,13 +24,11 @@
 #include <tvm/ffi/dtype.h>
 #include <tvm/ffi/function.h>
 #include <tvm/ffi/reflection/registry.h>
-#include <tvm/ir/constructor_c_api.h>
 #include <tvm/ir/op.h>
 #include <tvm/tirx/op.h>
 #include <tvm/tirx/op_attr_types.h>
 #include <tvm/tirx/stmt.h>
 
-#include "../../ir/c_abi_utils.h"
 #include "buffer_common.h"
 
 namespace tvm {
@@ -610,21 +608,13 @@ void ValidateMatchBufferRegion(const BufferVar& buffer, const BufferRegion& sour
   // Note that we do not check elem_offset and strides in this function
 }
 
-TVMFFIAny PrepareMatchBufferRegion(const TVMFFIAny* args, int32_t num_args) noexcept {
-  return ir_abi::ReturnExpected([&]() {
-    ir_abi::CheckArity(num_args, 2);
-    TVM_FFI_CHECK(args != nullptr, TypeError) << "MatchBufferRegion constructor arguments are null";
-    ValidateMatchBufferRegion(ir_abi::FromABI<BufferVar>(args[0]),
-                              ir_abi::FromABI<BufferRegion>(args[1]));
-    return ffi::Map<ffi::String, ffi::Any>{};
-  });
-}
-
-const TVMIRConstructorVTable kMatchBufferRegionConstructorVTable{
-    TVM_IR_CONSTRUCTOR_VTABLE_ABI_VERSION, static_cast<uint32_t>(sizeof(TVMIRConstructorVTable)), 2,
-    &PrepareMatchBufferRegion};
-
 }  // namespace
+
+ffi::Map<ffi::String, ffi::Any> MatchBufferRegionNode::PrepareFFI(BufferVar buffer,
+                                                                  BufferRegion source) {
+  ValidateMatchBufferRegion(buffer, source);
+  return {};
+}
 
 MatchBufferRegion::MatchBufferRegion(BufferVar buffer, BufferRegion source) {
   ValidateMatchBufferRegion(buffer, source);
@@ -638,10 +628,6 @@ MatchBufferRegion::MatchBufferRegion(BufferVar buffer, BufferRegion source) {
 
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
-  refl::EnsureTypeAttrColumn(TVM_IR_CONSTRUCTOR_VTABLE_ATTR);
-  refl::TypeAttrDef<MatchBufferRegionNode>().attr(
-      TVM_IR_CONSTRUCTOR_VTABLE_ATTR, reinterpret_cast<void*>(const_cast<TVMIRConstructorVTable*>(
-                                          &kMatchBufferRegionConstructorVTable)));
   refl::GlobalDef().def("tirx.MatchBufferRegion", [](BufferVar buffer, BufferRegion source) {
     return MatchBufferRegion(buffer, source);
   });

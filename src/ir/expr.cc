@@ -23,6 +23,7 @@
  */
 #include <tvm/arith/analyzer.h>
 #include <tvm/ffi/function.h>
+#include <tvm/ffi/reflection/accessor.h>
 #include <tvm/ffi/reflection/registry.h>
 #include <tvm/ir/expr.h>
 #include <tvm/ir/function.h>
@@ -33,41 +34,7 @@
 #include <cmath>
 
 #include "../support/limits.h"
-#include "c_abi_utils.h"
-
 namespace tvm {
-
-namespace {
-
-using ir_abi::ReturnExpected;
-
-TVMFFIAny IterVarToPrimExpr(TVMFFIAny value) noexcept {
-  return ReturnExpected(
-      [&]() { return ffi::AnyView::CopyFromTVMFFIAny(value).cast<tirx::IterVar>()->var; });
-}
-
-TVMFFIAny BufferRegionToPrimExpr(TVMFFIAny value) noexcept {
-  return ReturnExpected([&]() {
-    return ffi::AnyView::CopyFromTVMFFIAny(value).cast<tirx::BufferRegion>()->ToPrimExpr();
-  });
-}
-
-TVMFFIAny TensorToPrimExpr(TVMFFIAny value) noexcept {
-  return ReturnExpected(
-      [&]() { return ffi::AnyView::CopyFromTVMFFIAny(value).cast<te::Tensor>()->ToPrimExpr(); });
-}
-
-const TVMIRPrimExprConvertibleVTable kIterVarPrimExprVTable{
-    TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ABI_VERSION,
-    static_cast<uint32_t>(sizeof(TVMIRPrimExprConvertibleVTable)), &IterVarToPrimExpr};
-const TVMIRPrimExprConvertibleVTable kBufferRegionPrimExprVTable{
-    TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ABI_VERSION,
-    static_cast<uint32_t>(sizeof(TVMIRPrimExprConvertibleVTable)), &BufferRegionToPrimExpr};
-const TVMIRPrimExprConvertibleVTable kTensorPrimExprVTable{
-    TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ABI_VERSION,
-    static_cast<uint32_t>(sizeof(TVMIRPrimExprConvertibleVTable)), &TensorToPrimExpr};
-
-}  // namespace
 
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = ffi::reflection;
@@ -83,33 +50,12 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   IntImmNode::RegisterReflection();
   FloatImmNode::RegisterReflection();
   RangeNode::RegisterReflection();
-  refl::EnsureTypeAttrColumn(TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ATTR);
-  refl::TypeAttrDef<tirx::IterVarNode>().attr(
-      TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ATTR,
-      reinterpret_cast<void*>(
-          const_cast<TVMIRPrimExprConvertibleVTable*>(&kIterVarPrimExprVTable)));
-  refl::TypeAttrDef<tirx::BufferRegionNode>().attr(
-      TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ATTR,
-      reinterpret_cast<void*>(
-          const_cast<TVMIRPrimExprConvertibleVTable*>(&kBufferRegionPrimExprVTable)));
-  refl::TypeAttrDef<te::TensorNode>().attr(
-      TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ATTR,
-      reinterpret_cast<void*>(const_cast<TVMIRPrimExprConvertibleVTable*>(&kTensorPrimExprVTable)));
 }
 
 PrimExpr PrimExprConvertible::ToPrimExpr() const {
   TVM_FFI_CHECK(defined(), ValueError) << "Cannot convert an undefined object to PrimExpr";
-  static ffi::reflection::TypeAttrColumn column(TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ATTR);
-  ffi::AnyView attr = column[type_index()];
-  TVM_FFI_CHECK(attr.type_index() == ffi::TypeIndex::kTVMFFIOpaquePtr, TypeError)
-      << "Type " << GetTypeKey() << " does not register a C ABI PrimExpr conversion vtable";
-  const auto* vtable = ir_abi::CheckedVTable<TVMIRPrimExprConvertibleVTable>(
-      attr.cast<void*>(), TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ABI_VERSION, GetTypeKey(),
-      TVM_IR_PRIM_EXPR_CONVERTIBLE_VTABLE_ATTR);
-  TVM_FFI_CHECK(vtable->to_prim_expr != nullptr, TypeError)
-      << "Type " << GetTypeKey() << " registers an incomplete PrimExpr conversion vtable";
-  TVMFFIAny value = ir_abi::ToBorrowedABI(*this);
-  return ffi::details::ExpectedUnsafe::MoveFromTVMFFIAny<PrimExpr>(vtable->to_prim_expr(value))
+  return ffi::reflection::GetMethod(GetTypeKey(), "to_prim_expr")
+      .CallExpected<PrimExpr>(*this)
       .value();
 }
 

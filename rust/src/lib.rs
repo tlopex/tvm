@@ -21,8 +21,8 @@
 //!
 //! Nodes use ABI-complete `#[repr(C)]` Rust layouts and are allocated by Rust.
 //! Type-specific validation, derived fields, and formerly virtual behavior use
-//! registered C ABI function tables rather than packed constructors or the C++
-//! object ABI. All objects share the FFI header and runtime type table for
+//! registered tvm-ffi type methods rather than packed global constructors or
+//! the C++ object ABI. All objects share the FFI header and runtime type table for
 //! ownership, checked casts, and structural traversal.
 
 #[doc(hidden)]

@@ -17,17 +17,126 @@
  * under the License.
  */
 
+use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    structural_visit, structural_walk, AnyView, DefRegionKind, Result, VisitCallbacks,
-    VisitContext, VisitInterrupt, WalkOrder, WalkResult,
+    structural_visit, structural_walk, AnyView, DefRegionKind, Error, ObjectArc, Result,
+    VisitCallbacks, VisitContext, VisitInterrupt, WalkOrder, WalkResult, VALUE_ERROR,
 };
 
-use crate::ir::{CallObj, ExprObj, IntImmObj, VarObj};
+use crate::ir::{CallObj, Expr, ExprObj, IntImmObj, VarObj};
 use crate::relax::{BindingBlockObj, BindingObj, RelaxFunctionObj, SeqExprObj, VarBindingObj};
 use crate::tirx::{
     AddObj, AssertStmtObj, BufferLoadObj, BufferStoreObj, EvaluateObj, ForObj, IfThenElseObj,
     MulObj, SBlockObj, SBlockRealizeObj, SeqStmtObj, StmtObj, SubObj,
 };
+
+/// Opaque Rust view of TVM's stateful arithmetic analyzer.
+///
+/// Unlike an IR node, the analyzer has private C++ implementation state, so
+/// Rust owns only its reference-counted FFI handle and uses the registered
+/// analysis functions for operations.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "arith.Analyzer"]
+#[type_final]
+pub struct AnalyzerObj {
+    base: tvm_ffi::Object,
+}
+
+/// Shared handle to one TVM arithmetic-analysis context.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct Analyzer {
+    data: ObjectArc<AnalyzerObj>,
+}
+
+impl std::ops::Deref for Analyzer {
+    type Target = AnalyzerObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl Analyzer {
+    /// Construct a fresh native analyzer context.
+    pub fn new() -> Result<Self> {
+        tvm_ffi::cached_global_func!("arith.Analyzer")
+            .call_tuple_with_len::<0, _>(())?
+            .try_into()
+    }
+
+    /// Simplify a primitive expression with TVM's standard two analysis steps.
+    pub fn simplify(&self, expression: &Expr) -> Result<Expr> {
+        self.simplify_with_steps(expression, 2)
+    }
+
+    /// Simplify a primitive expression with an explicit analysis-step count.
+    pub fn simplify_with_steps(&self, expression: &Expr, steps: i32) -> Result<Expr> {
+        tvm_ffi::cached_global_func!("arith.AnalyzerSimplify")
+            .call_tuple_with_len::<3, _>((self, expression, steps))?
+            .try_into()
+    }
+}
+
+/// Rust mirror of TVM's `tirx::CallEffectKind` values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(i32)]
+pub enum CallEffectKind {
+    /// The call is an expression annotation that behaves like an identity.
+    ExprAnnotation = 0,
+    /// The expression does not interact with external state.
+    Pure = 1,
+    /// The expression may read external state but does not update it.
+    ReadState = 2,
+    /// The expression may update state or has unknown behavior.
+    UpdateState = 3,
+    /// The call carries special argument information.
+    SpecialCallArg = 4,
+    /// The call embeds opaque information and cannot be generated as code.
+    EmbedInfo = 5,
+    /// The call changes control flow.
+    ControlJump = 6,
+}
+
+impl CallEffectKind {
+    /// C++ `kOpaque` is an alias of `kUpdateState`.
+    pub const OPAQUE: Self = Self::UpdateState;
+
+    /// Return whether discarding evaluation could remove a state update.
+    pub fn may_update_state(self) -> bool {
+        self as i32 >= Self::UpdateState as i32
+    }
+}
+
+impl TryFrom<i64> for CallEffectKind {
+    type Error = Error;
+
+    fn try_from(value: i64) -> Result<Self> {
+        match value {
+            0 => Ok(Self::ExprAnnotation),
+            1 => Ok(Self::Pure),
+            2 => Ok(Self::ReadState),
+            3 => Ok(Self::UpdateState),
+            4 => Ok(Self::SpecialCallArg),
+            5 => Ok(Self::EmbedInfo),
+            6 => Ok(Self::ControlJump),
+            _ => Err(Error::new(
+                VALUE_ERROR,
+                &format!("unknown TIR call-effect value {value}"),
+                "",
+            )),
+        }
+    }
+}
+
+/// Classify whether evaluating an expression reads or updates external state.
+pub fn side_effect(expression: &Expr) -> Result<CallEffectKind> {
+    let value: i64 = tvm_ffi::cached_global_func!("tirx.analysis.SideEffect")
+        .call_tuple_with_len::<1, _>((expression,))?
+        .try_into()?;
+    value.try_into()
+}
 
 /// Count expression nodes using TVM's language-agnostic structural protocol.
 pub fn expr_complexity<R>(root: &R) -> Result<usize>

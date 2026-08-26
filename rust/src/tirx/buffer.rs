@@ -17,13 +17,10 @@
  * under the License.
  */
 
-use std::sync::atomic::AtomicPtr;
-
 use tvm_ffi::derive::{Object, ObjectRef};
-use tvm_ffi::tvm_ffi_sys::{TVMFFIAny, TVMFFITypeAttrColumn};
 use tvm_ffi::{
-    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Map, ObjectArc,
-    ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
+    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Function, Map,
+    ObjectArc, ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
 use super::{primitive_type, Stmt, StmtObj};
@@ -35,7 +32,7 @@ use crate::ir::{
 /// ABI-complete prefix for objects that expose tensor-like producer behavior.
 ///
 /// This base is intentionally not Rust-allocatable on its own. Concrete
-/// producers must register the shared C ABI behavior table.
+/// producers must register the shared reflected methods.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.DataProducer"]
@@ -50,21 +47,6 @@ crate::abi::impl_object_layout!(DataProducerObj {});
 pub struct DataProducer {
     data: ObjectArc<DataProducerObj>,
 }
-
-type DataProducerCall = unsafe extern "C" fn(TVMFFIAny) -> TVMFFIAny;
-
-/// Rust mirror of `TVMTIRXDataProducerVTable`.
-#[repr(C)]
-struct DataProducerVTable {
-    _abi_version: u32,
-    _struct_size: u32,
-    get_shape: Option<DataProducerCall>,
-    get_data_type: Option<DataProducerCall>,
-    get_name_hint: Option<DataProducerCall>,
-}
-
-static DATA_PRODUCER_VTABLE_COLUMN: AtomicPtr<TVMFFITypeAttrColumn> =
-    AtomicPtr::new(std::ptr::null_mut());
 
 impl std::ops::Deref for DataProducer {
     type Target = DataProducerObj;
@@ -83,43 +65,28 @@ impl std::ops::Deref for DataProducerObj {
 }
 
 impl DataProducer {
-    fn vtable(&self) -> Result<&'static DataProducerVTable> {
-        let value = AnyView::from(self);
-        crate::abi::opaque_type_vtable(
-            &DATA_PRODUCER_VTABLE_COLUMN,
-            "__data_producer_vtable__",
-            value.type_index(),
-            crate::abi::C_ABI_VTABLE_VERSION,
-        )
-    }
-
-    fn call<T>(&self, name: &str, callback: Option<DataProducerCall>) -> Result<T>
+    fn call<T>(&self, name: &str) -> Result<T>
     where
         T: TryFrom<Any, Error = Error>,
     {
-        let callback = callback.ok_or_else(|| {
-            Error::new(
-                TYPE_ERROR,
-                &format!("data-producer vtable has no `{name}` entry"),
-                "",
-            )
-        })?;
-        decode_abi_result(unsafe { callback(crate::abi::borrowed_raw(AnyView::from(self))) })
+        Function::from_type_method(AnyView::from(self).type_index(), name)?
+            .call_tuple_with_len::<1, _>((self,))?
+            .try_into()
     }
 
     /// Return the producer's logical result shape.
     pub fn shape(&self) -> Result<Array<Expr>> {
-        self.call("get_shape", self.vtable()?.get_shape)
+        self.call("get_shape")
     }
 
     /// Return the producer's primitive element type.
     pub fn data_type(&self) -> Result<PrimType> {
-        self.call("get_data_type", self.vtable()?.get_data_type)
+        self.call("get_data_type")
     }
 
     /// Return the producer's diagnostic name.
     pub fn name_hint(&self) -> Result<String> {
-        self.call("get_name_hint", self.vtable()?.get_name_hint)
+        self.call("get_name_hint")
     }
 }
 
@@ -155,35 +122,6 @@ pub struct Layout {
     data: ObjectArc<LayoutObj>,
 }
 
-type LayoutCall0 = unsafe extern "C" fn(TVMFFIAny) -> TVMFFIAny;
-type LayoutCall1 = unsafe extern "C" fn(TVMFFIAny, TVMFFIAny) -> TVMFFIAny;
-type LayoutCall2 = unsafe extern "C" fn(TVMFFIAny, TVMFFIAny, TVMFFIAny) -> TVMFFIAny;
-type LayoutCall3 = unsafe extern "C" fn(TVMFFIAny, TVMFFIAny, TVMFFIAny, TVMFFIAny) -> TVMFFIAny;
-
-/// Rust mirror of `TVMTIRXLayoutVTable`.
-#[repr(C)]
-struct LayoutVTable {
-    _abi_version: u32,
-    _struct_size: u32,
-    compatible_with_shape: Option<LayoutCall1>,
-    verify_well_formed: Option<LayoutCall0>,
-    get_size: Option<LayoutCall1>,
-    get_span: Option<LayoutCall1>,
-    apply: Option<LayoutCall1>,
-    apply_linear: Option<LayoutCall1>,
-    apply_with_shape: Option<LayoutCall2>,
-    canonicalize: Option<LayoutCall0>,
-    tile: Option<LayoutCall3>,
-    slice: Option<LayoutCall2>,
-    direct_sum: Option<LayoutCall3>,
-    is_tile_inner: Option<LayoutCall3>,
-    is_tile_outer: Option<LayoutCall3>,
-    is_direct_sum_right: Option<LayoutCall3>,
-    is_direct_sum_left: Option<LayoutCall3>,
-}
-
-static LAYOUT_VTABLE_COLUMN: AtomicPtr<TVMFFITypeAttrColumn> = AtomicPtr::new(std::ptr::null_mut());
-
 impl std::ops::Deref for Layout {
     type Target = LayoutObj;
 
@@ -192,81 +130,45 @@ impl std::ops::Deref for Layout {
     }
 }
 
-fn decode_abi_result<T>(raw: TVMFFIAny) -> Result<T>
-where
-    T: TryFrom<Any, Error = Error>,
-{
-    T::try_from(unsafe { crate::abi::result_from_raw(raw) }?)
-}
-
 impl Layout {
-    fn vtable(&self) -> Result<&'static LayoutVTable> {
-        let value = AnyView::from(self);
-        crate::abi::opaque_type_vtable(
-            &LAYOUT_VTABLE_COLUMN,
-            "__layout_vtable__",
-            value.type_index(),
-            crate::abi::C_ABI_VTABLE_VERSION,
-        )
-    }
-
-    fn missing_vtable_entry(name: &str) -> Error {
-        Error::new(
-            TYPE_ERROR,
-            &format!("layout vtable has no `{name}` entry"),
-            "",
-        )
+    fn method(&self, name: &str) -> Result<Function> {
+        Function::from_type_method(AnyView::from(self).type_index(), name)
     }
 
     #[inline]
-    fn call0<T>(&self, name: &str, callback: Option<LayoutCall0>) -> Result<T>
+    fn call0<T>(&self, name: &str) -> Result<T>
     where
         T: TryFrom<Any, Error = Error>,
     {
-        let callback = callback.ok_or_else(|| Self::missing_vtable_entry(name))?;
-        decode_abi_result(unsafe { callback(crate::abi::borrowed_raw(AnyView::from(self))) })
+        self.method(name)?
+            .call_tuple_with_len::<1, _>((self,))?
+            .try_into()
     }
 
     #[inline]
-    fn call1<T>(&self, name: &str, callback: Option<LayoutCall1>, arg0: AnyView<'_>) -> Result<T>
+    fn call1<T>(&self, name: &str, arg0: AnyView<'_>) -> Result<T>
     where
         T: TryFrom<Any, Error = Error>,
     {
-        let callback = callback.ok_or_else(|| Self::missing_vtable_entry(name))?;
-        decode_abi_result(unsafe {
-            callback(
-                crate::abi::borrowed_raw(AnyView::from(self)),
-                crate::abi::borrowed_raw(arg0),
-            )
-        })
+        self.method(name)?
+            .call_packed(&[AnyView::from(self), arg0])?
+            .try_into()
     }
 
     #[inline]
-    fn call2<T>(
-        &self,
-        name: &str,
-        callback: Option<LayoutCall2>,
-        arg0: AnyView<'_>,
-        arg1: AnyView<'_>,
-    ) -> Result<T>
+    fn call2<T>(&self, name: &str, arg0: AnyView<'_>, arg1: AnyView<'_>) -> Result<T>
     where
         T: TryFrom<Any, Error = Error>,
     {
-        let callback = callback.ok_or_else(|| Self::missing_vtable_entry(name))?;
-        decode_abi_result(unsafe {
-            callback(
-                crate::abi::borrowed_raw(AnyView::from(self)),
-                crate::abi::borrowed_raw(arg0),
-                crate::abi::borrowed_raw(arg1),
-            )
-        })
+        self.method(name)?
+            .call_packed(&[AnyView::from(self), arg0, arg1])?
+            .try_into()
     }
 
     #[inline]
     fn call3<T>(
         &self,
         name: &str,
-        callback: Option<LayoutCall3>,
         arg0: AnyView<'_>,
         arg1: AnyView<'_>,
         arg2: AnyView<'_>,
@@ -274,63 +176,41 @@ impl Layout {
     where
         T: TryFrom<Any, Error = Error>,
     {
-        let callback = callback.ok_or_else(|| Self::missing_vtable_entry(name))?;
-        decode_abi_result(unsafe {
-            callback(
-                crate::abi::borrowed_raw(AnyView::from(self)),
-                crate::abi::borrowed_raw(arg0),
-                crate::abi::borrowed_raw(arg1),
-                crate::abi::borrowed_raw(arg2),
-            )
-        })
+        self.method(name)?
+            .call_packed(&[AnyView::from(self), arg0, arg1, arg2])?
+            .try_into()
     }
 
     /// Check whether this layout can describe the supplied logical shape.
     pub fn compatible_with_shape(&self, shape: &Array<Expr>) -> Result<bool> {
-        self.call1(
-            "compatible_with_shape",
-            self.vtable()?.compatible_with_shape,
-            AnyView::from(shape),
-        )
+        self.call1("compatible_with_shape", AnyView::from(shape))
     }
 
-    /// Validate the concrete layout through its direct C ABI function table.
+    /// Validate the concrete layout through its reflected method.
     pub fn verify_well_formed(&self) -> Result<bool> {
-        self.call0("verify_well_formed", self.vtable()?.verify_well_formed)
+        self.call0("verify_well_formed")
     }
 
     /// Return the logical size for all axes or one named axis.
     pub fn get_size(&self, axis_name: Option<&str>) -> Result<Expr> {
         let axis_name = axis_name.map(String::from);
-        self.call1(
-            "get_size",
-            self.vtable()?.get_size,
-            AnyView::from(&axis_name),
-        )
+        self.call1("get_size", AnyView::from(&axis_name))
     }
 
     /// Return the physical span for all axes or one named axis.
     pub fn get_span(&self, axis_name: Option<&str>) -> Result<Expr> {
         let axis_name = axis_name.map(String::from);
-        self.call1(
-            "get_span",
-            self.vtable()?.get_span,
-            AnyView::from(&axis_name),
-        )
+        self.call1("get_span", AnyView::from(&axis_name))
     }
 
     /// Map one structured coordinate through this layout.
     pub fn apply(&self, coord: &Array<Expr>) -> Result<Map<String, Expr>> {
-        self.call1("apply", self.vtable()?.apply, AnyView::from(coord))
+        self.call1("apply", AnyView::from(coord))
     }
 
     /// Map one flattened coordinate through this layout.
     pub fn apply_linear(&self, coord: &Expr) -> Result<Map<String, Expr>> {
-        self.call1(
-            "apply_linear",
-            self.vtable()?.apply_linear,
-            AnyView::from(coord),
-        )
+        self.call1("apply_linear", AnyView::from(coord))
     }
 
     /// Map a coordinate whose dimensions are grouped by `shape`.
@@ -341,7 +221,6 @@ impl Layout {
     ) -> Result<Map<String, Expr>> {
         self.call2(
             "apply_with_shape",
-            self.vtable()?.apply_with_shape,
             AnyView::from(coord),
             AnyView::from(shape),
         )
@@ -349,7 +228,7 @@ impl Layout {
 
     /// Return the canonical form of this layout.
     pub fn canonicalize(&self) -> Result<Layout> {
-        self.call0("canonicalize", self.vtable()?.canonicalize)
+        self.call0("canonicalize")
     }
 
     /// Tile this layout with an outer tile.
@@ -361,7 +240,6 @@ impl Layout {
     ) -> Result<Layout> {
         self.call3(
             "tile",
-            self.vtable()?.tile,
             AnyView::from(outer),
             AnyView::from(outer_shape),
             AnyView::from(inner_shape),
@@ -370,12 +248,7 @@ impl Layout {
 
     /// Restrict this layout to one region.
     pub fn slice(&self, shape: &Array<Expr>, region: &Array<Range>) -> Result<Option<Layout>> {
-        self.call2(
-            "slice",
-            self.vtable()?.slice,
-            AnyView::from(shape),
-            AnyView::from(region),
-        )
+        self.call2("slice", AnyView::from(shape), AnyView::from(region))
     }
 
     /// Form the layout direct sum with a left tile.
@@ -387,7 +260,6 @@ impl Layout {
     ) -> Result<Layout> {
         self.call3(
             "direct_sum",
-            self.vtable()?.direct_sum,
             AnyView::from(left),
             AnyView::from(left_shape),
             AnyView::from(right_shape),
@@ -403,7 +275,6 @@ impl Layout {
     ) -> Result<Option<TileLayout>> {
         self.call3(
             "is_tile_inner",
-            self.vtable()?.is_tile_inner,
             AnyView::from(layout),
             AnyView::from(tiled_shape),
             AnyView::from(inner_shape),
@@ -419,7 +290,6 @@ impl Layout {
     ) -> Result<Option<Layout>> {
         self.call3(
             "is_tile_outer",
-            self.vtable()?.is_tile_outer,
             AnyView::from(layout),
             AnyView::from(tiled_shape),
             AnyView::from(outer_shape),
@@ -435,7 +305,6 @@ impl Layout {
     ) -> Result<Option<TileLayout>> {
         self.call3(
             "is_direct_sum_right",
-            self.vtable()?.is_direct_sum_right,
             AnyView::from(layout),
             AnyView::from(interleaved_shape),
             AnyView::from(right_shape),
@@ -451,7 +320,6 @@ impl Layout {
     ) -> Result<Option<Layout>> {
         self.call3(
             "is_direct_sum_left",
-            self.vtable()?.is_direct_sum_left,
             AnyView::from(layout),
             AnyView::from(interleaved_shape),
             AnyView::from(left_shape),
@@ -1395,8 +1263,8 @@ impl std::ops::Deref for MatchBufferRegion {
 impl MatchBufferRegion {
     /// Validate the declaration and allocate the object directly in Rust.
     ///
-    /// Analyzer-backed validation runs through the type's direct C ABI
-    /// constructor-preparation table; it never allocates the final node.
+    /// Analyzer-backed validation runs through the type's reflected static
+    /// preparation method; it never allocates the final node.
     pub fn new(buffer: &Var, source: &BufferRegion) -> Result<Self> {
         let _ = crate::abi::prepare_constructor::<MatchBufferRegionObj>(&[
             AnyView::from(buffer),

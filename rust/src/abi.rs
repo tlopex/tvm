@@ -19,187 +19,25 @@
 
 //! Machine-checkable layouts for Rust-allocated TVM FFI objects.
 
-use std::sync::atomic::{AtomicPtr, Ordering};
-
-use tvm_ffi::tvm_ffi_sys::{
-    TVMFFIAny, TVMFFIByteArray, TVMFFIGetTypeAttrColumn, TVMFFIGetTypeInfo, TVMFFITypeAttrColumn,
-    TVMFFITypeIndex,
-};
 use tvm_ffi::{
-    Any, AnyMap, AnyView, Error, ObjectArc, ObjectCore, Result, String, TYPE_ERROR, VALUE_ERROR,
+    Any, AnyMap, AnyView, Error, Function, ObjectArc, ObjectCore, Result, String, TYPE_ERROR,
+    VALUE_ERROR,
 };
 
-type FConstructorPrepare = unsafe extern "C" fn(*const TVMFFIAny, i32) -> TVMFFIAny;
-
-pub(crate) const C_ABI_VTABLE_VERSION: u32 = 1;
-
-/// Common prefix shared by every versioned C ABI function table.
-#[repr(C)]
-struct VTableHeader {
-    abi_version: u32,
-    struct_size: u32,
-}
-
-/// Rust mirror of `TVMIRConstructorVTable`.
-#[repr(C)]
-struct ConstructorVTable {
-    _abi_version: u32,
-    _struct_size: u32,
-    num_args: i32,
-    prepare: Option<FConstructorPrepare>,
-}
-
-static CONSTRUCTOR_VTABLE_COLUMN: AtomicPtr<TVMFFITypeAttrColumn> =
-    AtomicPtr::new(std::ptr::null_mut());
+const CONSTRUCTOR_PREPARE_METHOD: &str = "__ffi_prepare__";
 
 /// Generated shape of one semantic constructor-preparation recipe.
 ///
-/// The native table validates and derives values, while this Rust-side
+/// The native reflected method validates and derives values, while this Rust-side
 /// contract makes the expected input arity and complete output-key set part of
-/// the generated binding.  A version mismatch therefore fails explicitly
+/// the generated binding. A returned-map mismatch therefore fails explicitly
 /// instead of silently ignoring a newly derived physical field.
 pub(crate) trait ConstructorRecipe: ObjectCore {
     const NUM_INPUTS: usize;
     const DERIVED_FIELDS: &'static [&'static str];
 }
 
-/// Copy the raw cell represented by a borrowed `AnyView`.
-///
-/// The returned cell remains borrowed: callers must not drop it as an owning
-/// `Any`, and every referenced value must remain alive through the ABI call.
-pub(crate) fn borrowed_raw(value: AnyView<'_>) -> TVMFFIAny {
-    const {
-        assert!(std::mem::size_of::<AnyView<'static>>() == std::mem::size_of::<TVMFFIAny>());
-        assert!(std::mem::align_of::<AnyView<'static>>() == std::mem::align_of::<TVMFFIAny>());
-    }
-    // SAFETY: AnyView is repr(C), starts with exactly one TVMFFIAny, and its
-    // remaining PhantomData field has size zero. The assertions guard both
-    // size and alignment.
-    unsafe { *(&value as *const AnyView<'_>).cast::<TVMFFIAny>() }
-}
-
-/// Take ownership of one result returned by an Expected-style C ABI hook.
-pub(crate) unsafe fn result_from_raw(raw: TVMFFIAny) -> Result<Any> {
-    let value = Any::from_raw_ffi_any(raw);
-    if value.type_index() != TVMFFITypeIndex::kTVMFFIError as i32 {
-        return Ok(value);
-    }
-    match Error::try_from(value) {
-        Ok(error) | Err(error) => Err(error),
-    }
-}
-
-/// Fetch an immutable C ABI vtable stored as an opaque type attribute.
-///
-/// Registered attribute columns and vtables must remain valid for the process
-/// lifetime, matching the structural visit/mutate hook protocol.
-pub(crate) fn opaque_type_vtable<T>(
-    cache: &'static AtomicPtr<TVMFFITypeAttrColumn>,
-    attr_name: &'static str,
-    type_index: i32,
-    expected_version: u32,
-) -> Result<&'static T> {
-    let mut column = cache.load(Ordering::Acquire);
-    if column.is_null() {
-        let name = unsafe { TVMFFIByteArray::from_str(attr_name) };
-        column = unsafe { TVMFFIGetTypeAttrColumn(&name).cast_mut() };
-        if column.is_null() {
-            return Err(Error::new(
-                TYPE_ERROR,
-                &format!("type attribute `{attr_name}` is not registered"),
-                "",
-            ));
-        }
-        cache.store(column, Ordering::Release);
-    }
-
-    let attr = unsafe {
-        let column = &*column;
-        let index = type_index - column.begin_index;
-        if index < 0 || index >= column.size || column.data.is_null() {
-            None
-        } else {
-            Some(*column.data.add(index as usize))
-        }
-    }
-    .ok_or_else(|| {
-        let type_key = runtime_type_key(type_index);
-        Error::new(
-            TYPE_ERROR,
-            &format!("type `{type_key}` does not register `{attr_name}`"),
-            "",
-        )
-    })?;
-
-    if attr.type_index != TVMFFITypeIndex::kTVMFFIOpaquePtr as i32 {
-        let type_key = runtime_type_key(type_index);
-        return Err(Error::new(
-            TYPE_ERROR,
-            &format!("type `{type_key}` must register `{attr_name}` as an opaque C ABI vtable"),
-            "",
-        ));
-    }
-    let pointer = unsafe { attr.data_union.v_ptr };
-    let type_key = runtime_type_key(type_index);
-    if pointer.is_null() {
-        return Err(Error::new(
-            TYPE_ERROR,
-            &format!("type `{type_key}` registers a null `{attr_name}` vtable"),
-            "",
-        ));
-    }
-    let address = pointer as usize;
-    if !address.is_multiple_of(std::mem::align_of::<VTableHeader>()) {
-        return Err(Error::new(
-            TYPE_ERROR,
-            &format!("type `{type_key}` registers a misaligned `{attr_name}` vtable"),
-            "",
-        ));
-    }
-    let header = unsafe { &*pointer.cast::<VTableHeader>() };
-    if header.abi_version != expected_version {
-        return Err(Error::new(
-            TYPE_ERROR,
-            &format!(
-                "type `{type_key}` registers `{attr_name}` ABI version {}, but this binding requires {expected_version}",
-                header.abi_version
-            ),
-            "",
-        ));
-    }
-    if (header.struct_size as usize) < std::mem::size_of::<T>() {
-        return Err(Error::new(
-            TYPE_ERROR,
-            &format!(
-                "type `{type_key}` registers a {}-byte `{attr_name}` table, but this binding requires at least {} bytes",
-                header.struct_size,
-                std::mem::size_of::<T>()
-            ),
-            "",
-        ));
-    }
-    if !address.is_multiple_of(std::mem::align_of::<T>()) {
-        return Err(Error::new(
-            TYPE_ERROR,
-            &format!("type `{type_key}` registers a misaligned `{attr_name}` vtable"),
-            "",
-        ));
-    }
-    Ok(unsafe { &*pointer.cast::<T>() })
-}
-
-fn runtime_type_key(type_index: i32) -> std::string::String {
-    unsafe {
-        let info = TVMFFIGetTypeInfo(type_index);
-        if info.is_null() {
-            format!("<type_index {type_index}>")
-        } else {
-            (*info).type_key.as_str().to_owned()
-        }
-    }
-}
-
-/// Run a semantic constructor recipe through its direct C ABI table.
+/// Run a semantic constructor recipe through its reflected static type method.
 ///
 /// Every recipe returns the same representation: a map from physical field
 /// names to derived values. The caller combines those values with constructor
@@ -207,12 +45,6 @@ fn runtime_type_key(type_index: i32) -> std::string::String {
 pub(crate) fn prepare_constructor<N: ConstructorRecipe>(
     args: &[AnyView<'_>],
 ) -> Result<AnyMap<String>> {
-    let vtable = opaque_type_vtable::<ConstructorVTable>(
-        &CONSTRUCTOR_VTABLE_COLUMN,
-        "__constructor_vtable__",
-        N::type_index(),
-        C_ABI_VTABLE_VERSION,
-    )?;
     if args.len() != N::NUM_INPUTS {
         return Err(Error::new(
             TYPE_ERROR,
@@ -225,43 +57,15 @@ pub(crate) fn prepare_constructor<N: ConstructorRecipe>(
             "",
         ));
     }
-    let count = i32::try_from(N::NUM_INPUTS).map_err(|_| {
-        Error::new(
-            VALUE_ERROR,
-            "constructor preparation argument count does not fit i32",
-            "",
-        )
-    })?;
-    if count != vtable.num_args {
-        return Err(Error::new(
-            TYPE_ERROR,
-            &format!(
-                "generated recipe for `{}` has {} arguments, but its native table declares {}",
-                N::TYPE_KEY,
-                N::NUM_INPUTS,
-                vtable.num_args,
-            ),
-            "",
-        ));
-    }
-    let callback = vtable.prepare.ok_or_else(|| {
-        Error::new(
-            TYPE_ERROR,
-            &format!(
-                "type `{}` has no constructor preparation entry",
-                N::TYPE_KEY
-            ),
-            "",
-        )
-    })?;
-    let raw_args = args.iter().copied().map(borrowed_raw).collect::<Vec<_>>();
-    let raw = unsafe { callback(raw_args.as_ptr(), count) };
-    let fields = AnyMap::<String>::try_from(unsafe { result_from_raw(raw) }?)?;
+    let fields = AnyMap::<String>::try_from(
+        Function::from_type_method(N::type_index(), CONSTRUCTOR_PREPARE_METHOD)?
+            .call_packed(args)?,
+    )?;
     if fields.len() != N::DERIVED_FIELDS.len() {
         return Err(Error::new(
             TYPE_ERROR,
             &format!(
-                "generated recipe for `{}` expects {} derived fields, but its native table returned {}",
+                "generated recipe for `{}` expects {} derived fields, but its native method returned {}",
                 N::TYPE_KEY,
                 N::DERIVED_FIELDS.len(),
                 fields.len()
@@ -336,7 +140,7 @@ pub trait ObjectLayout {
 ///
 /// Layout-only base prefixes deliberately do not implement this trait.  In
 /// particular, knowing the bytes of a behavior base is not permission to
-/// create a standalone object without a registered concrete behavior table.
+/// create a standalone object without registered concrete behavior methods.
 #[doc(hidden)]
 pub trait RustAllocatable: ObjectLayout {}
 

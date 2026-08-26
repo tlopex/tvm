@@ -28,7 +28,6 @@
 #include <tvm/ffi/dtype.h>
 #include <tvm/ffi/reflection/registry.h>
 #include <tvm/ffi/string.h>
-#include <tvm/ir/expr_c_api.h>
 #include <tvm/ir/source_map.h>
 
 #include <cstddef>

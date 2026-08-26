@@ -74,5 +74,21 @@ CallEffectKind SideEffect(const PrimExpr& e) {
   return visitor.kind_;
 }
 
+CallEffectKind SideEffect(const Expr& expr) {
+  if (auto prim = expr.as<PrimExpr>()) {
+    return SideEffect(prim.value());
+  }
+  // Non-primitive calls may carry effects independently of their semantic
+  // return type. Variables and literal values are safe to discard.
+  return expr.as<CallNode>() ? CallEffectKind::kUpdateState : CallEffectKind::kPure;
+}
+
+TVM_FFI_STATIC_INIT_BLOCK() {
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef().def("tirx.analysis.SideEffect", [](const Expr& expr) -> int64_t {
+    return static_cast<int64_t>(SideEffect(expr));
+  });
+}
+
 }  // namespace tirx
 }  // namespace tvm

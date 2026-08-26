@@ -35,14 +35,12 @@ follow the shared TVM FFI ABI. Complete-field Rust allocation is separate from
 a convenience `new()`: the latter additionally needs generated validation,
 defaults, normalization, and derived-field recipes. A packed C++ constructor is
 not considered a final stubgen implementation. The formerly polymorphic
-`Layout`, `PrimExprConvertible`, and `DataProducer` bases now use registered C
-ABI vtables, and semantic constructors use a C ABI preparation table that never
-allocates the final node. These tables are declared in C-compatible headers;
-the tables called by Rust are mirrored by Rust `#[repr(C)]` structs with
-`extern "C"` entries, while native base shims use the same tables directly. No
-C++ ABI crosses the language boundary. Every table starts with an ABI version
-and byte size; both languages reject an incompatible or truncated table before
-reading any function entry. Public direct-layout fields are borrowed
+`Layout`, `PrimExprConvertible`, and `DataProducer` bases now use tvm-ffi's
+registered type methods, and semantic constructors use a reflected static
+preparation method that never allocates the final node. C++ registers these
+methods with `ObjectDef::def` or `def_static`, while Rust finds them with
+`Function::from_type_method`; argument conversion, result ownership, and error
+propagation therefore use the existing tvm-ffi function ABI. Public direct-layout fields are borrowed
 through each reference wrapper's read-only `Deref`; callers write `.clone()` explicitly
 when they need an owning handle. Recursion and rebuilding use `tvm-ffi`'s
 language-independent structural protocol.
@@ -50,7 +48,7 @@ language-independent structural protocol.
 Constructor signatures also expose where work can actually fail. Lossless
 complete-field allocation takes exact stored field types by value, moves them
 without hidden clone/conversion work, and returns the object directly. Parsing,
-validation, checked casts, and C ABI preparation return `Result`. Convenience
+validation, checked casts, and reflected preparation return `Result`. Convenience
 constructors may borrow inputs and explicitly clone only while delegating to
 the owned complete-field path. This keeps generated call sites free of
 meaningless `unwrap()` calls while preserving errors at genuine semantic
@@ -82,10 +80,16 @@ different recursion semantics matter:
   by manually controlling recursion through loop fields.
 
 The crate also adapts Rust closures into TVM PrimFunc, Relax FunctionPass, and
-module passes. `SkipAssert`, arithmetic simplification, and buffer-index-aware
-unit-loop elimination are compared with the corresponding C++ passes using
-structural equality; additional tests check definition/use identity, DAG
-memoization, ownership, annotations, and scope-sensitive recursion.
+module passes. `SkipAssert`, arithmetic and analyzer-backed control-flow
+simplification, and buffer-index-aware unit-loop elimination are compared with
+the corresponding C++ passes using structural equality. Arithmetic passes
+reuse an opaque handle to TVM's existing `arith.Analyzer` instead of copying
+its compiler rules into Rust. Control-flow simplification similarly calls the
+registered `tirx.analysis.SideEffect` service before discarding an evaluated
+expression. A two-phase module pass builds a call graph with `structural_walk`,
+treats `global_symbol` functions as external roots, and then prunes unreachable
+functions. Additional tests check definition/use identity, DAG memoization,
+ownership, annotations, and scope-sensitive recursion.
 
 The focused acceptance tests are in
 [`tests/stubgen_acceptance.rs`](tests/stubgen_acceptance.rs).  They use only
@@ -111,8 +115,8 @@ and metadata requirements found by the experiment.
 For the exact TVM/tvm-ffi build used to generate and test it, the handwritten
 surface is now a suitable golden Rust API: complete nodes allocate in Rust,
 fields borrow directly, semantic constructors do not use packed C++
-constructors, and language-specific behavior crosses only registered C ABI
-tables.  The acceptance tests cover both object origins and all four structural
+constructors, and language-specific behavior crosses only registered tvm-ffi
+type methods. The acceptance tests cover both object origins and all four structural
 APIs.
 
 This repository is not yet the one-command generator itself.  Reaching that

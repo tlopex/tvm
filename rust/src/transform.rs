@@ -24,43 +24,35 @@ use crate::ir::IRModule;
 use crate::relax::RelaxFunction;
 use crate::tirx::PrimFunc;
 
-// Packed functions are intentionally confined to pass integration. Generated
-// IR objects and their semantic constructors use direct Rust allocation and C
-// ABI type vtables instead.
-macro_rules! pass_global_function {
-    ($name:literal) => {{
-        static FUNCTION: std::sync::OnceLock<tvm_ffi::Function> = std::sync::OnceLock::new();
-
-        if let Some(function) = FUNCTION.get() {
-            Ok::<&'static tvm_ffi::Function, tvm_ffi::Error>(function)
-        } else {
-            // Do not cache failures: the dynamic TVM library may be loaded and
-            // register this function before a later call.
-            let function = tvm_ffi::Function::get_global($name)?;
-            let _ = FUNCTION.set(function);
-            Ok(FUNCTION
-                .get()
-                .expect("a successful global-function lookup must populate its cache"))
-        }
-    }};
-}
-
 mod eliminate_unit_loops;
+mod fold_integer_constants;
 mod increment_int_immediates;
+mod prune_unreachable_functions;
 mod rename_bound_variables;
 mod simplify_add_zero;
+mod simplify_known_control_flow;
 mod simplify_neutral_elements;
 mod skip_assert;
 mod utils;
 
 pub use eliminate_unit_loops::{eliminate_unit_loops, eliminate_unit_loops_prim_func};
+pub use fold_integer_constants::{
+    fold_integer_constants, fold_integer_constants_expr, fold_integer_constants_prim_func,
+};
 pub use increment_int_immediates::increment_int_immediates;
+pub use prune_unreachable_functions::{
+    prune_unreachable_functions, prune_unreachable_functions_from_main,
+    prune_unreachable_functions_pass,
+};
 pub use rename_bound_variables::{
     rename_bound_variables, rename_bound_variables_function, rename_bound_variables_pass,
 };
 pub use simplify_add_zero::{
     simplify_add_zero, simplify_add_zero_expr, simplify_add_zero_module,
     simplify_add_zero_module_pass, simplify_add_zero_prim_func,
+};
+pub use simplify_known_control_flow::{
+    simplify_known_control_flow, simplify_known_control_flow_prim_func,
 };
 pub use simplify_neutral_elements::{
     simplify_neutral_elements_expr, simplify_neutral_elements_in_loop_bodies,
@@ -122,7 +114,7 @@ impl Pass {
     /// transports it as an lvalue, so C++ may perform one copy-on-write step at
     /// the boundary.
     pub fn run(&self, module: IRModule) -> Result<IRModule> {
-        pass_global_function!("transform.RunPass")?
+        tvm_ffi::cached_global_func!("transform.RunPass")
             .call_tuple_with_len::<2, _>((self, module))?
             .try_into()
     }
@@ -160,7 +152,7 @@ where
 
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
-    pass_global_function!("tirx.transform.CreatePrimFuncPass")?
+    tvm_ffi::cached_global_func!("tirx.transform.CreatePrimFuncPass")
         .call_packed(&[
             tvm_ffi::AnyView::from(&pass_func),
             tvm_ffi::AnyView::from(&pass_info),
@@ -194,7 +186,7 @@ where
     });
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
-    pass_global_function!("relax.transform.MakeFunctionPass")?
+    tvm_ffi::cached_global_func!("relax.transform.MakeFunctionPass")
         .call_packed(&[
             tvm_ffi::AnyView::from(&pass_func),
             tvm_ffi::AnyView::from(&pass_info),
@@ -228,7 +220,7 @@ where
     });
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
-    pass_global_function!("transform.MakeModulePass")?
+    tvm_ffi::cached_global_func!("transform.MakeModulePass")
         .call_packed(&[
             tvm_ffi::AnyView::from(&pass_func),
             tvm_ffi::AnyView::from(&pass_info),
@@ -244,7 +236,7 @@ fn create_pass_info(
 ) -> Result<Any> {
     let required = Array::<String>::new(required.into_iter().map(String::from).collect());
     let name = String::from(name);
-    pass_global_function!("transform.PassInfo")?.call_packed(&[
+    tvm_ffi::cached_global_func!("transform.PassInfo").call_packed(&[
         tvm_ffi::AnyView::from(&opt_level),
         tvm_ffi::AnyView::from(&name),
         tvm_ffi::AnyView::from(&required),

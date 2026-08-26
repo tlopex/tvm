@@ -982,14 +982,14 @@ impl PrimFunc {
         Self::new(Vec::new(), body)
     }
 
-    /// Construct a PrimFunc in Rust after deriving type metadata through its C ABI table.
+    /// Construct a PrimFunc in Rust after deriving type metadata through its reflected method.
     pub fn new<S: AnyCompatible>(params: Vec<Var>, body: &S) -> Result<Self> {
         let attrs = DictAttrs::empty();
         let ret_type = crate::ir::Type::missing();
         Self::with_metadata(params, body, &ret_type, &attrs, None)
     }
 
-    /// Construct a PrimFunc in Rust after deriving type metadata through its C ABI table.
+    /// Construct a PrimFunc in Rust after deriving type metadata through its reflected method.
     pub fn with_metadata<S: AnyCompatible>(
         params: Vec<Var>,
         body: &S,
@@ -1021,7 +1021,7 @@ impl PrimFunc {
     /// `function_type` is the derived Relax-facing function type stored in the
     /// inherited `ExprObj::ty` field.  Supplying it explicitly keeps this raw
     /// constructor lossless; [`PrimFunc::new`] obtains exactly these derived
-    /// fields from the language-independent constructor-preparation table.
+    /// fields from the language-independent reflected preparation method.
     #[allow(clippy::too_many_arguments)]
     pub fn from_complete_fields(
         span: Option<Span>,

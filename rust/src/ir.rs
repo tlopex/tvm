@@ -17,13 +17,11 @@
  * under the License.
  */
 
-use std::sync::atomic::AtomicPtr;
-
 use tvm_ffi::derive::{Object, ObjectRef};
-use tvm_ffi::tvm_ffi_sys::{TVMFFIAny, TVMFFITypeAttrColumn};
 use tvm_ffi::{
     Any, AnyCompatible, AnyMap, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error,
-    Map, ObjectArc, ObjectRefCast, ObjectRefCore, Result, String, TYPE_ERROR, VALUE_ERROR,
+    Function, Map, ObjectArc, ObjectRefCast, ObjectRefCore, Result, String, TYPE_ERROR,
+    VALUE_ERROR,
 };
 
 /// ABI-complete Rust representation of TVM's `ExprNode` prefix.
@@ -489,19 +487,6 @@ pub struct PrimExprConvertible {
     data: ObjectArc<PrimExprConvertibleObj>,
 }
 
-type FToPrimExpr = unsafe extern "C" fn(TVMFFIAny) -> TVMFFIAny;
-
-/// Rust mirror of `TVMIRPrimExprConvertibleVTable`.
-#[repr(C)]
-struct PrimExprConvertibleVTable {
-    _abi_version: u32,
-    _struct_size: u32,
-    to_prim_expr: Option<FToPrimExpr>,
-}
-
-static PRIM_EXPR_CONVERTIBLE_VTABLE_COLUMN: AtomicPtr<TVMFFITypeAttrColumn> =
-    AtomicPtr::new(std::ptr::null_mut());
-
 impl std::ops::Deref for PrimExprConvertible {
     type Target = PrimExprConvertibleObj;
 
@@ -511,24 +496,11 @@ impl std::ops::Deref for PrimExprConvertible {
 }
 
 impl PrimExprConvertible {
-    /// Convert through the concrete type's registered C ABI behavior table.
+    /// Convert through the concrete type's reflected method.
     pub fn to_prim_expr(&self) -> Result<Expr> {
-        let value = AnyView::from(self);
-        let vtable = crate::abi::opaque_type_vtable::<PrimExprConvertibleVTable>(
-            &PRIM_EXPR_CONVERTIBLE_VTABLE_COLUMN,
-            "__to_prim_expr__",
-            value.type_index(),
-            crate::abi::C_ABI_VTABLE_VERSION,
-        )?;
-        let callback = vtable.to_prim_expr.ok_or_else(|| {
-            Error::new(
-                TYPE_ERROR,
-                "PrimExpr conversion vtable has no to_prim_expr entry",
-                "",
-            )
-        })?;
-        let raw = unsafe { callback(crate::abi::borrowed_raw(value)) };
-        Expr::try_from(unsafe { crate::abi::result_from_raw(raw) }?)
+        Function::from_type_method(AnyView::from(self).type_index(), "to_prim_expr")?
+            .call_tuple_with_len::<1, _>((self,))?
+            .try_into()
     }
 }
 

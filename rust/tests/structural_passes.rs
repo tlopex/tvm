@@ -22,7 +22,7 @@ use std::sync::OnceLock;
 
 use tvm::analysis::{
     contains_int, expression_trace, first_int, loop_nesting, memory_access_statistics,
-    node_statistics, ExprTraceEvent,
+    node_statistics, side_effect, CallEffectKind, ExprTraceEvent,
 };
 use tvm::ir::{
     Call, DictAttrs, DummyGlobalInfo, Expr, GlobalVar, IRModule, IntImm, PrimExprConvertible,
@@ -570,7 +570,7 @@ fn buffer_defaults_match_the_registered_constructor_recipe() {
 }
 
 #[test]
-fn every_layout_c_abi_vtable_entry_is_callable() {
+fn every_layout_reflected_method_is_callable() {
     load_tvm_compiler();
 
     let axis = Axis::get("m").unwrap();
@@ -626,8 +626,8 @@ fn every_layout_c_abi_vtable_entry_is_callable() {
     assert_structural_equal(&layout.canonicalize().unwrap(), &layout);
 
     // ComposeLayout is not part of the handwritten Rust slice, but it shares
-    // the same C ABI table after removal of the C++ virtual base. Construct a
-    // no-op swizzle through the reference API and verify its concrete table.
+    // the reflected Layout method contract. Construct a no-op swizzle through
+    // the reference API and verify its concrete methods.
     let compose: Layout = Function::get_global("tirx.ComposeLayout")
         .unwrap()
         .call_packed(&[
@@ -1571,6 +1571,218 @@ fn rust_unit_loop_elimination_matches_cpp_on_buffer_indices() {
     );
     assert_eq!(memory_access_statistics(&rust_result).unwrap().loads, 1);
     assert_eq!(memory_access_statistics(&rust_result).unwrap().stores, 1);
+}
+
+#[test]
+fn integer_constant_folding_matches_cpp_on_fast_and_analyzer_paths() {
+    load_tvm_compiler();
+    let sum: Expr = Add::new(&int_expression(2), &int_expression(3))
+        .unwrap()
+        .into();
+    let product: Expr = Mul::new(&sum, &int_expression(4)).unwrap().into();
+    let expression: Expr = Sub::new(&product, &int_expression(1)).unwrap().into();
+
+    let folded = transform::fold_integer_constants_expr(expression.clone()).unwrap();
+    assert_eq!(folded.clone().try_cast::<IntImm>().unwrap().value, 19);
+
+    let function = PrimFunc::from_body(&Evaluate::new(&expression).unwrap()).unwrap();
+    let module = IRModule::from_expr(&function).unwrap();
+    let rust_result = transform::fold_integer_constants()
+        .unwrap()
+        .run(module.clone())
+        .unwrap();
+    let cpp_result = cpp_pass("tirx.transform.StmtSimplify").run(module).unwrap();
+    assert_structural_equal(&rust_result, &cpp_result);
+
+    let maximum = Expr::int("int8", 127).unwrap();
+    let one = Expr::int("int8", 1).unwrap();
+    let overflow: Expr = Add::new(&maximum, &one).unwrap().into();
+    let overflow_module =
+        IRModule::from_expr(&PrimFunc::from_body(&Evaluate::new(&overflow).unwrap()).unwrap())
+            .unwrap();
+    let rust_overflow = transform::fold_integer_constants()
+        .unwrap()
+        .run(overflow_module.clone())
+        .unwrap();
+    let cpp_overflow = cpp_pass("tirx.transform.StmtSimplify")
+        .run(overflow_module)
+        .unwrap();
+    assert_structural_equal(&rust_overflow, &cpp_overflow);
+}
+
+#[test]
+fn known_control_flow_simplification_matches_cpp_on_analyzed_constants() {
+    load_tvm_compiler();
+    let condition: Expr = Add::new(
+        &Expr::int("bool", 1).unwrap(),
+        &Expr::int("bool", 0).unwrap(),
+    )
+    .unwrap()
+    .into();
+    let then_case: Stmt = Evaluate::from_i64(7).unwrap().into();
+    let else_case: Stmt = Evaluate::from_i64(9).unwrap().into();
+    let conditional: Stmt = IfThenElse::new(&condition, &then_case, Some(&else_case))
+        .unwrap()
+        .into();
+    let standalone = IRModule::from_expr(&PrimFunc::from_body(&conditional).unwrap()).unwrap();
+    let rust_standalone = transform::simplify_known_control_flow()
+        .unwrap()
+        .run(standalone.clone())
+        .unwrap();
+    let cpp_standalone = cpp_pass("tirx.transform.RemoveNoOp")
+        .run(standalone)
+        .unwrap();
+    assert_structural_equal(&rust_standalone, &cpp_standalone);
+
+    let loop_var = Var::new("i", "int32").unwrap();
+    let zero_extent: Expr = Sub::new(&int_expression(2), &int_expression(2))
+        .unwrap()
+        .into();
+    let empty_loop: Stmt = TirFor::serial(
+        &loop_var,
+        &int_expression(0),
+        &zero_extent,
+        &Evaluate::from_i64(11).unwrap().into(),
+    )
+    .unwrap()
+    .into();
+    let body = SeqStmt::new(vec![conditional, empty_loop]).unwrap();
+    let function = PrimFunc::from_body(&body).unwrap();
+    let module = IRModule::from_expr(&function).unwrap();
+
+    let rust_result = transform::simplify_known_control_flow()
+        .unwrap()
+        .run(module.clone())
+        .unwrap();
+    let cpp_result = cpp_pass("tirx.transform.RemoveNoOp").run(module).unwrap();
+    assert_structural_equal(&rust_result, &cpp_result);
+    assert_eq!(node_statistics(&rust_result).unwrap().conditionals, 0);
+    assert_eq!(node_statistics(&rust_result).unwrap().loops, 0);
+
+    let pure_expression: Expr = Add::new(&int_expression(3), &int_expression(4))
+        .unwrap()
+        .into();
+    assert_eq!(side_effect(&pure_expression).unwrap(), CallEffectKind::Pure);
+    let read_buffer_type =
+        BufferType::new("global", "int32", vec![Expr::int("int64", 1).unwrap()]).unwrap();
+    let read_buffer = read_buffer_type.new_var("read_buffer");
+    let read_expression: Expr =
+        BufferLoad::new(&read_buffer, vec![Expr::int("int64", 0).unwrap()], None)
+            .unwrap()
+            .into();
+    assert_eq!(
+        side_effect(&read_expression).unwrap(),
+        CallEffectKind::ReadState
+    );
+    let opaque_operator: Expr = GlobalVar::new("opaque_function").into();
+    let opaque_call: Expr = Call::new(
+        &PrimType::new("int32").unwrap().into(),
+        &opaque_operator,
+        Vec::new(),
+    )
+    .into();
+    assert_eq!(
+        side_effect(&opaque_call).unwrap(),
+        CallEffectKind::UpdateState
+    );
+    let evaluations = SeqStmt::new(vec![
+        Evaluate::new(&pure_expression).unwrap().into(),
+        Evaluate::new(&read_expression).unwrap().into(),
+        Evaluate::new(&opaque_call).unwrap().into(),
+    ])
+    .unwrap();
+    let effects_module = IRModule::from_expr(&PrimFunc::from_body(&evaluations).unwrap()).unwrap();
+    let rust_effects = transform::simplify_known_control_flow()
+        .unwrap()
+        .run(effects_module.clone())
+        .unwrap();
+    let cpp_effects = cpp_pass("tirx.transform.RemoveNoOp")
+        .run(effects_module)
+        .unwrap();
+    assert_structural_equal(&rust_effects, &cpp_effects);
+    assert_eq!(node_statistics(&rust_effects).unwrap().evaluations, 1);
+}
+
+#[test]
+fn module_reachability_pruning_keeps_callees_and_external_roots() {
+    load_tvm_compiler();
+    let result_type: Type = PrimType::new("int32").unwrap().into();
+    let main_global = GlobalVar::new("main");
+    let helper_global = GlobalVar::new("helper");
+    let exported_global = GlobalVar::new("exported");
+    let dead_global = GlobalVar::new("dead");
+    let helper_call: Expr =
+        Call::new(&result_type, &helper_global.clone().into(), Vec::new()).into();
+
+    let main_function: tvm::ir::BaseFunc =
+        PrimFunc::from_body(&Evaluate::new(&helper_call).unwrap())
+            .unwrap()
+            .into();
+    let helper_function: tvm::ir::BaseFunc = PrimFunc::from_body(&Evaluate::from_i64(42).unwrap())
+        .unwrap()
+        .into();
+    let exported_attributes = DictAttrs::from_dictionary(
+        &[(
+            tvm::tvm_ffi::String::from("global_symbol"),
+            Any::from(tvm::tvm_ffi::String::from("exported_symbol")),
+        )]
+        .into_iter()
+        .collect(),
+    );
+    let exported_function: tvm::ir::BaseFunc = PrimFunc::with_metadata(
+        Vec::new(),
+        &Evaluate::from_i64(7).unwrap(),
+        &Type::missing(),
+        &exported_attributes,
+        None,
+    )
+    .unwrap()
+    .into();
+    let dead_function: tvm::ir::BaseFunc = PrimFunc::from_body(&Evaluate::from_i64(99).unwrap())
+        .unwrap()
+        .into();
+    let module = IRModule::with_metadata(
+        [
+            (main_global, main_function),
+            (helper_global, helper_function),
+            (exported_global, exported_function),
+            (dead_global, dead_function),
+        ]
+        .into_iter()
+        .collect(),
+        SourceMap::new(),
+        DictAttrs::empty(),
+        Map::new(),
+    )
+    .unwrap();
+
+    let direct = transform::prune_unreachable_functions_from_main(module.clone()).unwrap();
+    assert_eq!(direct.functions.len(), 3);
+    let mut retained_names = direct
+        .functions
+        .iter()
+        .map(|(global, _)| global.name_hint.as_str().to_owned())
+        .collect::<Vec<_>>();
+    retained_names.sort();
+    assert_eq!(retained_names, vec!["exported", "helper", "main"]);
+
+    let through_pass = transform::prune_unreachable_functions_pass(vec!["main".to_owned()])
+        .unwrap()
+        .run(module.clone())
+        .unwrap();
+    assert_structural_equal(&direct, &through_pass);
+
+    let external_only = transform::prune_unreachable_functions_pass(Vec::new())
+        .unwrap()
+        .run(module)
+        .unwrap();
+    let external_names = external_only
+        .functions
+        .iter()
+        .map(|(global, _)| global.name_hint.as_str().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(external_names, vec!["exported"]);
+    assert!(transform::prune_unreachable_functions(direct, &["missing"]).is_err());
 }
 
 #[test]

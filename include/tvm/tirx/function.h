@@ -55,12 +55,16 @@ class PrimFuncNode : public BaseFuncNode {
   /*! \brief The body of the function */
   tirx::Stmt body;
 
+  static ffi::Map<ffi::String, ffi::Any> PrepareFFI(ffi::Array<tirx::Var> params, tirx::Stmt body,
+                                                    Type ret_type);
+
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<PrimFuncNode>()
         .def_ro("params", &PrimFuncNode::params, refl::AttachFieldFlag::SEqHashDefRecursive())
         .def_ro("ret_type", &PrimFuncNode::ret_type)
-        .def_ro("body", &PrimFuncNode::body);
+        .def_ro("body", &PrimFuncNode::body)
+        .def_static("__ffi_prepare__", &PrimFuncNode::PrepareFFI);
     refl::TypeAttrDef<PrimFuncNode>()
         .def("__s_equal__", &PrimFuncNode::SEqual)
         .def("__s_hash__", &PrimFuncNode::SHash);
