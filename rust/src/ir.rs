@@ -947,13 +947,7 @@ impl Default for DummyGlobalInfo {
     }
 }
 
-impl From<DummyGlobalInfo> for GlobalInfo {
-    fn from(value: DummyGlobalInfo) -> Self {
-        value
-            .try_cast()
-            .expect("ir.DummyGlobalInfo must be a subtype of ir.GlobalInfo")
-    }
-}
+crate::abi::impl_object_upcast!(DummyGlobalInfo => GlobalInfo);
 
 /// ABI-complete Rust representation of TVM's `IRModuleNode`.
 #[repr(C)]
@@ -1259,61 +1253,15 @@ impl Call {
     }
 }
 
-impl From<IntImm> for Expr {
-    fn from(value: IntImm) -> Self {
-        value
-            .try_cast()
-            .expect("ir.IntImm must be a subtype of ir.Expr")
-    }
-}
-
-impl From<PrimType> for Type {
-    fn from(value: PrimType) -> Self {
-        value
-            .try_cast()
-            .expect("ir.PrimType must be a subtype of ir.Type")
-    }
-}
-
-impl From<TupleType> for Type {
-    fn from(value: TupleType) -> Self {
-        value
-            .try_cast()
-            .expect("ir.TupleType must be a subtype of ir.Type")
-    }
-}
-
-impl From<Var> for Expr {
-    fn from(value: Var) -> Self {
-        value
-            .try_cast()
-            .expect("ir.Var must be a subtype of ir.Expr")
-    }
-}
-
-impl From<GlobalVar> for Expr {
-    fn from(value: GlobalVar) -> Self {
-        value
-            .try_cast()
-            .expect("ir.GlobalVar must be a subtype of ir.Expr")
-    }
-}
-
-impl From<Call> for Expr {
-    fn from(value: Call) -> Self {
-        value
-            .try_cast()
-            .expect("ir.Call must be a subtype of ir.Expr")
-    }
-}
-
-impl From<DictAttrs> for Attrs {
-    fn from(value: DictAttrs) -> Self {
-        value
-            .try_cast()
-            .expect("ir.DictAttrs must be a subtype of ir.Attrs")
-    }
-}
+crate::abi::impl_object_upcast!(
+    IntImm => Expr,
+    PrimType => Type,
+    TupleType => Type,
+    Var => Expr,
+    GlobalVar => Expr,
+    Call => Expr,
+    DictAttrs => Attrs,
+);
 
 impl IRModule {
     /// Wrap a function expression in an IRModule whose entry is `main`.

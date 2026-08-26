@@ -198,14 +198,6 @@ fn validate_iter_var(domain: Option<&Range>, variable: &Var) -> Result<()> {
     Ok(())
 }
 
-impl From<IterVar> for PrimExprConvertible {
-    fn from(value: IterVar) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.IterVar must be a subtype of ir.PrimExprConvertible")
-    }
-}
-
 /// ABI-complete Rust representation of TVM's current TIR block node.
 #[repr(C)]
 #[derive(Object)]
@@ -334,14 +326,6 @@ impl SBlock {
     }
 }
 
-impl From<SBlock> for Stmt {
-    fn from(value: SBlock) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.SBlock must be a subtype of tirx.Stmt")
-    }
-}
-
 /// ABI-complete Rust representation of a block realization.
 #[repr(C)]
 #[derive(Object)]
@@ -439,12 +423,10 @@ impl SBlockRealize {
     }
 }
 
-impl From<SBlockRealize> for Stmt {
-    fn from(value: SBlockRealize) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.SBlockRealize must be a subtype of tirx.Stmt")
-    }
-}
+crate::abi::impl_object_upcast!(
+    IterVar => PrimExprConvertible,
+    SBlock => Stmt,
+    SBlockRealize => Stmt,
+);
 
 crate::abi::impl_rust_allocatable!(IterVarObj, SBlockObj, SBlockRealizeObj);

@@ -184,3 +184,30 @@ macro_rules! impl_rust_allocatable {
 }
 
 pub(crate) use impl_rust_allocatable;
+
+/// Implement an infallible, ownership-preserving object-reference upcast.
+///
+/// Each listed source object must embed the target object as its offset-zero
+/// base prefix. The handwritten declarations mirror TVM's registered
+/// inheritance tree; stubgen can emit the same relation directly.
+macro_rules! impl_object_upcast {
+    ($($source:ty => $target:ty),+ $(,)?) => {
+        $(
+            impl From<$source> for $target {
+                #[inline]
+                fn from(value: $source) -> Self {
+                    let data = <$source as tvm_ffi::ObjectRefCore>::into_data(value);
+                    let data = unsafe {
+                        tvm_ffi::ObjectArc::from_raw(
+                            tvm_ffi::ObjectArc::into_raw(data)
+                                .cast::<<$target as tvm_ffi::ObjectRefCore>::ContainerType>(),
+                        )
+                    };
+                    <$target as tvm_ffi::ObjectRefCore>::from_data(data)
+                }
+            }
+        )+
+    };
+}
+
+pub(crate) use impl_object_upcast;

@@ -333,6 +333,23 @@ fn rust_allocated_nodes_are_consumed_by_cpp_abi() {
 }
 
 #[test]
+fn object_upcast_preserves_pointer_and_reference_count() {
+    load_tvm_compiler();
+    let literal = IntImm::new("int32", 7).unwrap();
+    let pointer = object_pointer(&literal);
+    let strong_count = ObjectArc::strong_count(<IntImm as ObjectRefCore>::data(&literal));
+
+    let expression = Expr::from(literal);
+
+    assert_eq!(object_pointer(&expression), pointer);
+    assert_eq!(
+        ObjectArc::strong_count(<Expr as ObjectRefCore>::data(&expression)),
+        strong_count,
+        "upcasting must move the same ObjectArc without changing its reference count"
+    );
+}
+
+#[test]
 fn generated_bindings_support_structural_walk() {
     load_tvm_compiler();
     let function = sample_function();

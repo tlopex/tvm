@@ -103,14 +103,6 @@ impl Add {
     }
 }
 
-impl From<Add> for Expr {
-    fn from(value: Add) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.Add must be a subtype of ir.Expr")
-    }
-}
-
 pub(crate) fn primitive_type(expr: &Expr, context: &str) -> Result<crate::ir::PrimType> {
     expr.ty
         .clone()
@@ -215,14 +207,6 @@ macro_rules! define_binary_expression {
                 }
             }
         }
-
-        impl From<$reference> for Expr {
-            fn from(value: $reference) -> Self {
-                value
-                    .try_cast()
-                    .expect(concat!($type_key, " must be a subtype of ir.Expr"))
-            }
-        }
     };
 }
 
@@ -285,14 +269,6 @@ impl StringImm {
                 value,
             }),
         }
-    }
-}
-
-impl From<StringImm> for Expr {
-    fn from(value: StringImm) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.StringImm must be a subtype of ir.Expr")
     }
 }
 
@@ -803,14 +779,6 @@ fn normalize_loop_bound(value: &Expr, loop_dtype: DLDataType, field: &str) -> Re
     ))
 }
 
-impl From<For> for Stmt {
-    fn from(value: For) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.For must be a subtype of tirx.Stmt")
-    }
-}
-
 /// ABI-complete Rust representation of TVM's `PrimFuncNode`.
 #[repr(C)]
 #[derive(Object)]
@@ -908,14 +876,6 @@ impl AssertStmt {
     }
 }
 
-impl From<AssertStmt> for Stmt {
-    fn from(value: AssertStmt) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.AssertStmt must be a subtype of tirx.Stmt")
-    }
-}
-
 impl Evaluate {
     /// Construct `Evaluate(value)` directly in Rust.
     pub fn new(value: &Expr) -> Result<Self> {
@@ -949,30 +909,6 @@ impl Evaluate {
     /// Construct `Evaluate(IntImm("int32", value))`.
     pub fn from_i64(value: i64) -> Result<Self> {
         Self::new(&Expr::int("int32", value)?)
-    }
-}
-
-impl From<Evaluate> for Stmt {
-    fn from(value: Evaluate) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.Evaluate must be a subtype of tirx.Stmt")
-    }
-}
-
-impl From<SeqStmt> for Stmt {
-    fn from(value: SeqStmt) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.SeqStmt must be a subtype of tirx.Stmt")
-    }
-}
-
-impl From<IfThenElse> for Stmt {
-    fn from(value: IfThenElse) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.IfThenElse must be a subtype of tirx.Stmt")
     }
 }
 
@@ -1042,21 +978,19 @@ impl PrimFunc {
     }
 }
 
-impl From<PrimFunc> for crate::ir::BaseFunc {
-    fn from(value: PrimFunc) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.PrimFunc must be a subtype of ir.BaseFunc")
-    }
-}
-
-impl From<PrimFunc> for Expr {
-    fn from(value: PrimFunc) -> Self {
-        let base: crate::ir::BaseFunc = value.into();
-        base.try_cast()
-            .expect("ir.BaseFunc must be a subtype of ir.Expr")
-    }
-}
+crate::abi::impl_object_upcast!(
+    Add => Expr,
+    Sub => Expr,
+    Mul => Expr,
+    StringImm => Expr,
+    For => Stmt,
+    AssertStmt => Stmt,
+    Evaluate => Stmt,
+    SeqStmt => Stmt,
+    IfThenElse => Stmt,
+    PrimFunc => crate::ir::BaseFunc,
+    PrimFunc => Expr,
+);
 
 crate::abi::impl_rust_allocatable!(
     AddObj,

@@ -17,7 +17,7 @@
  * under the License.
  */
 
-use tvm_ffi::{structural_map, Any, DLDataTypeCode, ObjectRefCast, Result, WalkOrder};
+use tvm_ffi::{structural_map, Any, DLDataType, DLDataTypeCode, ObjectRefCast, Result, WalkOrder};
 
 use super::{create_prim_func_pass, Pass};
 use crate::analysis::Analyzer;
@@ -117,36 +117,27 @@ fn try_fold_binary(
     span: Option<&Span>,
     operation: fn(i64, i64) -> Option<i64>,
 ) -> Option<Expr> {
-    let lhs = lhs.clone().try_cast::<IntImm>().ok()?;
-    let rhs = rhs.clone().try_cast::<IntImm>().ok()?;
-    let lhs_type = lhs.ty.clone().try_cast::<PrimType>().ok()?;
-    let rhs_type = rhs.ty.clone().try_cast::<PrimType>().ok()?;
-    if lhs_type.dtype != rhs_type.dtype
-        || (lhs_type.dtype.code != DLDataTypeCode::kDLInt as u8
-            && lhs_type.dtype.code != DLDataTypeCode::kDLUInt as u8)
-    {
-        return None;
-    }
+    let (lhs, rhs, dtype) = matching_integer_literals(lhs, rhs)?;
     let value = operation(lhs.value, rhs.value)?;
-    IntImm::from_dtype_with_span(lhs_type.dtype, value, span)
+    IntImm::from_dtype_with_span(dtype, value, span)
         .ok()
         .map(Expr::from)
 }
 
 fn is_matching_integer_pair(lhs: &Expr, rhs: &Expr) -> bool {
-    let Ok(lhs) = lhs.clone().try_cast::<IntImm>() else {
-        return false;
-    };
-    let Ok(rhs) = rhs.clone().try_cast::<IntImm>() else {
-        return false;
-    };
-    let Ok(lhs_type) = lhs.ty.clone().try_cast::<PrimType>() else {
-        return false;
-    };
-    let Ok(rhs_type) = rhs.ty.clone().try_cast::<PrimType>() else {
-        return false;
-    };
-    lhs_type.dtype == rhs_type.dtype
-        && (lhs_type.dtype.code == DLDataTypeCode::kDLInt as u8
-            || lhs_type.dtype.code == DLDataTypeCode::kDLUInt as u8)
+    matching_integer_literals(lhs, rhs).is_some()
+}
+
+fn matching_integer_literals(lhs: &Expr, rhs: &Expr) -> Option<(IntImm, IntImm, DLDataType)> {
+    let lhs = lhs.clone().try_cast::<IntImm>().ok()?;
+    let rhs = rhs.clone().try_cast::<IntImm>().ok()?;
+    let lhs_dtype = lhs.ty.clone().try_cast::<PrimType>().ok()?.dtype;
+    let rhs_dtype = rhs.ty.clone().try_cast::<PrimType>().ok()?.dtype;
+    if lhs_dtype != rhs_dtype
+        || (lhs_dtype.code != DLDataTypeCode::kDLInt as u8
+            && lhs_dtype.code != DLDataTypeCode::kDLUInt as u8)
+    {
+        return None;
+    }
+    Some((lhs, rhs, lhs_dtype))
 }

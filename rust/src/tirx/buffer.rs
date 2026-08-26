@@ -90,14 +90,6 @@ impl DataProducer {
     }
 }
 
-impl From<DataProducer> for PrimExprConvertible {
-    fn from(value: DataProducer) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.DataProducer must be a subtype of ir.PrimExprConvertible")
-    }
-}
-
 /// ABI-complete Rust representation of TVM's layout base class.
 #[repr(C)]
 #[derive(Object)]
@@ -515,14 +507,6 @@ impl TileLayout {
     }
 }
 
-impl From<TileLayout> for Layout {
-    fn from(value: TileLayout) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.TileLayout must be a subtype of tirx.Layout")
-    }
-}
-
 /// ABI-complete Rust representation of TVM's immutable buffer access contract.
 #[repr(C)]
 #[derive(Object)]
@@ -739,14 +723,6 @@ fn integer_overflow(field: &str) -> Error {
     )
 }
 
-impl From<BufferType> for Type {
-    fn from(value: BufferType) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.BufferType must be a subtype of ir.Type")
-    }
-}
-
 /// ABI-complete Rust representation of a buffer read.
 #[repr(C)]
 #[derive(Object)]
@@ -840,14 +816,6 @@ impl BufferLoad {
                 predicate,
             }),
         }
-    }
-}
-
-impl From<BufferLoad> for Expr {
-    fn from(value: BufferLoad) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.BufferLoad must be a subtype of ir.Expr")
     }
 }
 
@@ -1141,14 +1109,6 @@ fn encoded_lanes(dtype: DLDataType) -> i16 {
     dtype.lanes as i16
 }
 
-impl From<BufferStore> for Stmt {
-    fn from(value: BufferStore) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.BufferStore must be a subtype of tirx.Stmt")
-    }
-}
-
 /// ABI-complete Rust representation of one declared buffer region.
 #[repr(C)]
 #[derive(Object)]
@@ -1217,14 +1177,6 @@ impl BufferRegion {
     }
 }
 
-impl From<BufferRegion> for PrimExprConvertible {
-    fn from(value: BufferRegion) -> Self {
-        value
-            .try_cast()
-            .expect("tirx.BufferRegion must be a subtype of ir.PrimExprConvertible")
-    }
-}
-
 /// ABI-complete Rust representation of a match-buffer declaration.
 #[repr(C)]
 #[derive(Object)]
@@ -1284,6 +1236,15 @@ impl MatchBufferRegion {
         }
     }
 }
+
+crate::abi::impl_object_upcast!(
+    DataProducer => PrimExprConvertible,
+    TileLayout => Layout,
+    BufferType => Type,
+    BufferLoad => Expr,
+    BufferStore => Stmt,
+    BufferRegion => PrimExprConvertible,
+);
 
 crate::abi::impl_rust_allocatable!(
     AxisObj,

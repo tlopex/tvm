@@ -88,14 +88,6 @@ impl Tuple {
     }
 }
 
-impl From<Tuple> for Expr {
-    fn from(value: Tuple) -> Self {
-        value
-            .try_cast()
-            .expect("relax.expr.Tuple must be a subtype of ir.Expr")
-    }
-}
-
 /// ABI-complete Rust representation of Relax's DAG-valued conditional expression.
 #[repr(C)]
 #[derive(Object)]
@@ -176,14 +168,6 @@ impl If {
                 false_branch,
             }),
         }
-    }
-}
-
-impl From<If> for Expr {
-    fn from(value: If) -> Self {
-        value
-            .try_cast()
-            .expect("relax.expr.If must be a subtype of ir.Expr")
     }
 }
 
@@ -275,14 +259,6 @@ impl VarBinding {
                 value,
             }),
         }
-    }
-}
-
-impl From<VarBinding> for Binding {
-    fn from(value: VarBinding) -> Self {
-        value
-            .try_cast()
-            .expect("relax.expr.VarBinding must be a subtype of relax.expr.Binding")
     }
 }
 
@@ -416,14 +392,6 @@ impl SeqExpr {
     }
 }
 
-impl From<SeqExpr> for Expr {
-    fn from(value: SeqExpr) -> Self {
-        value
-            .try_cast()
-            .expect("relax.expr.SeqExpr must be a subtype of ir.Expr")
-    }
-}
-
 /// ABI-complete Rust representation of a Relax function.
 #[repr(C)]
 #[derive(Object)]
@@ -544,22 +512,14 @@ impl RelaxFunction {
     }
 }
 
-impl From<RelaxFunction> for BaseFunc {
-    fn from(value: RelaxFunction) -> Self {
-        value
-            .try_cast()
-            .expect("relax.expr.Function must be a subtype of ir.BaseFunc")
-    }
-}
-
-impl From<RelaxFunction> for Expr {
-    fn from(value: RelaxFunction) -> Self {
-        let function: BaseFunc = value.into();
-        function
-            .try_cast()
-            .expect("ir.BaseFunc must be a subtype of ir.Expr")
-    }
-}
+crate::abi::impl_object_upcast!(
+    Tuple => Expr,
+    If => Expr,
+    VarBinding => Binding,
+    SeqExpr => Expr,
+    RelaxFunction => BaseFunc,
+    RelaxFunction => Expr,
+);
 
 crate::abi::impl_rust_allocatable!(
     TupleObj,
