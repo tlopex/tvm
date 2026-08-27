@@ -62,7 +62,7 @@ impl Analyzer {
     /// Construct a fresh native analyzer context.
     pub fn new() -> Result<Self> {
         tvm_ffi::cached_global_func!("arith.Analyzer")
-            .call_tuple_with_len::<0, _>(())?
+            .call_tuple(())?
             .try_into()
     }
 
@@ -74,7 +74,7 @@ impl Analyzer {
     /// Simplify a primitive expression with an explicit analysis-step count.
     pub fn simplify_with_steps(&self, expression: &Expr, steps: i32) -> Result<Expr> {
         tvm_ffi::cached_global_func!("arith.AnalyzerSimplify")
-            .call_tuple_with_len::<3, _>((self, expression, steps))?
+            .call_tuple((self, expression, steps))?
             .try_into()
     }
 }
@@ -141,7 +141,7 @@ impl TryFrom<i64> for CallEffectKind {
 /// Classify whether evaluating an expression reads or updates external state.
 pub fn side_effect(expression: &Expr) -> Result<CallEffectKind> {
     let value: i64 = tvm_ffi::cached_global_func!("tirx.analysis.SideEffect")
-        .call_tuple_with_len::<1, _>((expression,))?
+        .call_tuple((expression,))?
         .try_into()?;
     value.try_into()
 }

@@ -70,7 +70,7 @@ impl DataProducer {
         T: TryFrom<Any, Error = Error>,
     {
         Function::from_type_method(AnyView::from(self).type_index(), name)?
-            .call_tuple_with_len::<1, _>((self,))?
+            .call_tuple((self,))?
             .try_into()
     }
 
@@ -132,9 +132,7 @@ impl Layout {
     where
         T: TryFrom<Any, Error = Error>,
     {
-        self.method(name)?
-            .call_tuple_with_len::<1, _>((self,))?
-            .try_into()
+        self.method(name)?.call_tuple((self,))?.try_into()
     }
 
     #[inline]
@@ -1255,25 +1253,13 @@ impl MatchBufferRegion {
     }
 }
 
-crate::abi::impl_object_upcast!(
+tvm_ffi::impl_object_upcast!(
     DataProducer => PrimExprConvertible,
     TileLayout => Layout,
     BufferType => Type,
     BufferLoad => Expr,
     BufferStore => Stmt,
     BufferRegion => PrimExprConvertible,
-);
-crate::abi::impl_object_borrow_to_owned!(
-    DataProducer,
-    Layout,
-    Axis,
-    Iter,
-    TileLayout,
-    BufferType,
-    BufferLoad,
-    BufferStore,
-    BufferRegion,
-    MatchBufferRegion,
 );
 
 crate::abi::impl_rust_allocatable!(

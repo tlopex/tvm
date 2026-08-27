@@ -512,7 +512,7 @@ impl PrimExprConvertible {
     /// Convert through the concrete type's reflected method.
     pub fn to_prim_expr(&self) -> Result<Expr> {
         Function::from_type_method(AnyView::from(self).type_index(), "to_prim_expr")?
-            .call_tuple_with_len::<1, _>((self,))?
+            .call_tuple((self,))?
             .try_into()
     }
 }
@@ -966,7 +966,7 @@ impl Default for DummyGlobalInfo {
     }
 }
 
-crate::abi::impl_object_upcast!(DummyGlobalInfo => GlobalInfo);
+tvm_ffi::impl_object_upcast!(DummyGlobalInfo => GlobalInfo);
 
 /// ABI-complete Rust representation of TVM's `IRModuleNode`.
 #[repr(C)]
@@ -1274,7 +1274,7 @@ impl Call {
     }
 }
 
-crate::abi::impl_object_upcast!(
+tvm_ffi::impl_object_upcast!(
     BaseFunc => Expr,
     IntImm => Expr,
     PrimType => Type,
@@ -1283,10 +1283,6 @@ crate::abi::impl_object_upcast!(
     GlobalVar => Expr,
     Call => Expr,
     DictAttrs => Attrs,
-);
-crate::abi::impl_object_borrow_to_owned!(
-    Expr, Type, Attrs, BaseFunc, GlobalVar, Var, SourceName, Source, SourceMap, Span, Range, Call,
-    DictAttrs,
 );
 
 impl IRModule {

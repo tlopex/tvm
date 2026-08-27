@@ -544,22 +544,13 @@ impl RelaxFunction {
     }
 }
 
-crate::abi::impl_object_upcast!(
+tvm_ffi::impl_object_upcast!(
     Tuple => Expr,
     If => Expr,
     VarBinding => Binding,
     SeqExpr => Expr,
     RelaxFunction => BaseFunc,
     RelaxFunction => Expr,
-);
-crate::abi::impl_object_borrow_to_owned!(
-    Tuple,
-    If,
-    Binding,
-    VarBinding,
-    BindingBlock,
-    SeqExpr,
-    RelaxFunction,
 );
 
 crate::abi::impl_rust_allocatable!(

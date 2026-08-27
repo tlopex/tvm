@@ -440,11 +440,10 @@ impl SBlockRealize {
     }
 }
 
-crate::abi::impl_object_upcast!(
+tvm_ffi::impl_object_upcast!(
     IterVar => PrimExprConvertible,
     SBlock => Stmt,
     SBlockRealize => Stmt,
 );
-crate::abi::impl_object_borrow_to_owned!(IterVar, SBlock, SBlockRealize);
 
 crate::abi::impl_rust_allocatable!(IterVarObj, SBlockObj, SBlockRealizeObj);

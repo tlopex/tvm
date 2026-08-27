@@ -114,7 +114,7 @@ impl Pass {
     /// through the same rvalue-reference ABI used by C++ passes.
     pub fn run(&self, module: IRModule) -> Result<IRModule> {
         tvm_ffi::cached_global_func!("transform.RunPass")
-            .call_tuple_with_len::<2, _>((self, RValueRef::new(module)))?
+            .call_tuple((self, RValueRef::new(module)))?
             .try_into()
     }
 }
@@ -142,10 +142,7 @@ where
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
     tvm_ffi::cached_global_func!("tirx.transform.CreatePrimFuncPass")
-        .call_packed(&[
-            tvm_ffi::AnyView::from(&pass_func),
-            tvm_ffi::AnyView::from(&pass_info),
-        ])?
+        .call_tuple((pass_func, pass_info))?
         .try_into()
 }
 
@@ -168,10 +165,7 @@ where
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
     tvm_ffi::cached_global_func!("relax.transform.MakeFunctionPass")
-        .call_packed(&[
-            tvm_ffi::AnyView::from(&pass_func),
-            tvm_ffi::AnyView::from(&pass_info),
-        ])?
+        .call_tuple((pass_func, pass_info))?
         .try_into()
 }
 
@@ -193,10 +187,7 @@ where
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
     tvm_ffi::cached_global_func!("transform.MakeModulePass")
-        .call_packed(&[
-            tvm_ffi::AnyView::from(&pass_func),
-            tvm_ffi::AnyView::from(&pass_info),
-        ])?
+        .call_tuple((pass_func, pass_info))?
         .try_into()
 }
 
@@ -208,10 +199,6 @@ fn create_pass_info(
 ) -> Result<Any> {
     let required = Array::<String>::new(required.into_iter().map(String::from).collect());
     let name = String::from(name);
-    tvm_ffi::cached_global_func!("transform.PassInfo").call_packed(&[
-        tvm_ffi::AnyView::from(&opt_level),
-        tvm_ffi::AnyView::from(&name),
-        tvm_ffi::AnyView::from(&required),
-        tvm_ffi::AnyView::from(&traceable),
-    ])
+    tvm_ffi::cached_global_func!("transform.PassInfo")
+        .call_tuple((opt_level, name, required, traceable))
 }

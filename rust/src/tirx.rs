@@ -1065,7 +1065,7 @@ impl PrimFunc {
     }
 }
 
-crate::abi::impl_object_upcast!(
+tvm_ffi::impl_object_upcast!(
     Add => Expr,
     Sub => Expr,
     Mul => Expr,
@@ -1077,9 +1077,6 @@ crate::abi::impl_object_upcast!(
     IfThenElse => Stmt,
     PrimFunc => crate::ir::BaseFunc,
     PrimFunc => Expr,
-);
-crate::abi::impl_object_borrow_to_owned!(
-    Stmt, Add, Sub, Mul, StringImm, AssertStmt, Evaluate, SeqStmt, IfThenElse, For, PrimFunc,
 );
 
 crate::abi::impl_rust_allocatable!(
