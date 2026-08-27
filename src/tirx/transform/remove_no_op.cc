@@ -170,10 +170,7 @@ class NoOpRemover : public arith::IRMutatorWithAnalyzer {
 
   bool HasSideEffect(const Expr& value) {
     if (auto prim = value.as<PrimExpr>()) return HasSideEffect(prim.value());
-    // Variables and string literals are pure.  Preserve non-primitive calls
-    // conservatively because their effect metadata is independent of the
-    // call's semantic return type.
-    return value.as<CallNode>() != nullptr;
+    return SideEffect(value) > CallEffectKind::kReadState;
   }
 
   Stmt VisitStmt_(const BufferStoreNode* op) final {

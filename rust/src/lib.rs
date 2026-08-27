@@ -19,9 +19,11 @@
 
 //! Minimal handwritten TVM IR bindings used to develop Rust analyses and passes.
 //!
-//! Object nodes are opaque handles. TVM's registered native constructors own
-//! allocation and invariant handling, while reflected field getters provide
-//! typed Rust access without duplicating C++ object layouts.
+//! Nodes use ABI-complete `#[repr(C)]` Rust layouts and are allocated by Rust.
+//! Type-specific validation, derived fields, and formerly virtual behavior use
+//! registered tvm-ffi type methods rather than packed global constructors or
+//! the C++ object ABI. All objects share the FFI header and runtime type table for
+//! ownership, checked casts, and structural traversal.
 
 #[doc(hidden)]
 pub mod abi;

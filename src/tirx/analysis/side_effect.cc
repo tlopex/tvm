@@ -21,7 +21,6 @@
  * \file side_effect.cc
  * \brief side effect analysis
  */
-#include <tvm/ffi/reflection/registry.h>
 #include <tvm/ir/op.h>
 #include <tvm/te/tensor.h>
 #include <tvm/tirx/analysis.h>
@@ -75,16 +74,19 @@ CallEffectKind SideEffect(const PrimExpr& e) {
   return visitor.kind_;
 }
 
+CallEffectKind SideEffect(const Expr& expr) {
+  if (auto prim = expr.as<PrimExpr>()) {
+    return SideEffect(prim.value());
+  }
+  // Non-primitive calls may carry effects independently of their semantic
+  // return type. Variables and literal values are safe to discard.
+  return expr.as<CallNode>() ? CallEffectKind::kUpdateState : CallEffectKind::kPure;
+}
+
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
   refl::GlobalDef().def("tirx.analysis.SideEffect", [](const Expr& expr) -> int64_t {
-    if (auto prim = expr.as<PrimExpr>()) {
-      return static_cast<int64_t>(SideEffect(prim.value()));
-    }
-    // A non-primitive call may perform arbitrary work.  Other non-primitive
-    // values are safe to discard because evaluating them has no side effect.
-    return static_cast<int64_t>(expr.as<CallNode>() ? CallEffectKind::kUpdateState
-                                                    : CallEffectKind::kPure);
+    return static_cast<int64_t>(SideEffect(expr));
   });
 }
 

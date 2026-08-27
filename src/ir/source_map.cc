@@ -31,6 +31,18 @@
 
 namespace tvm {
 
+namespace {
+
+int64_t SourceNameAnyHash(const ffi::Any& src) {
+  return static_cast<int64_t>(std::hash<ffi::String>{}(src.cast<SourceName>()->name));
+}
+
+bool SourceNameAnyEqual(const ffi::Any& lhs, const ffi::Any& rhs) {
+  return lhs.cast<SourceName>()->name == rhs.cast<SourceName>()->name;
+}
+
+}  // namespace
+
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
   SourceNameNode::RegisterReflection();
@@ -45,7 +57,9 @@ TVM_FFI_STATIC_INIT_BLOCK() {
              // simply save as the string
              return node->name;
            })
-      .def("__data_from_json__", SourceName::Get);
+      .def("__data_from_json__", SourceName::Get)
+      .attr(refl::type_attr::kAnyHash, reinterpret_cast<void*>(&SourceNameAnyHash))
+      .attr(refl::type_attr::kAnyEqual, reinterpret_cast<void*>(&SourceNameAnyEqual));
 }
 
 ffi::ObjectPtr<SourceNameNode> GetSourceNameNode(const ffi::String& name) {
@@ -98,7 +112,7 @@ Span::Span(SourceName source_name, int line, int end_line, int column, int end_c
 Span Span::Merge(const Span& other) const {
   TVM_FFI_ICHECK(this->defined() && other.defined()) << "Span::Merge: both spans must be defined";
 
-  TVM_FFI_ICHECK((*this)->source_name == other->source_name);
+  TVM_FFI_ICHECK((*this)->source_name->name == other->source_name->name);
   return Span((*this)->source_name, std::min((*this)->line, other->line),
               std::max((*this)->end_line, other->end_line),
               std::min((*this)->column, other->column),
@@ -191,17 +205,19 @@ Source::Source(SourceName src_name, std::string source) {
 
   int index = 0;
   int length = 0;
-  n->line_map.push_back({index, length});
+  n->line_map.push_back(index);
+  n->line_map.push_back(length);
   // NB(@jroesch):
   std::string source_str = n->source;
   for (auto c : source_str) {
     if (c == '\n') {
       // Record the length of the line.
-      n->line_map.back().second = length;
+      n->line_map.Set(n->line_map.size() - 1, length);
       // Bump past the newline.
       index += 1;
       // Record the start of the next line, and put placeholder for length.
-      n->line_map.push_back({index, 0});
+      n->line_map.push_back(index);
+      n->line_map.push_back(0);
       // Reset length to zero.
       length = 0;
     } else {
@@ -209,21 +225,22 @@ Source::Source(SourceName src_name, std::string source) {
       index += 1;
     }
   }
-  n->line_map.back().second = length;
+  n->line_map.Set(n->line_map.size() - 1, length);
 
   data_ = n;
 }
 
 tvm::ffi::String Source::GetLine(int line) {
   VLOG(1) << "Source::GetLine: line=" << line;
-  TVM_FFI_ICHECK(line - 1 < static_cast<int64_t>((*this)->line_map.size()))
-      << "requested line: " << line << "at index: " << (line - 1)
-      << "line_map size: " << (*this)->line_map.size() << "source: " << (*this)->source;
+  TVM_FFI_ICHECK_GT(line, 0) << "line numbers are one-based";
+  int64_t line_count = static_cast<int64_t>((*this)->line_map.size() / 2);
+  TVM_FFI_ICHECK(line - 1 < line_count)
+      << "requested line: " << line << "at index: " << (line - 1) << "line_map size: " << line_count
+      << "source: " << (*this)->source;
 
   // Adjust for zero indexing, now have (line_start, line_length);
-  auto range = (*this)->line_map.at(line - 1);
-  int line_start = range.first;
-  int line_length = range.second;
+  int64_t line_start = (*this)->line_map[(line - 1) * 2];
+  int64_t line_length = (*this)->line_map[(line - 1) * 2 + 1];
   VLOG(1) << "Source::GetLine: line_start=" << line_start << " line_length=" << line_length;
   // TODO(@jroesch): expose substring on tvm::ffi::String.
   auto line_text = std::string((*this)->source).substr(line_start, line_length);

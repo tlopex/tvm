@@ -50,42 +50,45 @@ using ffi::Tuple;
 
 // Base class for layout
 class LayoutNode : public ffi::Object {
+ protected:
+  LayoutNode() = default;
+
  public:
   /*! \brief Compatible with shape */
-  virtual bool CompatibleWithShape(const ffi::Array<PrimExpr>& shape) const = 0;
+  TVM_DLL bool CompatibleWithShape(const ffi::Array<PrimExpr>& shape) const;
 
   /*! \brief Verify if the layout is well-formed */
-  virtual bool VerifyWellFormed() const = 0;
+  TVM_DLL bool VerifyWellFormed() const;
 
   /*! \brief Get the size of the layout (of some axis) */
-  virtual PrimExpr GetSize(ffi::Optional<ffi::String> axis_name = std::nullopt) const = 0;
+  TVM_DLL PrimExpr GetSize(ffi::Optional<ffi::String> axis_name = std::nullopt) const;
 
   /*! \brief Get the span of the layout (of some axis) */
-  virtual PrimExpr GetSpan(ffi::Optional<ffi::String> axis_name = std::nullopt) const = 0;
+  TVM_DLL PrimExpr GetSpan(ffi::Optional<ffi::String> axis_name = std::nullopt) const;
 
   /*! \brief Apply layout on the input coordinate and get the mapped output */
-  virtual ffi::Map<ffi::String, PrimExpr> Apply(ffi::Array<PrimExpr> coord) const = 0;
-  virtual ffi::Map<ffi::String, PrimExpr> Apply(PrimExpr coord) const = 0;
-  virtual ffi::Map<ffi::String, PrimExpr> Apply(const ffi::Array<PrimExpr>& coord,
+  TVM_DLL ffi::Map<ffi::String, PrimExpr> Apply(ffi::Array<PrimExpr> coord) const;
+  TVM_DLL ffi::Map<ffi::String, PrimExpr> Apply(PrimExpr coord) const;
+  TVM_DLL ffi::Map<ffi::String, PrimExpr> Apply(const ffi::Array<PrimExpr>& coord,
                                                 const ffi::Array<PrimExpr>& shape) const;
 
   /*! \brief Turn the layout to canonical form */
-  virtual Layout Canonicalize() const = 0;
+  TVM_DLL Layout Canonicalize() const;
 
   /*! \brief Tile the current layout with a given layout */
-  virtual Layout Tile(const TileLayout& outer, const ffi::Array<PrimExpr>& outer_shape,
-                      const ffi::Array<PrimExpr>& inner_shape) const = 0;
+  TVM_DLL Layout Tile(const TileLayout& outer, const ffi::Array<PrimExpr>& outer_shape,
+                      const ffi::Array<PrimExpr>& inner_shape) const;
 
   /*! \brief Slice the layout with a given shape and region */
-  virtual ffi::Optional<Layout> Slice(const ffi::Array<PrimExpr>& shape,
-                                      const Region& region) const = 0;
+  TVM_DLL ffi::Optional<Layout> Slice(const ffi::Array<PrimExpr>& shape,
+                                      const Region& region) const;
 
   /*! \brief Direct-sum on the tiling domain (unscaled composition)
    *  Given left layout A (grouped by left_shape) and this layout B (grouped by right_shape),
    *  construct the interleaved-domain direct sum A + B without span scaling.
    */
-  virtual Layout DirectSum(const TileLayout& left, const ffi::Array<PrimExpr>& left_shape,
-                           const ffi::Array<PrimExpr>& right_shape) const = 0;
+  TVM_DLL Layout DirectSum(const TileLayout& left, const ffi::Array<PrimExpr>& left_shape,
+                           const ffi::Array<PrimExpr>& right_shape) const;
 
   /*! \brief Check if the layout is the inner layout of a tiled layout
    * \param tile_layout The tiled layout to check
@@ -94,9 +97,9 @@ class LayoutNode : public ffi::Object {
    * \return The outer layout if this layout is the inner layout of tile_layout, std::nullopt
    * otherwise
    */
-  virtual ffi::Optional<TileLayout> IsTileInner(const Layout& tile_layout,
+  TVM_DLL ffi::Optional<TileLayout> IsTileInner(const Layout& tile_layout,
                                                 const ffi::Array<PrimExpr>& tiled_shape,
-                                                const ffi::Array<PrimExpr>& inner_shape) const = 0;
+                                                const ffi::Array<PrimExpr>& inner_shape) const;
 
   /*! \brief Check if the layout is the outer layout of a tiled layout
    * \param tile_layout The tiled layout to check
@@ -105,9 +108,9 @@ class LayoutNode : public ffi::Object {
    * \return The inner layout if this layout is the outer layout of tile_layout, std::nullopt
    * otherwise
    */
-  virtual ffi::Optional<Layout> IsTileOuter(const Layout& tile_layout,
+  TVM_DLL ffi::Optional<Layout> IsTileOuter(const Layout& tile_layout,
                                             const ffi::Array<PrimExpr>& tiled_shape,
-                                            const ffi::Array<PrimExpr>& outer_shape) const = 0;
+                                            const ffi::Array<PrimExpr>& outer_shape) const;
 
   /*! \brief Check if this layout is the right addend B in a direct-sum A + B over the
    *         interleaved domain S_A \otimes S_B. If so, return the left layout A.
@@ -115,9 +118,9 @@ class LayoutNode : public ffi::Object {
    *  \param interleaved_shape The interleaved domain S_A \otimes S_B, i.e., [A0, B0, A1, B1, ...]
    *  \param right_shape The shape that groups this (right) layout
    */
-  virtual ffi::Optional<TileLayout> IsDirectSumRight(
-      const Layout& sum_layout, const ffi::Array<PrimExpr>& interleaved_shape,
-      const ffi::Array<PrimExpr>& right_shape) const = 0;
+  TVM_DLL ffi::Optional<TileLayout> IsDirectSumRight(const Layout& sum_layout,
+                                                     const ffi::Array<PrimExpr>& interleaved_shape,
+                                                     const ffi::Array<PrimExpr>& right_shape) const;
 
   /*! \brief Check if this layout is the left addend A in a direct-sum A + B over the
    *         interleaved domain S_A \otimes S_B. If so, return the right layout B.
@@ -125,9 +128,9 @@ class LayoutNode : public ffi::Object {
    *  \param interleaved_shape The interleaved domain S_A \otimes S_B, i.e., [A0, B0, A1, B1, ...]
    *  \param left_shape The shape that groups this (left) layout
    */
-  virtual ffi::Optional<Layout> IsDirectSumLeft(const Layout& sum_layout,
+  TVM_DLL ffi::Optional<Layout> IsDirectSumLeft(const Layout& sum_layout,
                                                 const ffi::Array<PrimExpr>& interleaved_shape,
-                                                const ffi::Array<PrimExpr>& left_shape) const = 0;
+                                                const ffi::Array<PrimExpr>& left_shape) const;
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
   TVM_FFI_DECLARE_OBJECT_INFO("tirx.Layout", LayoutNode, ffi::Object);
@@ -149,10 +152,18 @@ class AxisNode : public ffi::Object {
  public:
   ffi::String name;
 
+  static ffi::Map<ffi::String, ffi::Any> PrepareFFI(ffi::String name);
+
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<AxisNode>().def_ro("name", &AxisNode::name);
+    refl::ObjectDef<AxisNode>()
+        .def_ro("name", &AxisNode::name)
+        .def_ro("registry_index", &AxisNode::index_, refl::AttachFieldFlag::SEqHashIgnore())
+        .def_static("__ffi_prepare__", &AxisNode::PrepareFFI);
   }
+
+  /*! \brief Return the stable index assigned by the axis registry. */
+  uint32_t registry_index() const { return index_; }
 
   /*! \brief Check if the axis is a thread axis. */
   bool IsThreadAxis() const;
@@ -192,10 +203,17 @@ class AxisNode : public ffi::Object {
 
 class Axis : public ffi::ObjectRef {
  public:
+  using ffi::ObjectRef::same_as;
+
   Axis() = default;
 
   /*! \brief Get the axis object by name. */
   TVM_DLL static Axis Get(const ffi::String& name);
+
+  /*! \brief Compare registry identity, independent of allocation origin. */
+  bool same_as(const Axis& other) const {
+    return defined() && other.defined() && (*this)->registry_index() == other->registry_index();
+  }
 
   /*! \brief Get the attribute map for the axis. */
   template <typename ValueType>
@@ -319,64 +337,85 @@ class TileLayoutNode : public LayoutNode {
     refl::ObjectDef<TileLayoutNode>()
         .def_ro("shard", &TileLayoutNode::shard)
         .def_ro("replica", &TileLayoutNode::replica)
-        .def_ro("offset", &TileLayoutNode::offset);
+        .def_ro("offset", &TileLayoutNode::offset)
+        .def("compatible_with_shape", &TileLayoutNode::CompatibleWithShape)
+        .def("verify_well_formed", &TileLayoutNode::VerifyWellFormed)
+        .def("get_size", &TileLayoutNode::GetSize)
+        .def("get_span", &TileLayoutNode::GetSpan)
+        .def("apply", static_cast<ffi::Map<ffi::String, PrimExpr> (TileLayoutNode::*)(
+                          ffi::Array<PrimExpr>) const>(&TileLayoutNode::Apply))
+        .def("apply_linear",
+             static_cast<ffi::Map<ffi::String, PrimExpr> (TileLayoutNode::*)(PrimExpr) const>(
+                 &TileLayoutNode::Apply))
+        .def("apply_with_shape",
+             static_cast<ffi::Map<ffi::String, PrimExpr> (TileLayoutNode::*)(
+                 const ffi::Array<PrimExpr>&, const ffi::Array<PrimExpr>&) const>(
+                 &TileLayoutNode::Apply))
+        .def("canonicalize", &TileLayoutNode::Canonicalize)
+        .def("tile", &TileLayoutNode::Tile)
+        .def("slice", &TileLayoutNode::Slice)
+        .def("direct_sum", &TileLayoutNode::DirectSum)
+        .def("is_tile_inner", &TileLayoutNode::IsTileInner)
+        .def("is_tile_outer", &TileLayoutNode::IsTileOuter)
+        .def("is_direct_sum_right", &TileLayoutNode::IsDirectSumRight)
+        .def("is_direct_sum_left", &TileLayoutNode::IsDirectSumLeft);
   }
 
   /*! \brief Check if the layout is compatible with the shape */
-  bool CompatibleWithShape(const ffi::Array<PrimExpr>& shape) const final;
+  bool CompatibleWithShape(const ffi::Array<PrimExpr>& shape) const;
 
   /*! \brief Verify if the layout is well-formed */
-  bool VerifyWellFormed() const final;
+  bool VerifyWellFormed() const;
 
   /*! \brief Get the size of the layout (of some axis) */
-  PrimExpr GetSize(ffi::Optional<ffi::String> axis_name = std::nullopt) const final;
+  PrimExpr GetSize(ffi::Optional<ffi::String> axis_name = std::nullopt) const;
 
   /*! \brief Get the span of the layout (of some axis) */
-  PrimExpr GetSpan(ffi::Optional<ffi::String> axis_name = std::nullopt) const final;
+  PrimExpr GetSpan(ffi::Optional<ffi::String> axis_name = std::nullopt) const;
 
   /*! \brief Apply the input coordinate and get the mapped output */
-  ffi::Map<ffi::String, PrimExpr> Apply(ffi::Array<PrimExpr> coord) const final;
-  ffi::Map<ffi::String, PrimExpr> Apply(PrimExpr coord) const final;
+  ffi::Map<ffi::String, PrimExpr> Apply(ffi::Array<PrimExpr> coord) const;
+  ffi::Map<ffi::String, PrimExpr> Apply(PrimExpr coord) const;
   /*! \brief Group-first override: if this layout can be regrouped by ``shape``,
    *  split each ``coord[d]`` against its group's local extents (cleaner
    *  symbolic form than flatten+split-against-shard-shape). Otherwise fall
    *  back to flatten+split. */
   ffi::Map<ffi::String, PrimExpr> Apply(const ffi::Array<PrimExpr>& coord,
-                                        const ffi::Array<PrimExpr>& shape) const final;
+                                        const ffi::Array<PrimExpr>& shape) const;
 
   /*! \brief Turn the layout to canonical form */
-  Layout Canonicalize() const final;
+  Layout Canonicalize() const;
 
   /*! \brief Tile the layout with an outer layout */
   Layout Tile(const TileLayout& outer, const ffi::Array<PrimExpr>& outer_shape,
-              const ffi::Array<PrimExpr>& inner_shape) const final;
+              const ffi::Array<PrimExpr>& inner_shape) const;
 
   Layout DirectSum(const TileLayout& left, const ffi::Array<PrimExpr>& left_shape,
-                   const ffi::Array<PrimExpr>& right_shape) const final;
+                   const ffi::Array<PrimExpr>& right_shape) const;
 
   /*! \brief Check if the layout is the inner layout of a tiled layout */
   ffi::Optional<TileLayout> IsTileInner(const Layout& tile_layout,
                                         const ffi::Array<PrimExpr>& tiled_shape,
-                                        const ffi::Array<PrimExpr>& inner_shape) const final;
+                                        const ffi::Array<PrimExpr>& inner_shape) const;
 
   /*! \brief Check if the layout is the outer layout of a tiled layout */
   ffi::Optional<Layout> IsTileOuter(const Layout& tile_layout,
                                     const ffi::Array<PrimExpr>& tiled_shape,
-                                    const ffi::Array<PrimExpr>& outer_shape) const final;
+                                    const ffi::Array<PrimExpr>& outer_shape) const;
 
   ffi::Optional<TileLayout> IsDirectSumRight(const Layout& sum_layout,
                                              const ffi::Array<PrimExpr>& interleaved_shape,
-                                             const ffi::Array<PrimExpr>& right_shape) const final;
+                                             const ffi::Array<PrimExpr>& right_shape) const;
 
   ffi::Optional<Layout> IsDirectSumLeft(const Layout& sum_layout,
                                         const ffi::Array<PrimExpr>& interleaved_shape,
-                                        const ffi::Array<PrimExpr>& left_shape) const final;
+                                        const ffi::Array<PrimExpr>& left_shape) const;
 
   /*! \brief Get the shape of the shard */
   ffi::Array<PrimExpr> GetShardShape() const;
 
   /*! \brief Slice the layout with a given shape and region */
-  ffi::Optional<Layout> Slice(const ffi::Array<PrimExpr>& shape, const Region& region) const final;
+  ffi::Optional<Layout> Slice(const ffi::Array<PrimExpr>& shape, const Region& region) const;
 
   /*! \brief Is the layout trivial (pure memory, identical mapping) */
   bool IsTrivial() const;
@@ -430,57 +469,78 @@ class ComposeLayoutNode : public LayoutNode {
         .def_ro("swizzle_inner", &ComposeLayoutNode::swizzle_inner)
         .def_ro("inner_mask", &ComposeLayoutNode::inner_mask)
         .def_ro("outer_mask", &ComposeLayoutNode::outer_mask)
-        .def_ro("tile_layout", &ComposeLayoutNode::tile_layout);
+        .def_ro("tile_layout", &ComposeLayoutNode::tile_layout)
+        .def("compatible_with_shape", &ComposeLayoutNode::CompatibleWithShape)
+        .def("verify_well_formed", &ComposeLayoutNode::VerifyWellFormed)
+        .def("get_size", &ComposeLayoutNode::GetSize)
+        .def("get_span", &ComposeLayoutNode::GetSpan)
+        .def("apply", static_cast<ffi::Map<ffi::String, PrimExpr> (ComposeLayoutNode::*)(
+                          ffi::Array<PrimExpr>) const>(&ComposeLayoutNode::Apply))
+        .def("apply_linear",
+             static_cast<ffi::Map<ffi::String, PrimExpr> (ComposeLayoutNode::*)(PrimExpr) const>(
+                 &ComposeLayoutNode::Apply))
+        .def("apply_with_shape",
+             static_cast<ffi::Map<ffi::String, PrimExpr> (ComposeLayoutNode::*)(
+                 const ffi::Array<PrimExpr>&, const ffi::Array<PrimExpr>&) const>(
+                 &ComposeLayoutNode::Apply))
+        .def("canonicalize", &ComposeLayoutNode::Canonicalize)
+        .def("tile", &ComposeLayoutNode::Tile)
+        .def("slice", &ComposeLayoutNode::Slice)
+        .def("direct_sum", &ComposeLayoutNode::DirectSum)
+        .def("is_tile_inner", &ComposeLayoutNode::IsTileInner)
+        .def("is_tile_outer", &ComposeLayoutNode::IsTileOuter)
+        .def("is_direct_sum_right", &ComposeLayoutNode::IsDirectSumRight)
+        .def("is_direct_sum_left", &ComposeLayoutNode::IsDirectSumLeft);
   }
 
   /*! \brief Check if the layout is compatible with the shape */
-  bool CompatibleWithShape(const ffi::Array<PrimExpr>& shape) const final;
+  bool CompatibleWithShape(const ffi::Array<PrimExpr>& shape) const;
 
   /*! \brief Verify if the layout is well-formed */
-  bool VerifyWellFormed() const final;
+  bool VerifyWellFormed() const;
 
   /*! \brief Get the size (of some axis) of the layout */
-  PrimExpr GetSize(ffi::Optional<ffi::String> axis_name = std::nullopt) const final;
+  PrimExpr GetSize(ffi::Optional<ffi::String> axis_name = std::nullopt) const;
 
   /*! \brief Get the span (of some axis) of the layout */
-  PrimExpr GetSpan(ffi::Optional<ffi::String> axis_name = std::nullopt) const final;
+  PrimExpr GetSpan(ffi::Optional<ffi::String> axis_name = std::nullopt) const;
 
   /*! \brief Apply the input coordinate and get the mapped output */
-  ffi::Map<ffi::String, PrimExpr> Apply(ffi::Array<PrimExpr> coord) const final;
-  ffi::Map<ffi::String, PrimExpr> Apply(PrimExpr coord) const final;
+  ffi::Map<ffi::String, PrimExpr> Apply(ffi::Array<PrimExpr> coord) const;
+  ffi::Map<ffi::String, PrimExpr> Apply(PrimExpr coord) const;
   ffi::Map<ffi::String, PrimExpr> Apply(const ffi::Array<PrimExpr>& coord,
-                                        const ffi::Array<PrimExpr>& shape) const final;
+                                        const ffi::Array<PrimExpr>& shape) const;
 
   /*! \brief Turn the layout to canonical form */
-  Layout Canonicalize() const final;
+  Layout Canonicalize() const;
 
   /*! \brief Tile the layout with an outer layout */
   Layout Tile(const TileLayout& outer, const ffi::Array<PrimExpr>& outer_shape,
-              const ffi::Array<PrimExpr>& inner_shape) const final;
+              const ffi::Array<PrimExpr>& inner_shape) const;
 
   Layout DirectSum(const TileLayout& left, const ffi::Array<PrimExpr>& left_shape,
-                   const ffi::Array<PrimExpr>& right_shape) const final;
+                   const ffi::Array<PrimExpr>& right_shape) const;
 
   /*! \brief Check if the layout is the inner layout of a tiled layout */
   ffi::Optional<TileLayout> IsTileInner(const Layout& tile_layout,
                                         const ffi::Array<PrimExpr>& tiled_shape,
-                                        const ffi::Array<PrimExpr>& inner_shape) const final;
+                                        const ffi::Array<PrimExpr>& inner_shape) const;
 
   /*! \brief Check if the layout is the outer layout of a tiled layout */
   ffi::Optional<Layout> IsTileOuter(const Layout& tile_layout,
                                     const ffi::Array<PrimExpr>& tiled_shape,
-                                    const ffi::Array<PrimExpr>& outer_shape) const final;
+                                    const ffi::Array<PrimExpr>& outer_shape) const;
 
   ffi::Optional<TileLayout> IsDirectSumRight(const Layout& sum_layout,
                                              const ffi::Array<PrimExpr>& interleaved_shape,
-                                             const ffi::Array<PrimExpr>& right_shape) const final;
+                                             const ffi::Array<PrimExpr>& right_shape) const;
 
   ffi::Optional<Layout> IsDirectSumLeft(const Layout& sum_layout,
                                         const ffi::Array<PrimExpr>& interleaved_shape,
-                                        const ffi::Array<PrimExpr>& left_shape) const final;
+                                        const ffi::Array<PrimExpr>& left_shape) const;
 
   /*! \brief Slice the layout with a given shape and region */
-  ffi::Optional<Layout> Slice(const ffi::Array<PrimExpr>& shape, const Region& region) const final;
+  ffi::Optional<Layout> Slice(const ffi::Array<PrimExpr>& shape, const Region& region) const;
 
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.ComposeLayout", ComposeLayoutNode, LayoutNode);
 };

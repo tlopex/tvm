@@ -22,6 +22,7 @@
  */
 #include <tvm/arith/analyzer.h>
 #include <tvm/ffi/function.h>
+#include <tvm/ffi/reflection/accessor.h>
 #include <tvm/ffi/reflection/registry.h>
 #include <tvm/runtime/device_api.h>
 #include <tvm/tirx/analysis.h>
@@ -31,6 +32,7 @@
 #include <tvm/tirx/op.h>
 
 #include <iterator>
+#include <limits>
 #include <list>
 #include <stack>
 
@@ -39,35 +41,105 @@
 namespace tvm {
 namespace tirx {
 
+using IndexMod = tirx::FloorModNode;
+using IndexDiv = tirx::FloorDivNode;
+
+namespace {
+
+struct BufferTypeDerivedFields {
+  ffi::String storage_scope;
+  PrimExpr elem_offset;
+  int data_alignment;
+  int offset_factor;
+};
+
+BufferTypeDerivedFields DeriveBufferTypeFields(ffi::String storage_scope,
+                                               const ffi::Array<PrimExpr>& shape,
+                                               ffi::Optional<PrimExpr> elem_offset,
+                                               int data_alignment, int offset_factor) {
+  if (storage_scope.empty()) {
+    storage_scope = "global";
+  }
+  if (!elem_offset.has_value()) {
+    DLDataType index_dtype = shape.empty() ? DefaultIndexType() : shape[0].ty()->dtype;
+    elem_offset = IntImm(PrimType(index_dtype), 0);
+  }
+  if (data_alignment <= 0) {
+    data_alignment = runtime::kAllocAlignment;
+  }
+  if (offset_factor == 0) {
+    offset_factor = 1;
+  }
+  return {std::move(storage_scope), elem_offset.value(), data_alignment, offset_factor};
+}
+
+int CheckedNativeInt(int64_t raw, const char* field_name) {
+  TVM_FFI_CHECK_GE(raw, std::numeric_limits<int>::min(), ValueError)
+      << field_name << " is below the native int range";
+  TVM_FFI_CHECK_LE(raw, std::numeric_limits<int>::max(), ValueError)
+      << field_name << " is above the native int range";
+  return static_cast<int>(raw);
+}
+
+}  // namespace
+
+ffi::Map<ffi::String, ffi::Any> BufferTypeNode::PrepareFFI(ffi::String storage_scope,
+                                                           ffi::Array<PrimExpr> shape,
+                                                           ffi::Optional<PrimExpr> elem_offset,
+                                                           int64_t data_alignment,
+                                                           int64_t offset_factor) {
+  BufferTypeDerivedFields fields =
+      DeriveBufferTypeFields(std::move(storage_scope), shape, std::move(elem_offset),
+                             CheckedNativeInt(data_alignment, "data_alignment"),
+                             CheckedNativeInt(offset_factor, "offset_factor"));
+  return {{"storage_scope", fields.storage_scope},
+          {"elem_offset", fields.elem_offset},
+          {"data_alignment", fields.data_alignment},
+          {"offset_factor", fields.offset_factor}};
+}
+
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
-  refl::ObjectDef<DataProducerNode>()
-      .def("get_shape", &DataProducerNode::GetShape)
-      .def("get_data_type", &DataProducerNode::GetDataType)
-      .def("get_name_hint", &DataProducerNode::GetNameHint);
+  refl::ObjectDef<DataProducerNode>();
   BufferTypeNode::RegisterReflection();
 }
 
-using IndexMod = tirx::FloorModNode;
-using IndexDiv = tirx::FloorDivNode;
+ffi::Array<PrimExpr> DataProducerNode::GetShape() const {
+  return ffi::reflection::GetMethod(GetTypeKey(), "get_shape")
+      .CallExpected<ffi::Array<PrimExpr>>(ffi::GetRef<DataProducer>(this))
+      .value();
+}
+
+PrimType DataProducerNode::GetDataType() const {
+  return ffi::reflection::GetMethod(GetTypeKey(), "get_data_type")
+      .CallExpected<PrimType>(ffi::GetRef<DataProducer>(this))
+      .value();
+}
+
+ffi::String DataProducerNode::GetNameHint() const {
+  return ffi::reflection::GetMethod(GetTypeKey(), "get_name_hint")
+      .CallExpected<ffi::String>(ffi::GetRef<DataProducer>(this))
+      .value();
+}
 
 BufferType::BufferType(ffi::String storage_scope, PrimType dtype, ffi::Array<PrimExpr> shape,
                        ffi::Array<PrimExpr> strides, PrimExpr elem_offset, int data_alignment,
                        int offset_factor, ffi::Optional<Layout> layout,
                        ffi::Array<PrimExpr> allocated_addr, Span span)
     : Type(ffi::UnsafeInit{}) {
+  ffi::Optional<PrimExpr> optional_elem_offset =
+      elem_offset.defined() ? ffi::Optional<PrimExpr>(elem_offset) : std::nullopt;
+  BufferTypeDerivedFields fields =
+      DeriveBufferTypeFields(std::move(storage_scope), shape, std::move(optional_elem_offset),
+                             data_alignment, offset_factor);
   auto n = ffi::make_object<BufferTypeNode>();
   n->dtype = std::move(dtype);
-  n->storage_scope = storage_scope.empty() ? ffi::String("global") : std::move(storage_scope);
+  n->storage_scope = std::move(fields.storage_scope);
   n->shape = std::move(shape);
   n->strides = std::move(strides);
-  if (!elem_offset.defined()) {
-    elem_offset = IntImm(PrimType(n->DefaultIndexType()), 0);
-  }
-  n->elem_offset = std::move(elem_offset);
-  n->data_alignment =
-      data_alignment <= 0 ? static_cast<int>(runtime::kAllocAlignment) : data_alignment;
-  n->offset_factor = offset_factor == 0 ? 1 : offset_factor;
+  n->elem_offset = std::move(fields.elem_offset);
+  n->data_alignment = fields.data_alignment;
+  n->offset_factor = fields.offset_factor;
   n->layout = std::move(layout);
   n->allocated_addr = std::move(allocated_addr);
   n->span = std::move(span);

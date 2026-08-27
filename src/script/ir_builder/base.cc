@@ -36,7 +36,7 @@ bool PositionLessEqual(int lhs_line, int lhs_column, int rhs_line, int rhs_colum
 
 bool Contains(const Span& outer, const Span& inner) {
   if (!outer.defined() || !inner.defined() || outer.as<SequentialSpanNode>() ||
-      inner.as<SequentialSpanNode>() || !outer->source_name.same_as(inner->source_name)) {
+      inner.as<SequentialSpanNode>() || outer->source_name->name != inner->source_name->name) {
     return false;
   }
   return PositionLessEqual(outer->line, outer->column, inner->line, inner->column) &&

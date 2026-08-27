@@ -99,11 +99,18 @@ TVM_DLL ffi::Array<Var> UndefinedVars(const PrimExpr& expr);
 TVM_DLL ffi::Array<Var> UndefinedVars(const PrimExpr& expr, const ffi::Array<Var>& defs);
 
 /*!
- * \brief Analyze the side effect of an expression
+ * \brief Analyze the side effect of an expression.
  * \param expr The expression to be checked.
+ *
+ * Primitive expressions use their registered `TCallEffectKind` metadata.
+ * Non-primitive calls are conservatively treated as state updates, while
+ * variables and literal values are pure.
  *
  * \return CallEffectKind, can be kPure, kReadState or kUpdateState
  */
+TVM_DLL CallEffectKind SideEffect(const Expr& expr);
+
+/*! \brief Analyze the side effect of a primitive expression. */
 TVM_DLL CallEffectKind SideEffect(const PrimExpr& expr);
 
 /*!

@@ -19,9 +19,11 @@
 
 #include <gtest/gtest.h>
 #include <tvm/runtime/logging.h>
+#include <tvm/s_tir/analysis.h>
 #include <tvm/te/operation.h>
 #include <tvm/tirx/analysis.h>
 #include <tvm/tirx/builtin.h>
+#include <tvm/tirx/function.h>
 
 TEST(SimplePasses, SideEffect) {
   using namespace tvm;
@@ -33,4 +35,18 @@ TEST(SimplePasses, SideEffect) {
   TVM_FFI_ICHECK(tirx::SideEffect(tvm::Call(PrimType::Void(), tirx::builtin::tvm_storage_sync(), {})
                                       .as_or_throw<PrimExpr>()) ==
                  tirx::CallEffectKind::kUpdateState);
+}
+TEST(SimplePasses, PrimFuncFieldPurityMatchesCompleteFunction) {
+  using namespace tvm;
+
+  PrimExpr impure_shape =
+      Call(PrimType::Int(32), tirx::builtin::tvm_storage_sync(), {}).as_or_throw<PrimExpr>();
+  tirx::BufferVar buffer =
+      tirx::decl_buffer({impure_shape}, PrimType::Float(32), "buffer_with_impure_shape");
+  ffi::Array<tirx::Var> params{buffer.var()};
+  tirx::Stmt body = tirx::Evaluate(0);
+
+  EXPECT_FALSE(s_tir::IsPureFunctionFields(params, body));
+  tirx::PrimFunc function(params, body);
+  EXPECT_FALSE(s_tir::IsPureFunction(function));
 }

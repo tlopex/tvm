@@ -80,9 +80,9 @@ class TensorNode : public OpaqueExprNode {
 
   static void RegisterReflection();
 
-  ffi::Array<PrimExpr> GetShape() const final { return shape; }
+  ffi::Array<PrimExpr> GetShape() const { return shape; }
 
-  PrimType GetDataType() const final { return dtype; }
+  PrimType GetDataType() const { return dtype; }
 
   TVM_DLL ffi::String GetNameHint() const;
 

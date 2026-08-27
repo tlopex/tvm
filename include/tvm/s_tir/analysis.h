@@ -121,6 +121,18 @@ TVM_DLL double EstimateTIRFlops(const IRModule& mod);
 TVM_DLL bool IsPureFunction(const PrimFunc& func, bool assert_on_error = false);
 
 /*!
+ * \brief Analyze the same parameter definitions and body used by a PrimFunc
+ *        before the complete function object exists.
+ * \param params The function parameters, including buffer metadata that may
+ *        contain expressions.
+ * \param body The function body to be checked.
+ * \param assert_on_error If true, an error will be thrown for an impure function.
+ * \return Whether the function fields are pure.
+ */
+TVM_DLL bool IsPureFunctionFields(const ffi::Array<tirx::Var>& params, const Stmt& body,
+                                  bool assert_on_error = false);
+
+/*!
  * \brief Verify the correctness of a GPU code
  * \param func The function to be checked.
  * \param constraints The dict to specify constraints to check.

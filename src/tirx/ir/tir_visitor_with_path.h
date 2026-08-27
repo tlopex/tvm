@@ -87,6 +87,10 @@ class TIRVisitorWithPath : protected ExprFunctor<void(const Expr&, ffi::reflecti
   // Visitors for TIR constructs that are neither PrimExpr nor Stmt
   virtual void Visit(const IRModule& obj, ffi::reflection::AccessPath path);
   virtual void Visit(const PrimFunc& obj, ffi::reflection::AccessPath path);
+  // Visit the same parameter definitions and body as Visit(PrimFunc), but
+  // before a complete PrimFunc object has been allocated.
+  void VisitPrimFuncFields(const ffi::Array<Var>& params, const Stmt& body,
+                           ffi::reflection::AccessPath path);
   virtual void Visit(const GlobalVar& obj, ffi::reflection::AccessPath path) {}
   virtual void Visit(const Range& obj, ffi::reflection::AccessPath path);
   virtual void Visit(const BufferRegion& obj, ffi::reflection::AccessPath path);

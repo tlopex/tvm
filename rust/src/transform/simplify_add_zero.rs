@@ -39,7 +39,7 @@ pub fn simplify_add_zero_prim_func(func: PrimFunc) -> Result<PrimFunc> {
 /// Apply the add-zero simplifier to every function reachable from a module.
 pub fn simplify_add_zero_module(module: IRModule) -> Result<IRModule> {
     let mut mapper = AddZeroSimplifier;
-    let functions = module.functions()?;
+    let functions = module.functions.clone();
     // Rebuild an independent module so callers that retained another handle to
     // `module` do not observe this pass's updates.
     let mut output = module.copy_for_update()?;
@@ -77,13 +77,11 @@ struct AddZeroSimplifier;
 #[tvm_ffi::dispatch(map)]
 impl AddZeroSimplifier {
     fn map_add(&mut self, value: Add) -> Result<Any> {
-        let lhs = value.a()?;
-        let rhs = value.b()?;
-        if int_value(&lhs)? == Some(0) {
-            return Ok(rhs.to_any());
+        if int_value(&value.a) == Some(0) {
+            return Ok(value.b.to_any());
         }
-        if int_value(&rhs)? == Some(0) {
-            return Ok(lhs.to_any());
+        if int_value(&value.b) == Some(0) {
+            return Ok(value.a.to_any());
         }
         Ok(Any::from(value))
     }

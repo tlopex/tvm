@@ -32,23 +32,17 @@ struct IncrementIntImmediates;
 #[tvm_ffi::dispatch(map)]
 impl IncrementIntImmediates {
     fn map_integer(&mut self, value: IntImm) -> Result<Any> {
-        let dtype = value.ty()?.try_cast::<PrimType>()?.dtype()?;
-        let span = value.span()?;
-        let current = value.value()?;
-        let incremented = current.checked_add(1).ok_or_else(|| {
+        let dtype = value.ty.clone().try_cast::<PrimType>()?.dtype;
+        let incremented = value.value.checked_add(1).ok_or_else(|| {
             Error::new(
                 VALUE_ERROR,
                 &format!(
                     "cannot increment integer literal {} without overflow",
-                    current
+                    value.value
                 ),
                 "",
             )
         })?;
-        Ok(Any::from(IntImm::from_dtype_with_span(
-            dtype,
-            incremented,
-            span.as_ref(),
-        )?))
+        Ok(Any::from(IntImm::from_dtype(dtype, incremented)?))
     }
 }

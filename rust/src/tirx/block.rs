@@ -18,9 +18,12 @@
  */
 
 use tvm_ffi::derive::{Object, ObjectRef};
-use tvm_ffi::{Any, Array, Error, Map, ObjectArc, Result, String, VALUE_ERROR};
+use tvm_ffi::{
+    Any, Array, DLDataTypeCode, Error, Map, ObjectArc, ObjectRefCast, Result, String, TYPE_ERROR,
+    VALUE_ERROR,
+};
 
-use super::{BufferRegion, MatchBufferRegion, Stmt, StmtObj};
+use super::{primitive_type, BufferRegion, MatchBufferRegion, Stmt, StmtObj};
 use crate::ir::{Expr, PrimExprConvertible, PrimExprConvertibleObj, Range, Span, Var};
 
 /// Scheduling role attached to a TIR block iteration variable.
@@ -69,27 +72,26 @@ impl TryFrom<i64> for IterVarType {
     }
 }
 
-/// Opaque Rust view of a TIR block iteration variable.
+/// ABI-complete Rust representation of a TIR block iteration variable.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.IterVar"]
 #[type_final]
 pub struct IterVarObj {
     base: PrimExprConvertibleObj,
+    pub dom: Option<Range>,
+    pub var: Var,
+    pub iter_type: IterVarType,
+    pub thread_tag: String,
+    pub span: Option<Span>,
 }
-crate::abi::reflected_fields!(IterVarObj {
-    dom => "dom": Option<Range>,
-    var => "var": Var,
-    iter_type_raw => "iter_type": i64,
-    thread_tag => "thread_tag": String,
-    span => "span": Option<Span>,
+crate::abi::impl_object_layout!(IterVarObj: PrimExprConvertibleObj {
+    "dom" => dom: Option<Range>,
+    "var" => var: Var,
+    "iter_type" => iter_type: IterVarType,
+    "thread_tag" => thread_tag: String,
+    "span" => span: Option<Span>,
 });
-
-impl IterVarObj {
-    pub fn iter_type(&self) -> Result<IterVarType> {
-        IterVarType::try_from(self.iter_type_raw()?)
-    }
-}
 
 /// Reference-counted handle to a block iteration variable.
 #[repr(C)]
@@ -115,7 +117,7 @@ impl std::ops::Deref for IterVarObj {
 }
 
 impl IterVar {
-    /// Construct an untagged iteration variable through TVM's native constructor.
+    /// Construct an untagged iteration variable directly in Rust.
     pub fn new<D, V>(domain: D, variable: V, iter_type: IterVarType) -> Result<Self>
     where
         D: Into<Range>,
@@ -133,37 +135,100 @@ impl IterVar {
         thread_tag: &str,
         span: Option<&Span>,
     ) -> Result<Self> {
-        let thread_tag = String::from(thread_tag);
-        tvm_ffi::cached_global_func!("tirx.IterVar")
-            .call_tuple((
-                domain,
-                variable,
-                iter_type.as_raw(),
+        validate_iter_var(domain.as_ref(), &variable)?;
+        Ok(Self::from_complete_fields(
+            domain,
+            variable,
+            iter_type,
+            String::from(thread_tag),
+            span.cloned(),
+        ))
+    }
+
+    /// Construct an iteration variable from every physical field.
+    ///
+    /// A missing domain is valid for some thread axes and must remain
+    /// representable by generated bindings even though [`IterVar::new`] uses a
+    /// concrete range for convenience.
+    pub fn from_complete_fields(
+        dom: Option<Range>,
+        var: Var,
+        iter_type: IterVarType,
+        thread_tag: String,
+        span: Option<Span>,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(IterVarObj {
+                base: PrimExprConvertibleObj::new(),
+                dom,
+                var,
+                iter_type,
                 thread_tag,
-                span.cloned(),
-            ))?
-            .try_into()
+                span,
+            }),
+        }
     }
 }
 
-/// Opaque Rust view of TVM's current TIR block node.
+fn validate_iter_var(domain: Option<&Range>, variable: &Var) -> Result<()> {
+    let variable_type = variable
+        .ty
+        .clone()
+        .try_cast::<crate::ir::PrimType>()
+        .map_err(|_| {
+            Error::new(
+                TYPE_ERROR,
+                "IterVar variable must have a primitive type",
+                "",
+            )
+        })?;
+    if let Some(domain) = domain {
+        let extent_type = primitive_type(&domain.extent, "IterVar domain extent")?;
+        if extent_type.dtype.code != DLDataTypeCode::kDLInt as u8 {
+            return Err(Error::new(
+                TYPE_ERROR,
+                "IterVar domain extent must have a signed integer type",
+                "",
+            ));
+        }
+        if extent_type.dtype != variable_type.dtype {
+            return Err(Error::new(
+                TYPE_ERROR,
+                "IterVar domain extent type must match its variable type",
+                "",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// ABI-complete Rust representation of TVM's current TIR block node.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.SBlock"]
 #[type_final]
 pub struct SBlockObj {
     base: StmtObj,
+    pub iter_vars: Array<IterVar>,
+    pub reads: Array<BufferRegion>,
+    pub writes: Array<BufferRegion>,
+    pub name_hint: String,
+    pub alloc_buffers: Array<Var>,
+    pub match_buffers: Array<MatchBufferRegion>,
+    pub annotations: Map<String, Any>,
+    pub init: Option<Stmt>,
+    pub body: Stmt,
 }
-crate::abi::reflected_fields!(SBlockObj {
-    iter_vars => "iter_vars": Array<IterVar>,
-    reads => "reads": Array<BufferRegion>,
-    writes => "writes": Array<BufferRegion>,
-    name_hint => "name_hint": String,
-    alloc_buffers => "alloc_buffers": Array<Var>,
-    match_buffers => "match_buffers": Array<MatchBufferRegion>,
-    annotations => "annotations": Map<String, Any>,
-    init => "init": Option<Stmt>,
-    body => "body": Stmt,
+crate::abi::impl_object_layout!(SBlockObj: StmtObj {
+    "iter_vars" => iter_vars: Array<IterVar>,
+    "reads" => reads: Array<BufferRegion>,
+    "writes" => writes: Array<BufferRegion>,
+    "name_hint" => name_hint: String,
+    "alloc_buffers" => alloc_buffers: Array<Var>,
+    "match_buffers" => match_buffers: Array<MatchBufferRegion>,
+    "annotations" => annotations: Map<String, Any>,
+    "init" => init: Option<Stmt>,
+    "body" => body: Stmt,
 });
 
 /// Reference-counted handle to a TIR scheduling block.
@@ -191,7 +256,7 @@ impl std::ops::Deref for SBlockObj {
 
 impl SBlock {
     /// Construct a block with no axes, declared regions, or local buffers.
-    pub fn new<B>(name_hint: &str, body: B) -> Result<Self>
+    pub fn new<B>(name_hint: &str, body: B) -> Self
     where
         B: Into<Stmt>,
     {
@@ -209,7 +274,7 @@ impl SBlock {
         )
     }
 
-    /// Construct a scheduling block through TVM's native constructor.
+    /// Construct a scheduling block directly in Rust with all structural fields.
     #[allow(clippy::too_many_arguments)]
     pub fn with_metadata(
         iter_vars: Vec<IterVar>,
@@ -222,37 +287,67 @@ impl SBlock {
         match_buffers: Vec<MatchBufferRegion>,
         annotations: Map<String, Any>,
         span: Option<&Span>,
-    ) -> Result<Self> {
-        let name_hint = String::from(name_hint);
-        tvm_ffi::cached_global_func!("tirx.SBlock")
-            .call_tuple((
-                Array::new(iter_vars),
-                Array::new(reads),
-                Array::new(writes),
+    ) -> Self {
+        Self::from_complete_fields(
+            span.cloned(),
+            Array::new(iter_vars),
+            Array::new(reads),
+            Array::new(writes),
+            String::from(name_hint),
+            Array::new(allocated_buffers),
+            Array::new(match_buffers),
+            annotations,
+            init,
+            body,
+        )
+    }
+
+    /// Construct a scheduling block from every physical field.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        iter_vars: Array<IterVar>,
+        reads: Array<BufferRegion>,
+        writes: Array<BufferRegion>,
+        name_hint: String,
+        alloc_buffers: Array<Var>,
+        match_buffers: Array<MatchBufferRegion>,
+        annotations: Map<String, Any>,
+        init: Option<Stmt>,
+        body: Stmt,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(SBlockObj {
+                base: StmtObj::new(span),
+                iter_vars,
+                reads,
+                writes,
                 name_hint,
-                body,
-                init,
-                Array::new(allocated_buffers),
-                Array::new(match_buffers),
+                alloc_buffers,
+                match_buffers,
                 annotations,
-                span.cloned(),
-            ))?
-            .try_into()
+                init,
+                body,
+            }),
+        }
     }
 }
 
-/// Opaque Rust view of a block realization.
+/// ABI-complete Rust representation of a block realization.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.SBlockRealize"]
 #[type_final]
 pub struct SBlockRealizeObj {
     base: StmtObj,
+    pub iter_values: Array<Expr>,
+    pub predicate: Expr,
+    pub block: SBlock,
 }
-crate::abi::reflected_fields!(SBlockRealizeObj {
-    iter_values => "iter_values": Array<Expr>,
-    predicate => "predicate": Expr,
-    block => "block": SBlock,
+crate::abi::impl_object_layout!(SBlockRealizeObj: StmtObj {
+    "iter_values" => iter_values: Array<Expr>,
+    "predicate" => predicate: Expr,
+    "block" => block: SBlock,
 });
 
 /// Reference-counted handle to one realized scheduling block.
@@ -279,7 +374,7 @@ impl std::ops::Deref for SBlockRealizeObj {
 }
 
 impl SBlockRealize {
-    /// Construct one realization of `block` through TVM's native constructor.
+    /// Construct one realization of `block` directly in Rust.
     pub fn new<P, B>(iter_values: Vec<Expr>, predicate: P, block: B) -> Result<Self>
     where
         P: Into<Expr>,
@@ -299,14 +394,49 @@ impl SBlockRealize {
         P: Into<Expr>,
         B: Into<SBlock>,
     {
-        tvm_ffi::cached_global_func!("tirx.SBlockRealize")
-            .call_tuple((
-                Array::new(iter_values),
-                predicate.into(),
-                block.into(),
-                span.cloned(),
-            ))?
-            .try_into()
+        let predicate = predicate.into();
+        let block = block.into();
+        if block.iter_vars.len() != iter_values.len() {
+            return Err(Error::new(
+                VALUE_ERROR,
+                "SBlockRealize needs the same number of iter_vars and binding values",
+                "",
+            ));
+        }
+        for value in &iter_values {
+            primitive_type(value, "SBlockRealize binding value")?;
+        }
+        let predicate_dtype = primitive_type(&predicate, "SBlockRealize predicate")?.dtype;
+        if predicate_dtype.code != DLDataTypeCode::kDLBool as u8 {
+            return Err(Error::new(
+                TYPE_ERROR,
+                "SBlockRealize predicate must have bool type",
+                "",
+            ));
+        }
+        Ok(Self::from_complete_fields(
+            span.cloned(),
+            Array::new(iter_values),
+            predicate,
+            block,
+        ))
+    }
+
+    /// Construct a block realization from every physical field after external validation.
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        iter_values: Array<Expr>,
+        predicate: Expr,
+        block: SBlock,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(SBlockRealizeObj {
+                base: StmtObj::new(span),
+                iter_values,
+                predicate,
+                block,
+            }),
+        }
     }
 }
 
@@ -315,3 +445,5 @@ tvm_ffi::impl_object_upcast!(
     SBlock => Stmt,
     SBlockRealize => Stmt,
 );
+
+crate::abi::impl_rust_allocatable!(IterVarObj, SBlockObj, SBlockRealizeObj);

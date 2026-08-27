@@ -20,19 +20,21 @@
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
     Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Function, Map,
-    ObjectArc, ObjectCore, ObjectRefCast, ObjectRefCore, Result, String, VALUE_ERROR,
+    ObjectArc, ObjectRefCast, ObjectRefCore, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
-/// Opaque Rust view of TVM's `ExprNode`.
+/// ABI-complete Rust representation of TVM's `ExprNode` prefix.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Expr"]
 pub struct ExprObj {
     base: tvm_ffi::Object,
+    pub span: Option<Span>,
+    pub ty: Type,
 }
-crate::abi::reflected_fields!(ExprObj {
-    span => "span": Option<Span>,
-    ty => "ty": Type,
+crate::abi::impl_object_layout!(ExprObj {
+    "span" => span: Option<Span>,
+    "ty" => ty: Type,
 });
 
 /// Reference-counted handle to any TVM expression.
@@ -50,15 +52,26 @@ impl std::ops::Deref for Expr {
     }
 }
 
-/// Opaque Rust view of TVM's `BaseFuncNode`.
+impl ExprObj {
+    pub(crate) fn new(span: Option<Span>, ty: Type) -> Self {
+        Self {
+            base: tvm_ffi::Object::new(),
+            span,
+            ty,
+        }
+    }
+}
+
+/// ABI-complete Rust representation of TVM's `BaseFuncNode` prefix.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.BaseFunc"]
 pub struct BaseFuncObj {
     base: ExprObj,
+    pub attrs: DictAttrs,
 }
-crate::abi::reflected_fields!(BaseFuncObj {
-    attrs => "attrs": DictAttrs,
+crate::abi::impl_object_layout!(BaseFuncObj: ExprObj {
+    "attrs" => attrs: DictAttrs,
 });
 
 /// Reference-counted handle to any TVM base function.
@@ -84,16 +97,26 @@ impl std::ops::Deref for BaseFuncObj {
     }
 }
 
-/// Opaque Rust view of TVM's `GlobalVarNode`.
+impl BaseFuncObj {
+    pub(crate) fn new(span: Option<Span>, ty: Type, attrs: DictAttrs) -> Self {
+        Self {
+            base: ExprObj::new(span, ty),
+            attrs,
+        }
+    }
+}
+
+/// ABI-complete Rust representation of TVM's `GlobalVarNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.GlobalVar"]
 #[type_final]
 pub struct GlobalVarObj {
     base: ExprObj,
+    pub name_hint: String,
 }
-crate::abi::reflected_fields!(GlobalVarObj {
-    name_hint => "name_hint": String,
+crate::abi::impl_object_layout!(GlobalVarObj: ExprObj {
+    "name_hint" => name_hint: String,
 });
 
 /// Reference-counted handle to a global function name.
@@ -119,15 +142,16 @@ impl std::ops::Deref for GlobalVarObj {
     }
 }
 
-/// Opaque Rust view of TVM's `VarNode`.
+/// ABI-complete Rust representation of TVM's `VarNode` prefix.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Var"]
 pub struct VarObj {
     base: ExprObj,
+    pub name: String,
 }
-crate::abi::reflected_fields!(VarObj {
-    name => "name": String,
+crate::abi::impl_object_layout!(VarObj: ExprObj {
+    "name" => name: String,
 });
 
 /// Reference-counted handle to a TVM variable.
@@ -153,16 +177,17 @@ impl std::ops::Deref for VarObj {
     }
 }
 
-/// Opaque Rust view of a TVM source name.
+/// ABI-complete Rust representation of a TVM source name.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.SourceName"]
 #[type_final]
 pub struct SourceNameObj {
     base: tvm_ffi::Object,
+    pub name: String,
 }
-crate::abi::reflected_fields!(SourceNameObj {
-    name => "name": String,
+crate::abi::impl_object_layout!(SourceNameObj {
+    "name" => name: String,
 });
 
 /// Reference-counted handle to a source name.
@@ -181,26 +206,40 @@ impl std::ops::Deref for SourceName {
 }
 
 impl SourceName {
-    /// Return TVM's interned source name.
-    pub fn get(name: &str) -> Result<Self> {
-        let name = String::from(name);
-        tvm_ffi::cached_global_func!("ir.SourceName")
-            .call_tuple((&name,))?
-            .try_into()
+    /// Allocate a source name directly in Rust.
+    ///
+    /// Source names compare and hash by text across language boundaries, so
+    /// correctness does not depend on allocation identity or an interning cache.
+    pub fn get(name: &str) -> Self {
+        Self::from_complete_fields(String::from(name))
+    }
+
+    /// Allocate a source name directly from its complete physical state.
+    pub fn from_complete_fields(name: String) -> Self {
+        Self {
+            data: crate::abi::allocate_object(SourceNameObj {
+                base: tvm_ffi::Object::new(),
+                name,
+            }),
+        }
     }
 }
 
-/// Opaque Rust view of TVM's `SourceNode`.
+/// ABI-complete Rust representation of TVM's `SourceNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Source"]
 #[type_final]
 pub struct SourceObj {
     base: tvm_ffi::Object,
+    pub source_name: SourceName,
+    pub source: String,
+    pub line_map: Array<i64>,
 }
-crate::abi::reflected_fields!(SourceObj {
-    source_name => "source_name": SourceName,
-    source => "source": String,
+crate::abi::impl_object_layout!(SourceObj {
+    "source_name" => source_name: SourceName,
+    "source" => source: String,
+    "line_map" => line_map: Array<i64>,
 });
 
 /// Reference-counted handle to one program source fragment.
@@ -218,16 +257,93 @@ impl std::ops::Deref for Source {
     }
 }
 
-/// Opaque Rust view of TVM's `SourceMapObj`.
+impl SourceObj {
+    /// Return the one-based source line requested by `line`.
+    pub fn get_line(&self, line: usize) -> Result<String> {
+        let pair_index = line
+            .checked_sub(1)
+            .and_then(|line| line.checked_mul(2))
+            .filter(|index| {
+                index
+                    .checked_add(1)
+                    .is_some_and(|last| last < self.line_map.len())
+            })
+            .ok_or_else(|| Error::new(VALUE_ERROR, "source line is out of range", ""))?;
+        let start = self
+            .line_map
+            .get(pair_index)
+            .map_err(|_| Error::new(VALUE_ERROR, "source line metadata is incomplete", ""))?;
+        let start = usize::try_from(start)
+            .map_err(|_| Error::new(VALUE_ERROR, "source line offset is negative", ""))?;
+        let length = self
+            .line_map
+            .get(pair_index + 1)
+            .map_err(|_| Error::new(VALUE_ERROR, "source line metadata is incomplete", ""))?;
+        let length = usize::try_from(length)
+            .map_err(|_| Error::new(VALUE_ERROR, "source line length is negative", ""))?;
+        let bytes = self.source.as_str().as_bytes();
+        let end = start
+            .checked_add(length)
+            .filter(|end| *end <= bytes.len())
+            .ok_or_else(|| Error::new(VALUE_ERROR, "source line metadata is invalid", ""))?;
+        let text = std::str::from_utf8(&bytes[start..end])
+            .map_err(|_| Error::new(VALUE_ERROR, "source line is not valid UTF-8", ""))?;
+        Ok(String::from(text))
+    }
+}
+
+impl Source {
+    /// Construct a source fragment and its line index directly in Rust.
+    pub fn new<S>(source_name: S, source: &str) -> Self
+    where
+        S: Into<SourceName>,
+    {
+        let mut line_map = Vec::new();
+        let mut start = 0usize;
+        for (index, byte) in source.as_bytes().iter().enumerate() {
+            if *byte == b'\n' {
+                line_map.push(start as i64);
+                line_map.push((index - start) as i64);
+                start = index + 1;
+            }
+        }
+        line_map.push(start as i64);
+        line_map.push((source.len() - start) as i64);
+        Self::from_complete_fields(
+            source_name.into(),
+            String::from(source),
+            Array::new(line_map),
+        )
+    }
+
+    /// Construct a source fragment from every physical field without rebuilding its line index.
+    pub fn from_complete_fields(
+        source_name: SourceName,
+        source: String,
+        line_map: Array<i64>,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(SourceObj {
+                base: tvm_ffi::Object::new(),
+                source_name,
+                source,
+                line_map,
+            }),
+        }
+    }
+}
+
+/// ABI-complete Rust representation of TVM's `SourceMapObj`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.SourceMap"]
 #[type_final]
 pub struct SourceMapObj {
     base: tvm_ffi::Object,
+    pub source_map: Map<SourceName, Source>,
 }
-crate::abi::reflected_fields!(SourceMapObj {
-    source_map => "source_map": Map<SourceName, Source>,
+crate::abi::impl_object_layout!(SourceMapObj {
+    "source_map" => source_map: Map<SourceName, Source>,
 });
 
 /// Reference-counted handle to TVM's source-name-to-source mapping.
@@ -246,36 +362,55 @@ impl std::ops::Deref for SourceMap {
 }
 
 impl SourceMap {
-    /// Construct an empty native source map.
-    pub fn new() -> Result<Self> {
-        Function::from_type_attr(SourceMapObj::type_index(), "__ffi_init__")?
-            .call_tuple((Map::<SourceName, Source>::new(),))?
-            .try_into()
+    /// Construct an empty source map directly in Rust.
+    pub fn new() -> Self {
+        Self::from_map(Map::new())
     }
 
-    /// Add source text using TVM's native `Source` constructor and line map logic.
-    pub fn add(&self, name: &str, content: &str) -> Result<SourceName> {
-        let name = String::from(name);
-        let content = String::from(content);
-        tvm_ffi::cached_global_func!("SourceMapAdd")
-            .call_tuple((self, &name, &content))?
-            .try_into()
+    /// Construct a source map directly from its complete backing map.
+    pub fn from_map(source_map: Map<SourceName, Source>) -> Self {
+        Self::from_complete_fields(source_map)
+    }
+
+    /// Construct a source map from its complete physical state.
+    pub fn from_complete_fields(source_map: Map<SourceName, Source>) -> Self {
+        Self {
+            data: crate::abi::allocate_object(SourceMapObj {
+                base: tvm_ffi::Object::new(),
+                source_map,
+            }),
+        }
+    }
+
+    /// Add a Rust-allocated source fragment to this map.
+    pub fn add(&mut self, name: &str, content: &str) -> SourceName {
+        let source_name = SourceName::get(name);
+        let source = Source::new(source_name.clone(), content);
+        let mut entries = self.source_map.iter().collect::<Vec<_>>();
+        entries.push((source_name.clone(), source));
+        *self = Self::from_map(entries.into_iter().collect());
+        source_name
     }
 }
 
-/// Opaque Rust view of TVM's source-span metadata.
+/// ABI-complete Rust representation of TVM's source-span metadata.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Span"]
 pub struct SpanObj {
     base: tvm_ffi::Object,
+    pub source_name: SourceName,
+    pub line: i32,
+    pub column: i32,
+    pub end_line: i32,
+    pub end_column: i32,
 }
-crate::abi::reflected_fields!(SpanObj {
-    source_name => "source_name": SourceName,
-    line => "line": i32,
-    column => "column": i32,
-    end_line => "end_line": i32,
-    end_column => "end_column": i32,
+crate::abi::impl_object_layout!(SpanObj {
+    "source_name" => source_name: SourceName,
+    "line" => line: i32,
+    "column" => column: i32,
+    "end_line" => end_line: i32,
+    "end_column" => end_column: i32,
 });
 
 /// Reference-counted handle to source-span metadata.
@@ -303,9 +438,33 @@ impl Span {
         let column = i32::try_from(column).map_err(|_| integer_field_overflow("column", column))?;
         let end_column = i32::try_from(end_column)
             .map_err(|_| integer_field_overflow("end_column", end_column))?;
-        tvm_ffi::cached_global_func!("ir.Span")
-            .call_tuple((source_name.into(), line, end_line, column, end_column))?
-            .try_into()
+        Ok(Self::from_complete_fields(
+            source_name.into(),
+            line,
+            column,
+            end_line,
+            end_column,
+        ))
+    }
+
+    /// Construct a span from the exact-width values stored by the native object.
+    pub fn from_complete_fields(
+        source_name: SourceName,
+        line: i32,
+        column: i32,
+        end_line: i32,
+        end_column: i32,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(SpanObj {
+                base: tvm_ffi::Object::new(),
+                source_name,
+                line,
+                column,
+                end_line,
+                end_column,
+            }),
+        }
     }
 }
 
@@ -317,12 +476,21 @@ fn integer_field_overflow(field: &str, value: i64) -> Error {
     )
 }
 
-/// Opaque view of TVM objects that can convert to a primitive expression.
+/// Opaque prefix for TVM objects that can convert to a primitive expression.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.PrimExprConvertible"]
 pub struct PrimExprConvertibleObj {
     base: tvm_ffi::Object,
+}
+crate::abi::impl_object_layout!(PrimExprConvertibleObj {});
+
+impl PrimExprConvertibleObj {
+    pub(crate) fn new() -> Self {
+        Self {
+            base: tvm_ffi::Object::new(),
+        }
+    }
 }
 
 /// Reference-counted handle to a primitive-expression-convertible object.
@@ -343,24 +511,27 @@ impl std::ops::Deref for PrimExprConvertible {
 impl PrimExprConvertible {
     /// Convert through the concrete type's reflected method.
     pub fn to_prim_expr(&self) -> Result<Expr> {
-        Function::from_type_method(PrimExprConvertibleObj::type_index(), "to_prim_expr")?
+        Function::from_type_method(AnyView::from(self).type_index(), "to_prim_expr")?
             .call_tuple((self,))?
             .try_into()
     }
 }
 
-/// Opaque Rust view of an integer range.
+/// ABI-complete Rust representation of an integer range.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Range"]
 #[type_final]
 pub struct RangeObj {
     base: tvm_ffi::Object,
+    pub min: Expr,
+    pub extent: Expr,
+    pub span: Option<Span>,
 }
-crate::abi::reflected_fields!(RangeObj {
-    min => "min": Expr,
-    extent => "extent": Expr,
-    span => "span": Option<Span>,
+crate::abi::impl_object_layout!(RangeObj {
+    "min" => min: Expr,
+    "extent" => extent: Expr,
+    "span" => span: Option<Span>,
 });
 
 /// Reference-counted handle to `min .. min + extent`.
@@ -388,7 +559,7 @@ impl Range {
         Self::from_min_extent_with_span(minimum, extent, None)
     }
 
-    /// Construct a range with source metadata through TVM's native constructor.
+    /// Construct a range from all of its physical fields.
     pub fn from_min_extent_with_span<M, E>(
         minimum: M,
         extent: E,
@@ -398,10 +569,39 @@ impl Range {
         M: Into<Expr>,
         E: Into<Expr>,
     {
-        tvm_ffi::cached_global_func!("ir.Range_from_min_extent")
-            .call_tuple((minimum.into(), extent.into(), span.cloned()))?
-            .try_into()
+        let minimum = minimum.into();
+        let extent = extent.into();
+        require_primitive_expr(&minimum, "Range minimum")?;
+        require_primitive_expr(&extent, "Range extent")?;
+        Ok(Self::from_complete_fields(minimum, extent, span.cloned()))
     }
+
+    /// Construct a range from every physical field after external validation.
+    pub fn from_complete_fields(min: Expr, extent: Expr, span: Option<Span>) -> Self {
+        Self {
+            data: crate::abi::allocate_object(RangeObj {
+                base: tvm_ffi::Object::new(),
+                min,
+                extent,
+                span,
+            }),
+        }
+    }
+}
+
+fn require_primitive_expr(value: &Expr, context: &str) -> Result<()> {
+    value
+        .ty
+        .clone()
+        .try_cast::<PrimType>()
+        .map(|_| ())
+        .map_err(|_| {
+            Error::new(
+                TYPE_ERROR,
+                &format!("{context} must have a primitive type"),
+                "",
+            )
+        })
 }
 
 impl std::ops::Deref for Span {
@@ -412,19 +612,23 @@ impl std::ops::Deref for Span {
     }
 }
 
-/// Opaque Rust view of TVM's `CallNode`.
+/// ABI-complete Rust representation of TVM's `CallNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Call"]
 #[type_final]
 pub struct CallObj {
     base: ExprObj,
+    pub op: Expr,
+    pub args: Array<Expr>,
+    pub attrs: Option<Attrs>,
+    pub ty_args: Array<Type>,
 }
-crate::abi::reflected_fields!(CallObj {
-    op => "op": Expr,
-    args => "args": Array<Expr>,
-    attrs => "attrs": Option<Attrs>,
-    ty_args => "ty_args": Array<Type>,
+crate::abi::impl_object_layout!(CallObj: ExprObj {
+    "op" => op: Expr,
+    "args" => args: Array<Expr>,
+    "attrs" => attrs: Option<Attrs>,
+    "ty_args" => ty_args: Array<Type>,
 });
 
 /// Reference-counted handle to a call expression shared by TIR and Relax.
@@ -450,15 +654,16 @@ impl std::ops::Deref for CallObj {
     }
 }
 
-/// Opaque Rust view of TVM's `TypeNode`.
+/// ABI-complete Rust representation of TVM's `TypeNode` prefix.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Type"]
 pub struct TypeObj {
     base: tvm_ffi::Object,
+    pub span: Option<Span>,
 }
-crate::abi::reflected_fields!(TypeObj {
-    span => "span": Option<Span>,
+crate::abi::impl_object_layout!(TypeObj {
+    "span" => span: Option<Span>,
 });
 
 /// Reference-counted handle to any TVM type.
@@ -476,16 +681,26 @@ impl std::ops::Deref for Type {
     }
 }
 
-/// Opaque Rust view of TVM's `PrimTypeNode`.
+impl TypeObj {
+    pub(crate) fn new(span: Option<Span>) -> Self {
+        Self {
+            base: tvm_ffi::Object::new(),
+            span,
+        }
+    }
+}
+
+/// ABI-complete Rust representation of TVM's `PrimTypeNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.PrimType"]
 #[type_final]
 pub struct PrimTypeObj {
     base: TypeObj,
+    pub dtype: DLDataType,
 }
-crate::abi::reflected_fields!(PrimTypeObj {
-    dtype => "dtype": DLDataType,
+crate::abi::impl_object_layout!(PrimTypeObj: TypeObj {
+    "dtype" => dtype: DLDataType,
 });
 
 /// Reference-counted handle to a primitive TVM type.
@@ -511,16 +726,17 @@ impl std::ops::Deref for PrimTypeObj {
     }
 }
 
-/// Opaque Rust view of TVM's `TupleTypeNode`.
+/// ABI-complete Rust representation of TVM's `TupleTypeNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.TupleType"]
 #[type_final]
 pub struct TupleTypeObj {
     base: TypeObj,
+    pub fields: Array<Type>,
 }
-crate::abi::reflected_fields!(TupleTypeObj {
-    fields => "fields": Array<Type>,
+crate::abi::impl_object_layout!(TupleTypeObj: TypeObj {
+    "fields" => fields: Array<Type>,
 });
 
 /// Reference-counted handle to a tuple type.
@@ -547,34 +763,43 @@ impl std::ops::Deref for TupleTypeObj {
 }
 
 impl TupleType {
-    /// Construct a tuple type through TVM's native constructor.
-    pub fn new(fields: Vec<Type>) -> Result<Self> {
+    /// Construct a tuple type directly in Rust.
+    pub fn new(fields: Vec<Type>) -> Self {
         Self::with_span(fields, None)
     }
 
     /// Construct a tuple type with optional source metadata.
-    pub fn with_span(fields: Vec<Type>, span: Option<&Span>) -> Result<Self> {
-        tvm_ffi::cached_global_func!("ir.TupleType")
-            .call_tuple((Array::new(fields), span.cloned()))?
-            .try_into()
+    pub fn with_span(fields: Vec<Type>, span: Option<&Span>) -> Self {
+        Self::from_complete_fields(span.cloned(), Array::new(fields))
+    }
+
+    /// Construct a tuple type from every physical field.
+    pub fn from_complete_fields(span: Option<Span>, fields: Array<Type>) -> Self {
+        Self {
+            data: crate::abi::allocate_object(TupleTypeObj {
+                base: TypeObj::new(span),
+                fields,
+            }),
+        }
     }
 
     /// Construct the empty tuple type used as TVM's void type.
-    pub fn empty() -> Result<Self> {
+    pub fn empty() -> Self {
         Self::new(Vec::new())
     }
 }
 
-/// Opaque Rust view of TVM's `IntImmNode`.
+/// ABI-complete Rust representation of TVM's `IntImmNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.IntImm"]
 #[type_final]
 pub struct IntImmObj {
     base: ExprObj,
+    pub value: i64,
 }
-crate::abi::reflected_fields!(IntImmObj {
-    value => "value": i64,
+crate::abi::impl_object_layout!(IntImmObj: ExprObj {
+    "value" => value: i64,
 });
 
 /// Reference-counted handle to an integer literal.
@@ -600,13 +825,14 @@ impl std::ops::Deref for IntImmObj {
     }
 }
 
-/// Opaque base for TVM attribute objects.
+/// ABI-complete fieldless base for TVM attribute objects.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Attrs"]
 pub struct AttrsObj {
     base: tvm_ffi::Object,
 }
+crate::abi::impl_object_layout!(AttrsObj {});
 
 /// Reference-counted handle to any TVM attributes object.
 #[repr(C)]
@@ -623,16 +849,17 @@ impl std::ops::Deref for Attrs {
     }
 }
 
-/// Opaque Rust view of TVM's dictionary-backed attributes.
+/// ABI-complete representation of TVM's dictionary-backed attributes.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.DictAttrs"]
 #[type_final]
 pub struct DictAttrsObj {
     base: AttrsObj,
+    pub dict: Map<String, Any>,
 }
-crate::abi::reflected_fields!(DictAttrsObj {
-    dict => "__dict__": Map<String, Any>,
+crate::abi::impl_object_layout!(DictAttrsObj: AttrsObj {
+    "__dict__" => dict: Map<String, Any>,
 });
 
 /// Reference-counted handle to dictionary-backed TVM attributes.
@@ -658,13 +885,14 @@ impl std::ops::Deref for DictAttrsObj {
     }
 }
 
-/// Opaque base for module-level global metadata.
+/// ABI-complete fieldless base for module-level global metadata.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.GlobalInfo"]
 pub struct GlobalInfoObj {
     base: tvm_ffi::Object,
 }
+crate::abi::impl_object_layout!(GlobalInfoObj {});
 
 /// Reference-counted handle to module-level global metadata.
 #[repr(C)]
@@ -681,7 +909,7 @@ impl std::ops::Deref for GlobalInfo {
     }
 }
 
-/// Opaque Rust view of TVM's fieldless test global-info object.
+/// ABI-complete representation of TVM's fieldless test global-info object.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.DummyGlobalInfo"]
@@ -689,6 +917,7 @@ impl std::ops::Deref for GlobalInfo {
 pub struct DummyGlobalInfoObj {
     base: GlobalInfoObj,
 }
+crate::abi::impl_object_layout!(DummyGlobalInfoObj: GlobalInfoObj {});
 
 /// Reference-counted handle to a dummy global-info value.
 #[repr(C)]
@@ -714,30 +943,50 @@ impl std::ops::Deref for DummyGlobalInfoObj {
 }
 
 impl DummyGlobalInfo {
-    /// Construct TVM's fieldless global-info test value natively.
-    pub fn new() -> Result<Self> {
-        tvm_ffi::cached_global_func!("ir.DummyGlobalInfo")
-            .call_tuple(())?
-            .try_into()
+    /// Construct TVM's fieldless global-info test value directly in Rust.
+    pub fn new() -> Self {
+        Self::from_complete_fields()
+    }
+
+    /// Construct the fieldless value from its complete physical state.
+    pub fn from_complete_fields() -> Self {
+        Self {
+            data: crate::abi::allocate_object(DummyGlobalInfoObj {
+                base: GlobalInfoObj {
+                    base: tvm_ffi::Object::new(),
+                },
+            }),
+        }
+    }
+}
+
+impl Default for DummyGlobalInfo {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 tvm_ffi::impl_object_upcast!(DummyGlobalInfo => GlobalInfo);
 
-/// Opaque Rust view of TVM's `IRModuleNode`.
+/// ABI-complete Rust representation of TVM's `IRModuleNode`.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.IRModule"]
 #[type_final]
 pub struct IRModuleObj {
     base: tvm_ffi::Object,
+    pub functions: Map<GlobalVar, BaseFunc>,
+    pub source_map: SourceMap,
+    pub attrs: DictAttrs,
+    pub global_infos: Map<String, Array<GlobalInfo>>,
+    pub global_var_map: Map<String, GlobalVar>,
 }
-crate::abi::reflected_fields!(IRModuleObj {
-    functions => "functions": Map<GlobalVar, BaseFunc>,
-    source_map => "source_map": SourceMap,
-    attrs => "attrs": DictAttrs,
-    global_infos => "global_infos": Map<String, Array<GlobalInfo>>,
-    global_var_map => "global_var_map_": Map<String, GlobalVar>,
+crate::abi::impl_object_layout!(IRModuleObj {
+    "functions" => functions: Map<GlobalVar, BaseFunc>,
+    "source_map" => source_map: SourceMap,
+    "attrs" => attrs: DictAttrs,
+    "global_infos" => global_infos: Map<String, Array<GlobalInfo>>,
+    "global_var_map_" => global_var_map: Map<String, GlobalVar>,
 });
 
 /// Reference-counted handle to a TVM IRModule.
@@ -756,7 +1005,7 @@ impl std::ops::Deref for IRModule {
 }
 
 impl IntImm {
-    /// Construct an integer literal through TVM's native constructor.
+    /// Construct an integer literal directly in Rust.
     pub fn new(dtype: &str, value: i64) -> Result<Self> {
         Self::from_dtype(DLDataType::try_from_str(dtype)?, value)
     }
@@ -766,15 +1015,77 @@ impl IntImm {
         Self::from_dtype_with_span(dtype, value, None)
     }
 
-    /// Construct an integer literal through TVM's native constructor with source metadata.
+    /// Construct an integer literal directly in Rust with source metadata.
     pub fn from_dtype_with_span(
         dtype: DLDataType,
         value: i64,
         span: Option<&Span>,
     ) -> Result<Self> {
-        tvm_ffi::cached_global_func!("ir.IntImm")
-            .call_tuple((dtype, value, span.cloned()))?
-            .try_into()
+        validate_integer_literal(dtype, value)?;
+        let value_type = PrimType::from_dtype(dtype)?;
+        Ok(Self::from_complete_fields(
+            span.cloned(),
+            value_type.into(),
+            value,
+        ))
+    }
+
+    /// Construct an integer literal from every physical field after external validation.
+    pub fn from_complete_fields(span: Option<Span>, ty: Type, value: i64) -> Self {
+        Self {
+            data: crate::abi::allocate_object(IntImmObj {
+                base: ExprObj::new(span, ty),
+                value,
+            }),
+        }
+    }
+}
+
+fn validate_integer_literal(dtype: DLDataType, value: i64) -> Result<()> {
+    let dtype_text = dtype.to_string();
+    if dtype.lanes != 1 {
+        return Err(Error::new(
+            VALUE_ERROR,
+            &format!("IntImm can only take a scalar, but {dtype_text} was supplied"),
+            "",
+        ));
+    }
+    let is_int = dtype.code == DLDataTypeCode::kDLInt as u8;
+    let is_uint = dtype.code == DLDataTypeCode::kDLUInt as u8;
+    let is_bool = dtype.code == DLDataTypeCode::kDLBool as u8;
+    if !is_int && !is_uint && !is_bool {
+        return Err(Error::new(
+            VALUE_ERROR,
+            &format!("IntImm supports only int, uint, or bool, but {dtype_text} was supplied"),
+            "",
+        ));
+    }
+    let bits = u32::from(dtype.bits);
+    if bits == 0 {
+        return Err(Error::new(
+            VALUE_ERROR,
+            &format!("invalid integer bit width in {dtype_text}"),
+            "",
+        ));
+    }
+    let in_range = if is_uint {
+        value >= 0 && (bits >= 64 || (value as u64) < (1_u64 << bits))
+    } else if is_bool || bits == 1 {
+        value == 0 || value == 1
+    } else if bits >= 64 {
+        true
+    } else {
+        let bound = 1_i64 << (bits - 1);
+        value >= -bound && value < bound
+    };
+    if in_range {
+        Ok(())
+    } else {
+        Err(Error::new(
+            VALUE_ERROR,
+            &format!("literal value {value} is outside the range of {dtype_text}"),
+            "",
+        ))
     }
 }
 
@@ -784,39 +1095,59 @@ impl PrimType {
         Self::from_dtype(DLDataType::try_from_str(dtype)?)
     }
 
-    /// Construct a primitive type from a parsed DLPack dtype.
+    /// Construct a primitive type from a parsed DLPack dtype directly in Rust.
     pub fn from_dtype(dtype: DLDataType) -> Result<Self> {
         Self::from_dtype_with_span(dtype, None)
     }
 
-    /// Construct a primitive type with optional source metadata.
+    /// Construct a primitive type from all of its physical fields.
     pub fn from_dtype_with_span(dtype: DLDataType, span: Option<&Span>) -> Result<Self> {
-        if span.is_some() {
-            return Function::from_type_attr(PrimTypeObj::type_index(), "__ffi_init__")?
-                .call_tuple((span.cloned(), dtype))?
-                .try_into();
+        let is_opaque_handle = dtype.code == DLDataTypeCode::kDLOpaqueHandle as u8;
+        let is_void = is_opaque_handle && dtype.bits == 0 && dtype.lanes == 0;
+        if is_opaque_handle && !is_void {
+            return Err(Error::new(
+                TYPE_ERROR,
+                "PrimType cannot represent an opaque pointer; use a pointer type",
+                "",
+            ));
         }
-        tvm_ffi::cached_global_func!("ir.PrimType")
-            .call_tuple((dtype,))?
-            .try_into()
+        Ok(Self::from_complete_fields(span.cloned(), dtype))
+    }
+
+    /// Construct a primitive type from every physical field after external validation.
+    pub fn from_complete_fields(span: Option<Span>, dtype: DLDataType) -> Self {
+        Self {
+            data: crate::abi::allocate_object(PrimTypeObj {
+                base: TypeObj::new(span),
+                dtype,
+            }),
+        }
     }
 
     /// Construct TVM's void primitive type without parsing a user-supplied dtype string.
-    pub fn void() -> Result<Self> {
-        Self::from_dtype(DLDataType {
-            code: DLDataTypeCode::kDLOpaqueHandle as u8,
-            bits: 0,
-            lanes: 0,
-        })
+    pub fn void() -> Self {
+        Self::from_complete_fields(
+            None,
+            DLDataType {
+                code: DLDataTypeCode::kDLOpaqueHandle as u8,
+                bits: 0,
+                lanes: 0,
+            },
+        )
     }
 }
 
 impl Type {
     /// Construct TVM's language-independent sentinel for an unavailable static type.
-    pub fn missing() -> Result<Self> {
-        tvm_ffi::cached_global_func!("ir.TypeMissing")
-            .call_tuple(())?
-            .try_into()
+    pub fn missing() -> Self {
+        Self::from_complete_fields(None)
+    }
+
+    /// Construct the exact missing-type sentinel from its complete physical state.
+    pub fn from_complete_fields(span: Option<Span>) -> Self {
+        Self {
+            data: crate::abi::allocate_object(TypeObj::new(span)),
+        }
     }
 
     /// Return whether this value is the exact `ir.Type` missing-type sentinel.
@@ -826,21 +1157,21 @@ impl Type {
 }
 
 impl Var {
-    /// Construct a variable through TVM's native constructor with an explicit primitive type.
+    /// Construct a variable directly in Rust with an explicit primitive type.
     pub fn new(name: &str, dtype: &str) -> Result<Self> {
-        Self::with_type(name, PrimType::new(dtype)?)
+        Ok(Self::with_type(name, PrimType::new(dtype)?))
     }
 
     /// Construct a variable with an arbitrary TVM type annotation.
-    pub fn with_type<T>(name: &str, ty: T) -> Result<Self>
+    pub fn with_type<T>(name: &str, ty: T) -> Self
     where
         T: Into<Type>,
     {
         Self::with_type_and_span(name, ty, None)
     }
 
-    /// Construct a variable through TVM's native constructor with source metadata.
-    pub fn with_type_and_span<T>(name: &str, ty: T, span: Option<&Span>) -> Result<Self>
+    /// Construct a variable directly in Rust with its complete base fields.
+    pub fn with_type_and_span<T>(name: &str, ty: T, span: Option<&Span>) -> Self
     where
         T: Into<Type>,
     {
@@ -848,41 +1179,50 @@ impl Var {
     }
 
     /// Construct a variable with the native constructor's optional type annotation.
-    pub fn with_optional_type_and_span(
-        name: &str,
-        ty: Option<Type>,
-        span: Option<&Span>,
-    ) -> Result<Self> {
-        let name = String::from(name);
-        tvm_ffi::cached_global_func!("ir.Var")
-            .call_tuple((&name, ty, span.cloned()))?
-            .try_into()
+    pub fn with_optional_type_and_span(name: &str, ty: Option<Type>, span: Option<&Span>) -> Self {
+        Self::from_complete_fields(
+            span.cloned(),
+            ty.unwrap_or_else(Type::missing),
+            String::from(name),
+        )
+    }
+
+    /// Construct a variable from every physical field.
+    pub fn from_complete_fields(span: Option<Span>, ty: Type, name: String) -> Self {
+        Self {
+            data: crate::abi::allocate_object(VarObj {
+                base: ExprObj::new(span, ty),
+                name,
+            }),
+        }
     }
 }
 
 impl GlobalVar {
-    /// Construct a module-level symbol through TVM's native constructor.
-    pub fn new(name_hint: &str) -> Result<Self> {
+    /// Construct a module-level symbol directly in Rust.
+    pub fn new(name_hint: &str) -> Self {
         Self::with_span(name_hint, None)
     }
 
     /// Construct a module-level symbol with optional source metadata.
-    pub fn with_span(name_hint: &str, span: Option<&Span>) -> Result<Self> {
-        let name_hint = String::from(name_hint);
-        if span.is_none() {
-            return tvm_ffi::cached_global_func!("ir.GlobalVar")
-                .call_tuple((&name_hint,))?
-                .try_into();
+    pub fn with_span(name_hint: &str, span: Option<&Span>) -> Self {
+        Self::from_complete_fields(span.cloned(), Type::missing(), String::from(name_hint))
+    }
+
+    /// Construct a module-level symbol from all physical fields without re-deriving its type.
+    pub fn from_complete_fields(span: Option<Span>, ty: Type, name_hint: String) -> Self {
+        Self {
+            data: crate::abi::allocate_object(GlobalVarObj {
+                base: ExprObj::new(span, ty),
+                name_hint,
+            }),
         }
-        Function::from_type_attr(GlobalVarObj::type_index(), "__ffi_init__")?
-            .call_tuple((span.cloned(), Type::missing()?, &name_hint))?
-            .try_into()
     }
 }
 
 impl Call {
-    /// Construct a call through TVM's native constructor with no extra metadata.
-    pub fn new<T, O>(ret_type: T, operator: O, arguments: Vec<Expr>) -> Result<Self>
+    /// Construct a call directly in Rust with no attributes or explicit type arguments.
+    pub fn new<T, O>(ret_type: T, operator: O, arguments: Vec<Expr>) -> Self
     where
         T: Into<Type>,
         O: Into<Expr>,
@@ -898,21 +1238,39 @@ impl Call {
         attrs: Option<Attrs>,
         type_arguments: Vec<Type>,
         span: Option<&Span>,
-    ) -> Result<Self>
+    ) -> Self
     where
         T: Into<Type>,
         O: Into<Expr>,
     {
-        tvm_ffi::cached_global_func!("ir.Call")
-            .call_tuple((
-                ret_type.into(),
-                operator.into(),
-                Array::new(arguments),
+        Self::from_complete_fields(
+            span.cloned(),
+            ret_type.into(),
+            operator.into(),
+            Array::new(arguments),
+            attrs,
+            Array::new(type_arguments),
+        )
+    }
+
+    /// Construct a call from every physical field.
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        ty: Type,
+        op: Expr,
+        args: Array<Expr>,
+        attrs: Option<Attrs>,
+        ty_args: Array<Type>,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(CallObj {
+                base: ExprObj::new(span, ty),
+                op,
+                args,
                 attrs,
-                Array::new(type_arguments),
-                span.cloned(),
-            ))?
-            .try_into()
+                ty_args,
+            }),
+        }
     }
 }
 
@@ -935,8 +1293,8 @@ impl IRModule {
     {
         let function = expr.into().try_cast::<BaseFunc>()?;
         let global_symbol = function
-            .attrs()?
-            .dict()?
+            .attrs
+            .dict
             .get(&String::from("global_symbol"))?
             .map(String::try_from)
             .transpose()?;
@@ -944,16 +1302,16 @@ impl IRModule {
             .as_deref()
             .filter(|name| !name.is_empty())
             .unwrap_or("main");
-        let global_var = GlobalVar::new(global_name)?;
+        let global_var = GlobalVar::new(global_name);
         Self::with_metadata(
             [(global_var, function)].into_iter().collect(),
-            SourceMap::new()?,
-            DictAttrs::empty()?,
+            SourceMap::new(),
+            DictAttrs::empty(),
             Map::new(),
         )
     }
 
-    /// Construct a module through its standard reflected initializer.
+    /// Construct a module directly in Rust from all of its stored state.
     ///
     /// The derived name-to-global-variable index is rebuilt and checked here;
     /// callers never supply it independently.
@@ -966,7 +1324,7 @@ impl IRModule {
         let mut indexed_globals = Vec::with_capacity(functions.len());
         let mut names = std::collections::HashSet::with_capacity(functions.len());
         for (global_var, _) in functions.iter() {
-            let name = global_var.name_hint()?;
+            let name = global_var.name_hint.clone();
             if !names.insert(name.as_str().to_owned()) {
                 return Err(Error::new(
                     VALUE_ERROR,
@@ -976,17 +1334,33 @@ impl IRModule {
             }
             indexed_globals.push((name, global_var));
         }
-        Function::from_type_attr(IRModuleObj::type_index(), "__ffi_init__")?
-            .call_tuple((
+        Ok(Self::from_complete_fields(
+            functions,
+            source_map,
+            attrs,
+            global_infos,
+            indexed_globals.into_iter().collect(),
+        ))
+    }
+
+    /// Allocate a module from every physical field without rebuilding derived indexes.
+    pub fn from_complete_fields(
+        functions: Map<GlobalVar, BaseFunc>,
+        source_map: SourceMap,
+        attrs: DictAttrs,
+        global_infos: Map<String, Array<GlobalInfo>>,
+        global_var_map: Map<String, GlobalVar>,
+    ) -> Self {
+        Self {
+            data: crate::abi::allocate_object(IRModuleObj {
+                base: tvm_ffi::Object::new(),
                 functions,
-                indexed_globals
-                    .into_iter()
-                    .collect::<Map<String, GlobalVar>>(),
                 source_map,
                 attrs,
                 global_infos,
-            ))?
-            .try_into()
+                global_var_map,
+            }),
+        }
     }
 
     /// Return an independently updatable module with one function replaced.
@@ -1011,25 +1385,25 @@ impl IRModule {
     ) -> Result<Self> {
         let name = String::from(name);
         let mut global_infos = self
-            .global_infos()?
+            .global_infos
             .iter()
             .filter(|(existing, _)| existing.as_str() != name.as_str())
             .collect::<Vec<_>>();
         global_infos.push((name, Array::new(global_info)));
         Self::with_metadata(
-            self.functions()?,
-            self.source_map()?,
-            self.attrs()?,
+            self.functions.clone(),
+            self.source_map.clone(),
+            self.attrs.clone(),
             global_infos.into_iter().collect(),
         )
     }
 
     pub(crate) fn copy_for_update(&self) -> Result<Self> {
         Self::with_metadata(
-            self.functions()?,
-            self.source_map()?,
-            self.attrs()?,
-            self.global_infos()?,
+            self.functions.clone(),
+            self.source_map.clone(),
+            self.attrs.clone(),
+            self.global_infos.clone(),
         )
     }
 
@@ -1038,11 +1412,10 @@ impl IRModule {
         global_var: &GlobalVar,
         function: &BaseFunc,
     ) -> Result<Self> {
-        let name = global_var.name_hint()?;
-        let current_functions = self.functions()?;
-        let mut functions = Vec::with_capacity(current_functions.len() + 1);
-        for (existing_var, existing_function) in current_functions.iter() {
-            if existing_var.name_hint()?.as_str() == name.as_str() {
+        let name = global_var.name_hint.clone();
+        let mut functions = Vec::with_capacity(self.functions.len() + 1);
+        for (existing_var, existing_function) in self.functions.iter() {
+            if existing_var.name_hint.as_str() == name.as_str() {
                 if !existing_var.same_as(global_var) {
                     return Err(Error::new(
                         VALUE_ERROR,
@@ -1057,23 +1430,57 @@ impl IRModule {
         functions.push((global_var.clone(), function.clone()));
         Self::with_metadata(
             functions.into_iter().collect(),
-            self.source_map()?,
-            self.attrs()?,
-            self.global_infos()?,
+            self.source_map.clone(),
+            self.attrs.clone(),
+            self.global_infos.clone(),
         )
     }
 }
 
 impl DictAttrs {
     /// Construct a defined, empty DictAttrs object.
-    pub fn empty() -> Result<Self> {
+    pub fn empty() -> Self {
         Self::from_dictionary(Map::new())
     }
 
     /// Construct DictAttrs from a heterogeneous string-to-value map.
-    pub fn from_dictionary(dictionary: Map<String, Any>) -> Result<Self> {
-        Function::from_type_attr(DictAttrsObj::type_index(), "__ffi_init__")?
-            .call_tuple((dictionary,))?
-            .try_into()
+    pub fn from_dictionary(dictionary: Map<String, Any>) -> Self {
+        Self::from_complete_fields(dictionary)
+    }
+
+    /// Construct dictionary attributes from their complete physical state.
+    pub fn from_complete_fields(dict: Map<String, Any>) -> Self {
+        Self {
+            data: crate::abi::allocate_object(DictAttrsObj {
+                base: AttrsObj {
+                    base: tvm_ffi::Object::new(),
+                },
+                dict,
+            }),
+        }
     }
 }
+
+impl Default for SourceMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+crate::abi::impl_rust_allocatable!(
+    GlobalVarObj,
+    VarObj,
+    SourceNameObj,
+    SourceObj,
+    SourceMapObj,
+    SpanObj,
+    RangeObj,
+    CallObj,
+    TypeObj,
+    PrimTypeObj,
+    TupleTypeObj,
+    IntImmObj,
+    DictAttrsObj,
+    DummyGlobalInfoObj,
+    IRModuleObj,
+);

@@ -566,7 +566,9 @@ TVM_FFI_STATIC_INIT_BLOCK() {
 }
 
 // MatchBufferRegion
-MatchBufferRegion::MatchBufferRegion(BufferVar buffer, BufferRegion source) {
+namespace {
+
+void ValidateMatchBufferRegion(const BufferVar& buffer, const BufferRegion& source) {
   const BufferVar& source_buffer = source->buffer;
   arith::Analyzer analyzer;
   // Check scope and dtype
@@ -604,6 +606,18 @@ MatchBufferRegion::MatchBufferRegion(BufferVar buffer, BufferRegion source) {
     }
   }
   // Note that we do not check elem_offset and strides in this function
+}
+
+}  // namespace
+
+ffi::Map<ffi::String, ffi::Any> MatchBufferRegionNode::PrepareFFI(BufferVar buffer,
+                                                                  BufferRegion source) {
+  ValidateMatchBufferRegion(buffer, source);
+  return {};
+}
+
+MatchBufferRegion::MatchBufferRegion(BufferVar buffer, BufferRegion source) {
+  ValidateMatchBufferRegion(buffer, source);
 
   // Construction
   ffi::ObjectPtr<MatchBufferRegionNode> node = ffi::make_object<MatchBufferRegionNode>();

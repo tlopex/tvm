@@ -107,6 +107,11 @@ class BufferTypeNode : public TypeNode {
   /*! \brief constructor */
   BufferTypeNode() {}
 
+  static ffi::Map<ffi::String, ffi::Any> PrepareFFI(ffi::String storage_scope,
+                                                    ffi::Array<PrimExpr> shape,
+                                                    ffi::Optional<PrimExpr> elem_offset,
+                                                    int64_t data_alignment, int64_t offset_factor);
+
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<BufferTypeNode>()
@@ -122,7 +127,8 @@ class BufferTypeNode : public TypeNode {
         .def_ro("data_alignment", &BufferTypeNode::data_alignment)
         .def_ro("offset_factor", &BufferTypeNode::offset_factor)
         .def_ro("layout", &BufferTypeNode::layout)
-        .def_ro("allocated_addr", &BufferTypeNode::allocated_addr);
+        .def_ro("allocated_addr", &BufferTypeNode::allocated_addr)
+        .def_static("__ffi_prepare__", &BufferTypeNode::PrepareFFI);
   }
 
   /*! \return preferred index type for this buffer node */

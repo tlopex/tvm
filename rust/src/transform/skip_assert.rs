@@ -38,8 +38,8 @@ impl AssertSkipper {
 
     fn map_sequence(&mut self, value: SeqStmt) -> Result<Any> {
         Ok(Any::from(Stmt::sequence_with_span(
-            value.seq()?.iter().collect(),
-            value.span()?.as_ref(),
+            value.seq.iter().collect(),
+            value.span.as_ref(),
         )?))
     }
 }

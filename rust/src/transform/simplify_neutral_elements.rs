@@ -46,33 +46,28 @@ struct NeutralElementSimplifier;
 #[tvm_ffi::dispatch(map)]
 impl NeutralElementSimplifier {
     fn map_add(&mut self, value: Add) -> Result<Any> {
-        let lhs = value.a()?;
-        let rhs = value.b()?;
-        if int_value(&lhs)? == Some(0) {
-            return Ok(rhs.to_any());
+        if int_value(&value.a) == Some(0) {
+            return Ok(value.b.to_any());
         }
-        if int_value(&rhs)? == Some(0) {
-            return Ok(lhs.to_any());
+        if int_value(&value.b) == Some(0) {
+            return Ok(value.a.to_any());
         }
         Ok(Any::from(value))
     }
 
     fn map_subtract(&mut self, value: Sub) -> Result<Any> {
-        let lhs = value.a()?;
-        if int_value(&value.b()?)? == Some(0) {
-            return Ok(lhs.to_any());
+        if int_value(&value.b) == Some(0) {
+            return Ok(value.a.to_any());
         }
         Ok(Any::from(value))
     }
 
     fn map_multiply(&mut self, value: Mul) -> Result<Any> {
-        let lhs = value.a()?;
-        let rhs = value.b()?;
-        if int_value(&lhs)? == Some(1) {
-            return Ok(rhs.to_any());
+        if int_value(&value.a) == Some(1) {
+            return Ok(value.b.to_any());
         }
-        if int_value(&rhs)? == Some(1) {
-            return Ok(lhs.to_any());
+        if int_value(&value.b) == Some(1) {
+            return Ok(value.a.to_any());
         }
         Ok(Any::from(value))
     }
@@ -98,22 +93,22 @@ pub fn simplify_neutral_elements_in_loop_bodies(statement: Stmt) -> Result<Stmt>
 impl LoopBodyMutator {
     fn mutate_loop(&mut self, value: TirFor, region: DefRegionKind) -> Result<Any> {
         let loop_var =
-            Var::try_from(self.mutate_child(&value.loop_var()?, DefRegionKind::Recursive)?)?;
-        let minimum = Expr::try_from(self.mutate_child(&value.min()?, region)?)?;
-        let extent = Expr::try_from(self.mutate_child(&value.extent()?, region)?)?;
+            Var::try_from(self.mutate_child(&value.loop_var, DefRegionKind::Recursive)?)?;
+        let minimum = Expr::try_from(self.mutate_child(&value.min, region)?)?;
+        let extent = Expr::try_from(self.mutate_child(&value.extent, region)?)?;
 
         self.depth += 1;
-        let body_result = self.mutate_child(&value.body()?, region);
+        let body_result = self.mutate_child(&value.body, region);
         self.depth -= 1;
         let body = Stmt::try_from(body_result?)?;
 
         let thread_binding = Option::<crate::tirx::IterVar>::try_from(
-            self.mutate_child(&value.thread_binding()?, region)?,
+            self.mutate_child(&value.thread_binding, region)?,
         )?;
         let annotations =
-            Map::<String, Any>::try_from(self.mutate_child(&value.annotations()?, region)?)?;
+            Map::<String, Any>::try_from(self.mutate_child(&value.annotations, region)?)?;
         let step = value
-            .step()?
+            .step
             .as_ref()
             .map(|step| self.mutate_child(step, region).and_then(Expr::try_from))
             .transpose()?;
@@ -122,12 +117,12 @@ impl LoopBodyMutator {
             loop_var,
             minimum,
             extent,
-            value.kind()?,
+            value.kind,
             body,
             thread_binding,
             annotations,
             step,
-            value.span()?.as_ref(),
+            value.span.as_ref(),
         )?))
     }
 
@@ -136,21 +131,19 @@ impl LoopBodyMutator {
         if self.depth == 0 {
             return Ok(Any::from(value));
         }
-        let lhs = value.a()?;
-        let rhs = value.b()?;
-        if int_value(&lhs)? == Some(0) {
-            return Ok(rhs.to_any());
+        if int_value(&value.a) == Some(0) {
+            return Ok(value.b.to_any());
         }
-        if int_value(&rhs)? == Some(0) {
-            return Ok(lhs.to_any());
+        if int_value(&value.b) == Some(0) {
+            return Ok(value.a.to_any());
         }
         Ok(Any::from(value))
     }
 
     fn mutate_scoped_subtract(&mut self, value: Sub, region: DefRegionKind) -> Result<Any> {
         let value = Sub::try_from(self.default_mutate_value(&value, region)?)?;
-        if self.depth > 0 && int_value(&value.b()?)? == Some(0) {
-            return Ok(value.a()?.to_any());
+        if self.depth > 0 && int_value(&value.b) == Some(0) {
+            return Ok(value.a.to_any());
         }
         Ok(Any::from(value))
     }
@@ -160,13 +153,11 @@ impl LoopBodyMutator {
         if self.depth == 0 {
             return Ok(Any::from(value));
         }
-        let lhs = value.a()?;
-        let rhs = value.b()?;
-        if int_value(&lhs)? == Some(1) {
-            return Ok(rhs.to_any());
+        if int_value(&value.a) == Some(1) {
+            return Ok(value.b.to_any());
         }
-        if int_value(&rhs)? == Some(1) {
-            return Ok(lhs.to_any());
+        if int_value(&value.b) == Some(1) {
+            return Ok(value.a.to_any());
         }
         Ok(Any::from(value))
     }

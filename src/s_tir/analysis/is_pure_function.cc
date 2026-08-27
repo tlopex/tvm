@@ -36,9 +36,9 @@ using namespace tvm::tirx;
 namespace {
 class PurityChecker : TIRVisitorWithPath {
  public:
-  static bool Check(const PrimFunc& func, bool assert_on_error) {
+  static bool Check(const ffi::Array<Var>& params, const Stmt& body, bool assert_on_error) {
     PurityChecker visitor(assert_on_error);
-    visitor(func);
+    visitor.VisitPrimFuncFields(params, body, ffi::reflection::AccessPath::Root());
     return visitor.is_pure_;
   }
 
@@ -93,7 +93,11 @@ class PurityChecker : TIRVisitorWithPath {
 }  // namespace
 
 bool IsPureFunction(const PrimFunc& func, bool assert_on_error) {
-  return PurityChecker::Check(func, assert_on_error);
+  return IsPureFunctionFields(func->params, func->body, assert_on_error);
+}
+
+bool IsPureFunctionFields(const ffi::Array<Var>& params, const Stmt& body, bool assert_on_error) {
+  return PurityChecker::Check(params, body, assert_on_error);
 }
 
 TVM_FFI_STATIC_INIT_BLOCK() {

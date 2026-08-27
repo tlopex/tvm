@@ -49,10 +49,10 @@ struct KnownControlFlowSimplifier {
 
 impl KnownControlFlowSimplifier {
     fn known_integer(&mut self, expression: &Expr) -> Result<Option<i64>> {
-        if let Some(value) = int_value(expression)? {
+        if let Some(value) = int_value(expression) {
             return Ok(Some(value));
         }
-        int_value(&self.analyzer.get()?.simplify(expression)?)
+        Ok(int_value(&self.analyzer.get()?.simplify(expression)?))
     }
 
     fn preserve_update_or_no_op(&self, expression: &Expr) -> Result<Stmt> {
@@ -67,10 +67,9 @@ impl KnownControlFlowSimplifier {
 #[tvm_ffi::dispatch(map)]
 impl KnownControlFlowSimplifier {
     fn map_evaluation(&mut self, value: Evaluate) -> Result<Any> {
-        let expression = value.value()?;
-        if int_value(&expression)?.is_some() {
+        if int_value(&value.value).is_some() {
             Ok(Any::from(no_op()?))
-        } else if side_effect(&expression)?.may_update_state() {
+        } else if side_effect(&value.value)?.may_update_state() {
             Ok(Any::from(value))
         } else {
             Ok(Any::from(no_op()?))
@@ -78,14 +77,11 @@ impl KnownControlFlowSimplifier {
     }
 
     fn map_conditional(&mut self, value: IfThenElse) -> Result<Any> {
-        let condition_expr = value.condition()?;
-        let then_case = value.then_case()?;
-        let else_case = value.else_case()?;
-        if let Some(condition) = self.known_integer(&condition_expr)? {
+        if let Some(condition) = self.known_integer(&value.condition)? {
             let selected = if condition != 0 {
-                then_case.clone()
+                value.then_case.clone()
             } else {
-                match &else_case {
+                match &value.else_case {
                     Some(else_case) => else_case.clone(),
                     None => no_op()?,
                 }
@@ -93,21 +89,21 @@ impl KnownControlFlowSimplifier {
             return Ok(Any::from(canonical_no_op(selected)?));
         }
 
-        let no_op_then = is_no_op(&then_case)?;
-        let no_op_else = match &else_case {
-            Some(else_case) => is_no_op(else_case)?,
+        let no_op_then = is_no_op(&value.then_case);
+        let no_op_else = match &value.else_case {
+            Some(else_case) => is_no_op(else_case),
             None => true,
         };
         if no_op_then && no_op_else {
-            return Ok(Any::from(self.preserve_update_or_no_op(&condition_expr)?));
+            return Ok(Any::from(self.preserve_update_or_no_op(&value.condition)?));
         }
-        if let Some(else_case) = &else_case {
-            if is_no_op(else_case)? {
+        if let Some(else_case) = &value.else_case {
+            if is_no_op(else_case) {
                 return Ok(Any::from(Stmt::from(IfThenElse::with_span(
-                    &condition_expr,
-                    &then_case,
+                    &value.condition,
+                    &value.then_case,
                     None,
-                    value.span()?.as_ref(),
+                    value.span.as_ref(),
                 )?)));
             }
         }
@@ -115,15 +111,12 @@ impl KnownControlFlowSimplifier {
     }
 
     fn map_loop(&mut self, value: TirFor) -> Result<Any> {
-        let minimum = value.min()?;
-        let extent = value.extent()?;
-        let body = value.body()?;
-        if self.known_integer(&extent)? == Some(0) {
+        if self.known_integer(&value.extent)? == Some(0) {
             return Ok(Any::from(no_op()?));
         }
-        if is_no_op(&body)?
-            && self.known_integer(&minimum)?.is_some()
-            && self.known_integer(&extent)?.is_some()
+        if is_no_op(&value.body)
+            && self.known_integer(&value.min)?.is_some()
+            && self.known_integer(&value.extent)?.is_some()
         {
             return Ok(Any::from(no_op()?));
         }
@@ -132,8 +125,8 @@ impl KnownControlFlowSimplifier {
 
     fn map_sequence(&mut self, value: SeqStmt) -> Result<Any> {
         Ok(Any::from(Stmt::sequence_with_span(
-            value.seq()?.iter().collect(),
-            value.span()?.as_ref(),
+            value.seq.iter().collect(),
+            value.span.as_ref(),
         )?))
     }
 }
@@ -143,16 +136,16 @@ fn no_op() -> Result<Stmt> {
 }
 
 fn canonical_no_op(statement: Stmt) -> Result<Stmt> {
-    if is_no_op(&statement)? {
+    if is_no_op(&statement) {
         no_op()
     } else {
         Ok(statement)
     }
 }
 
-fn is_no_op(statement: &Stmt) -> Result<bool> {
+fn is_no_op(statement: &Stmt) -> bool {
     let Ok(evaluate) = statement.clone().try_cast::<Evaluate>() else {
-        return Ok(false);
+        return false;
     };
-    Ok(int_value(&evaluate.value()?)?.is_some())
+    int_value(&evaluate.value).is_some()
 }

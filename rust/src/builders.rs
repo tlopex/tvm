@@ -17,7 +17,7 @@
  * under the License.
  */
 
-//! Convenience builders layered above the handwritten IR bindings.
+//! Handwritten convenience builders layered above the generated IR bindings.
 
 use tvm_ffi::Result;
 

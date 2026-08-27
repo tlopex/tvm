@@ -16,21 +16,102 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+#include <tvm/ffi/reflection/accessor.h>
+
 #include "utils.h"
 
 namespace tvm {
 namespace tirx {
 
 /**************** Layout ****************/
+namespace {
+
+template <typename Result, typename... Args>
+Result CallLayoutMethod(const LayoutNode* self, const char* name, Args&&... args) {
+  return ffi::reflection::GetMethod(self->GetTypeKey(), name)
+      .CallExpected<Result>(ffi::GetRef<Layout>(self), std::forward<Args>(args)...)
+      .value();
+}
+
+}  // namespace
+
+bool LayoutNode::CompatibleWithShape(const ffi::Array<PrimExpr>& shape) const {
+  return CallLayoutMethod<bool>(this, "compatible_with_shape", shape);
+}
+
+bool LayoutNode::VerifyWellFormed() const {
+  return CallLayoutMethod<bool>(this, "verify_well_formed");
+}
+
+PrimExpr LayoutNode::GetSize(ffi::Optional<ffi::String> axis_name) const {
+  return CallLayoutMethod<PrimExpr>(this, "get_size", std::move(axis_name));
+}
+
+PrimExpr LayoutNode::GetSpan(ffi::Optional<ffi::String> axis_name) const {
+  return CallLayoutMethod<PrimExpr>(this, "get_span", std::move(axis_name));
+}
+
+ffi::Map<ffi::String, PrimExpr> LayoutNode::Apply(ffi::Array<PrimExpr> coord) const {
+  return CallLayoutMethod<ffi::Map<ffi::String, PrimExpr>>(this, "apply", std::move(coord));
+}
+
+ffi::Map<ffi::String, PrimExpr> LayoutNode::Apply(PrimExpr coord) const {
+  return CallLayoutMethod<ffi::Map<ffi::String, PrimExpr>>(this, "apply_linear", std::move(coord));
+}
+
 ffi::Map<ffi::String, PrimExpr> LayoutNode::Apply(const ffi::Array<PrimExpr>& coord,
                                                   const ffi::Array<PrimExpr>& shape) const {
-  TVM_FFI_ICHECK_EQ(coord.size(), shape.size())
-      << "ValueError: The size of coord and shape should be equal";
-  return Apply(FlattenCoord(coord, shape));
+  return CallLayoutMethod<ffi::Map<ffi::String, PrimExpr>>(this, "apply_with_shape", coord, shape);
+}
+
+Layout LayoutNode::Canonicalize() const { return CallLayoutMethod<Layout>(this, "canonicalize"); }
+
+Layout LayoutNode::Tile(const TileLayout& outer, const ffi::Array<PrimExpr>& outer_shape,
+                        const ffi::Array<PrimExpr>& inner_shape) const {
+  return CallLayoutMethod<Layout>(this, "tile", outer, outer_shape, inner_shape);
+}
+
+ffi::Optional<Layout> LayoutNode::Slice(const ffi::Array<PrimExpr>& shape,
+                                        const Region& region) const {
+  return CallLayoutMethod<ffi::Optional<Layout>>(this, "slice", shape, region);
+}
+
+Layout LayoutNode::DirectSum(const TileLayout& left, const ffi::Array<PrimExpr>& left_shape,
+                             const ffi::Array<PrimExpr>& right_shape) const {
+  return CallLayoutMethod<Layout>(this, "direct_sum", left, left_shape, right_shape);
+}
+
+ffi::Optional<TileLayout> LayoutNode::IsTileInner(const Layout& tile_layout,
+                                                  const ffi::Array<PrimExpr>& tiled_shape,
+                                                  const ffi::Array<PrimExpr>& inner_shape) const {
+  return CallLayoutMethod<ffi::Optional<TileLayout>>(this, "is_tile_inner", tile_layout,
+                                                     tiled_shape, inner_shape);
+}
+
+ffi::Optional<Layout> LayoutNode::IsTileOuter(const Layout& tile_layout,
+                                              const ffi::Array<PrimExpr>& tiled_shape,
+                                              const ffi::Array<PrimExpr>& outer_shape) const {
+  return CallLayoutMethod<ffi::Optional<Layout>>(this, "is_tile_outer", tile_layout, tiled_shape,
+                                                 outer_shape);
+}
+
+ffi::Optional<TileLayout> LayoutNode::IsDirectSumRight(
+    const Layout& sum_layout, const ffi::Array<PrimExpr>& interleaved_shape,
+    const ffi::Array<PrimExpr>& right_shape) const {
+  return CallLayoutMethod<ffi::Optional<TileLayout>>(this, "is_direct_sum_right", sum_layout,
+                                                     interleaved_shape, right_shape);
+}
+
+ffi::Optional<Layout> LayoutNode::IsDirectSumLeft(const Layout& sum_layout,
+                                                  const ffi::Array<PrimExpr>& interleaved_shape,
+                                                  const ffi::Array<PrimExpr>& left_shape) const {
+  return CallLayoutMethod<ffi::Optional<Layout>>(this, "is_direct_sum_left", sum_layout,
+                                                 interleaved_shape, left_shape);
 }
 
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
+  refl::ObjectDef<LayoutNode>();
   auto def = refl::GlobalDef();
   def.def("tirx.LayoutCompatibleWithShape",
           [](Layout layout, Array<PrimExpr> shape) { return layout->CompatibleWithShape(shape); });
