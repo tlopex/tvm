@@ -19,8 +19,8 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, FieldGetter, Function,
-    Map, ObjectArc, ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
+    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, FieldGetter, Map,
+    ObjectArc, ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
 use super::{primitive_type, Stmt, StmtObj};
@@ -59,32 +59,6 @@ impl std::ops::Deref for DataProducerObj {
     }
 }
 
-impl DataProducer {
-    fn call<T>(&self, name: &str) -> Result<T>
-    where
-        T: TryFrom<Any, Error = Error>,
-    {
-        Function::from_type_method(AnyView::from(self).type_index(), name)?
-            .call_tuple((self,))?
-            .try_into()
-    }
-
-    /// Return the producer's logical result shape.
-    pub fn shape(&self) -> Result<Array<Expr>> {
-        self.call("get_shape")
-    }
-
-    /// Return the producer's primitive element type.
-    pub fn data_type(&self) -> Result<PrimType> {
-        self.call("get_data_type")
-    }
-
-    /// Return the producer's diagnostic name.
-    pub fn name_hint(&self) -> Result<String> {
-        self.call("get_name_hint")
-    }
-}
-
 /// Opaque Rust representation of TVM's polymorphic layout base class.
 #[repr(C)]
 #[derive(Object)]
@@ -108,84 +82,48 @@ impl std::ops::Deref for Layout {
 }
 
 impl Layout {
-    fn method(&self, name: &str) -> Result<Function> {
-        Function::from_type_method(AnyView::from(self).type_index(), name)
-    }
-
-    #[inline]
-    fn call0<T>(&self, name: &str) -> Result<T>
-    where
-        T: TryFrom<Any, Error = Error>,
-    {
-        self.method(name)?.call_tuple((self,))?.try_into()
-    }
-
-    #[inline]
-    fn call1<T>(&self, name: &str, arg0: AnyView<'_>) -> Result<T>
-    where
-        T: TryFrom<Any, Error = Error>,
-    {
-        self.method(name)?
-            .call_packed(&[AnyView::from(self), arg0])?
-            .try_into()
-    }
-
-    #[inline]
-    fn call2<T>(&self, name: &str, arg0: AnyView<'_>, arg1: AnyView<'_>) -> Result<T>
-    where
-        T: TryFrom<Any, Error = Error>,
-    {
-        self.method(name)?
-            .call_packed(&[AnyView::from(self), arg0, arg1])?
-            .try_into()
-    }
-
-    #[inline]
-    fn call3<T>(
-        &self,
-        name: &str,
-        arg0: AnyView<'_>,
-        arg1: AnyView<'_>,
-        arg2: AnyView<'_>,
-    ) -> Result<T>
-    where
-        T: TryFrom<Any, Error = Error>,
-    {
-        self.method(name)?
-            .call_packed(&[AnyView::from(self), arg0, arg1, arg2])?
-            .try_into()
-    }
-
     /// Check whether this layout can describe the supplied logical shape.
     pub fn compatible_with_shape(&self, shape: &Array<Expr>) -> Result<bool> {
-        self.call1("compatible_with_shape", AnyView::from(shape))
+        tvm_ffi::cached_global_func!("tirx.LayoutCompatibleWithShape")
+            .call_tuple((self, shape))?
+            .try_into()
     }
 
-    /// Validate the concrete layout through its reflected method.
+    /// Validate the concrete layout through TVM's registered operation.
     pub fn verify_well_formed(&self) -> Result<bool> {
-        self.call0("verify_well_formed")
+        tvm_ffi::cached_global_func!("tirx.LayoutVerifyWellFormed")
+            .call_tuple((self,))?
+            .try_into()
     }
 
     /// Return the logical size for all axes or one named axis.
     pub fn get_size(&self, axis_name: Option<&str>) -> Result<Expr> {
         let axis_name = axis_name.map(String::from);
-        self.call1("get_size", AnyView::from(&axis_name))
+        tvm_ffi::cached_global_func!("tirx.LayoutGetSize")
+            .call_tuple((self, axis_name))?
+            .try_into()
     }
 
     /// Return the physical span for all axes or one named axis.
     pub fn get_span(&self, axis_name: Option<&str>) -> Result<Expr> {
         let axis_name = axis_name.map(String::from);
-        self.call1("get_span", AnyView::from(&axis_name))
+        tvm_ffi::cached_global_func!("tirx.LayoutGetSpan")
+            .call_tuple((self, axis_name))?
+            .try_into()
     }
 
     /// Map one structured coordinate through this layout.
     pub fn apply(&self, coord: &Array<Expr>) -> Result<Map<String, Expr>> {
-        self.call1("apply", AnyView::from(coord))
+        tvm_ffi::cached_global_func!("tirx.LayoutApply")
+            .call_tuple((self, coord))?
+            .try_into()
     }
 
     /// Map one flattened coordinate through this layout.
     pub fn apply_linear(&self, coord: &Expr) -> Result<Map<String, Expr>> {
-        self.call1("apply_linear", AnyView::from(coord))
+        tvm_ffi::cached_global_func!("tirx.LayoutApplyLinear")
+            .call_tuple((self, coord))?
+            .try_into()
     }
 
     /// Map a coordinate whose dimensions are grouped by `shape`.
@@ -194,16 +132,16 @@ impl Layout {
         coord: &Array<Expr>,
         shape: &Array<Expr>,
     ) -> Result<Map<String, Expr>> {
-        self.call2(
-            "apply_with_shape",
-            AnyView::from(coord),
-            AnyView::from(shape),
-        )
+        tvm_ffi::cached_global_func!("tirx.LayoutApplyWithShape")
+            .call_tuple((self, coord, shape))?
+            .try_into()
     }
 
     /// Return the canonical form of this layout.
     pub fn canonicalize(&self) -> Result<Layout> {
-        self.call0("canonicalize")
+        tvm_ffi::cached_global_func!("tirx.LayoutCanonicalize")
+            .call_tuple((self,))?
+            .try_into()
     }
 
     /// Tile this layout with an outer tile.
@@ -213,17 +151,16 @@ impl Layout {
         outer_shape: &Array<Expr>,
         inner_shape: &Array<Expr>,
     ) -> Result<Layout> {
-        self.call3(
-            "tile",
-            AnyView::from(outer),
-            AnyView::from(outer_shape),
-            AnyView::from(inner_shape),
-        )
+        tvm_ffi::cached_global_func!("tirx.LayoutTile")
+            .call_tuple((self, outer, outer_shape, inner_shape))?
+            .try_into()
     }
 
     /// Restrict this layout to one region.
     pub fn slice(&self, shape: &Array<Expr>, region: &Array<Range>) -> Result<Option<Layout>> {
-        self.call2("slice", AnyView::from(shape), AnyView::from(region))
+        tvm_ffi::cached_global_func!("tirx.LayoutSlice")
+            .call_tuple((self, shape, region))?
+            .try_into()
     }
 
     /// Form the layout direct sum with a left tile.
@@ -233,12 +170,9 @@ impl Layout {
         left_shape: &Array<Expr>,
         right_shape: &Array<Expr>,
     ) -> Result<Layout> {
-        self.call3(
-            "direct_sum",
-            AnyView::from(left),
-            AnyView::from(left_shape),
-            AnyView::from(right_shape),
-        )
+        tvm_ffi::cached_global_func!("tirx.LayoutDirectSum")
+            .call_tuple((self, left, left_shape, right_shape))?
+            .try_into()
     }
 
     /// Recover an outer tile when this layout is the tiled inner component.
@@ -248,12 +182,9 @@ impl Layout {
         tiled_shape: &Array<Expr>,
         inner_shape: &Array<Expr>,
     ) -> Result<Option<TileLayout>> {
-        self.call3(
-            "is_tile_inner",
-            AnyView::from(layout),
-            AnyView::from(tiled_shape),
-            AnyView::from(inner_shape),
-        )
+        tvm_ffi::cached_global_func!("tirx.LayoutIsTileInner")
+            .call_tuple((self, layout, tiled_shape, inner_shape))?
+            .try_into()
     }
 
     /// Recover an inner layout when this layout is the tiled outer component.
@@ -263,12 +194,9 @@ impl Layout {
         tiled_shape: &Array<Expr>,
         outer_shape: &Array<Expr>,
     ) -> Result<Option<Layout>> {
-        self.call3(
-            "is_tile_outer",
-            AnyView::from(layout),
-            AnyView::from(tiled_shape),
-            AnyView::from(outer_shape),
-        )
+        tvm_ffi::cached_global_func!("tirx.LayoutIsTileOuter")
+            .call_tuple((self, layout, tiled_shape, outer_shape))?
+            .try_into()
     }
 
     /// Recover the left direct-sum component when this layout is the right one.
@@ -278,12 +206,9 @@ impl Layout {
         interleaved_shape: &Array<Expr>,
         right_shape: &Array<Expr>,
     ) -> Result<Option<TileLayout>> {
-        self.call3(
-            "is_direct_sum_right",
-            AnyView::from(layout),
-            AnyView::from(interleaved_shape),
-            AnyView::from(right_shape),
-        )
+        tvm_ffi::cached_global_func!("tirx.LayoutIsDirectSumRight")
+            .call_tuple((self, layout, interleaved_shape, right_shape))?
+            .try_into()
     }
 
     /// Recover the right direct-sum component when this layout is the left one.
@@ -293,12 +218,9 @@ impl Layout {
         interleaved_shape: &Array<Expr>,
         left_shape: &Array<Expr>,
     ) -> Result<Option<Layout>> {
-        self.call3(
-            "is_direct_sum_left",
-            AnyView::from(layout),
-            AnyView::from(interleaved_shape),
-            AnyView::from(left_shape),
-        )
+        tvm_ffi::cached_global_func!("tirx.LayoutIsDirectSumLeft")
+            .call_tuple((self, layout, interleaved_shape, left_shape))?
+            .try_into()
     }
 }
 

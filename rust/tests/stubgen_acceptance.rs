@@ -37,6 +37,10 @@ use common::{
     runtime_type_info,
 };
 
+fn typed_int_expression(dtype: &str, value: i64) -> Expr {
+    IntImm::new(dtype, value).unwrap().into()
+}
+
 fn sample_function() -> PrimFunc {
     let variable = Var::new("x", "int32").unwrap();
     let zero = IntImm::new("int32", 0).unwrap();
@@ -205,10 +209,10 @@ fn direct_and_semantic_constructors_round_trip() {
     assert_eq!(rhs.value, 0);
     assert!(rhs.span.is_none());
 
-    let moved_lhs = Expr::int("int32", 3).unwrap();
+    let moved_lhs = typed_int_expression("int32", 3);
     let lhs_tracker = moved_lhs.clone();
     let lhs_count = ObjectArc::strong_count(<Expr as ObjectRefCore>::data(&lhs_tracker));
-    let moved_rhs = Expr::int("int32", 4).unwrap();
+    let moved_rhs = typed_int_expression("int32", 4);
     let result_type = moved_lhs.ty.clone();
     let direct_add = Add::from_complete_fields(None, result_type, moved_lhs, moved_rhs);
     assert_eq!(object_pointer(&direct_add.a), object_pointer(&lhs_tracker));

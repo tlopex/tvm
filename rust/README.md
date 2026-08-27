@@ -40,10 +40,10 @@ not considered a final stubgen implementation. Polymorphic `Layout`,
 `PrimExprConvertible`, and `DataProducer` objects remain opaque, preserving
 their native virtual ABI; registry-owned `Axis`, interned `SourceName`, the
 STL-backed `Source`, and the `Type::Missing` singleton likewise reuse their
-existing native operations. Reflected fields and type methods provide Rust
+existing native operations. Reflected fields and existing registered functions provide Rust
 access without changing those C++ semantics. Semantic constructors use a reflected static
 preparation method that never allocates the final node. C++ registers these
-methods with `ObjectDef::def` or `def_static`, while Rust finds them with
+preparation methods with `ObjectDef::def_static`, while Rust finds them with
 `Function::from_type_method`; argument conversion, result ownership, and error
 propagation therefore use the existing tvm-ffi function ABI. Public direct-layout fields are borrowed
 through each reference wrapper's read-only `Deref`; callers write `.clone()` explicitly

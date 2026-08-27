@@ -261,29 +261,29 @@ native singleton.
 
 Ordinary ABI-complete constructors do not call packed global constructors or
 maintain custom raw vtables. Registry, interning, STL, and polymorphic blockers
-reuse existing native operations, while Rust behavior access reuses tvm-ffi's
-per-type method table:
+reuse existing native operations. A new per-type method is introduced only for
+constructor preparation that has no equivalent registered operation:
 
 | Reflected method | Purpose | Final allocation |
 | --- | --- | --- |
 | static `__ffi_prepare__` | validate inputs and return a uniform `Map<String, Any>` of derived physical fields for `BufferType`, `PrimFunc`, Relax `Function`, and `MatchBufferRegion` | Rust |
-| `to_prim_expr` | convert `IterVar`, `BufferRegion`, or `Tensor` | Rust receives an owning result through the normal `ffi.Function` ABI |
-| `Layout` methods | provide a parallel Rust-visible entry while C++ retains virtual dispatch | layouts remain native-owned opaque objects |
-| `DataProducer` methods | expose shape, element type, and name queries to Rust while C++ retains virtual dispatch | Rust receives normal tvm-ffi values |
 
-C++ registers these methods with `ObjectDef::def` or `def_static`. Rust looks
-them up with `Function::from_type_method`, so tvm-ffi owns method storage,
-argument conversion, result ownership, and error propagation. The only new
-contract is the semantic method name and its typed signature; there are no
-handwritten ABI structs, version fields, opaque pointers, or raw `TVMFFIAny`
-converters. A constructor preparation method is not an allocator: it returns
-validation/derived data and Rust performs the final node allocation. Generated
-recipes publish ordered input names and derived-field names in a type
-attribute, which detects stale bindings when native constructor semantics
-change.
+C++ registers these methods with `ObjectDef::def_static`. Rust looks them up
+with `Function::from_type_method`, so tvm-ffi owns method storage, argument
+conversion, result ownership, and error propagation. A constructor preparation
+method is not an allocator: it returns validation/derived data and Rust performs
+the final node allocation. Generated recipes publish ordered input names and
+derived-field names in a type attribute, which detects stale bindings when
+native constructor semantics change.
 
-The tests exercise both directions: Rust calls reflected methods on native and
-Rust-created objects, while C++ entry points inspect and transform Rust-created
+Other opaque behavior uses APIs that TVM already registers. `tirx.convert`
+performs `PrimExprConvertible` fallback conversion, and the existing
+`tirx.Layout*` global functions retain C++ virtual dispatch for native layouts.
+The Rust binding must not duplicate either surface in every concrete type's
+method table.
+
+The tests exercise both directions: Rust calls registered native operations and
+constructor preparation methods, while C++ entry points inspect and transform Rust-created
 ordinary nodes through the same tvm-ffi object ABI. Identity- and
 resource-owning blockers are separately checked to remain native objects.
 
@@ -320,9 +320,9 @@ The same Rust reference wrapper must accept both origins:
 Generated safe direct construction must be disabled for incomplete layouts.
 Creating a header-only Rust allocation and labeling it as a larger native type
 is unsound even if field access is done through reflection. A native virtual
-base and its concrete subclasses remain opaque even when reflected behavior
-methods exist. Those methods make behavior callable; they do not make the
-compiler-owned object layout constructible in Rust.
+base and its concrete subclasses remain opaque even when registered functions
+make their behavior callable; that does not make the compiler-owned object
+layout constructible in Rust.
 
 ### Consuming packed arguments
 
@@ -403,8 +403,9 @@ IR surface they consume, not generate those transformations.
    allocation test.
 5. Generate heterogeneous fields as `Map<K, Any>` and other container fields
    with the normal typed `Array`/`Map` wrappers.
-6. Generate reflected behavior/preparation-method calls for reviewed recipes,
-   and reject unrefactored vptr/STL-backed nodes.
+6. Generate reflected preparation-method calls for reviewed recipes, reuse
+   existing registered operations for opaque behavior, and reject unrefactored
+   vptr/STL-backed nodes.
 7. Generate pass boundaries with the standard `RValueRef<T>` holder.
 8. Expand the type slice only after each new layout/constructor pattern has a
    focused test and a named owner.

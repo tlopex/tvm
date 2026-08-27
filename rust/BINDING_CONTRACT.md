@@ -114,7 +114,7 @@ A binding is accepted only when every applicable check passes:
 | Complete allocator API | exact stored types by value, direct `Self` return, no hidden clone/conversion work, and visibility that preserves external invariants |
 | Constructor parity | matching defaults, rejection cases, normalization, and derived state |
 | Cross-language ABI | a C++ registered field getter can read a Rust allocation |
-| Reflected behavior methods | C++ uses `ObjectDef::def`/`def_static`, Rust uses `Function::from_type_method`, and signatures use tvm-ffi-compatible values |
+| Native behavior boundary | reuse an existing registered FFI operation when one exists; add a reflected type method only for genuinely type-owned behavior such as constructor preparation |
 | Cross-language semantics | C++ structural equality accepts Rust- and C++-created equivalents |
 | Ownership | Rust and C++ may clone/drop the handle without leaks, double drops, or dangling fields |
 | Walk/map behavior | exact callback selection, order, definition regions, identity remapping, and COW behavior |
@@ -244,13 +244,12 @@ a separately reviewed C++ ABI migration removes that blocker.
   real failure source: parsing, checked narrowing, semantic validation, a
   fallible cast, or a reflected preparation method. Generated callers must not need
   `?` or `unwrap()` around plain `ObjectArc::new` allocation.
-- A `.cc` file may implement a reflected method because the underlying compiler
-  algorithm lives in C++, but registration and calls must use tvm-ffi's typed
-  method mechanism. Existing C++ virtual dispatch remains internal to C++;
-  Rust crosses only the packed type-method ABI.
-- Acceptance tests enumerate registered runtime types and require every
-  concrete descendant of a behavior-only base to register the complete method
-  set.
+- A `.cc` file may implement a reflected preparation method because the
+  underlying compiler algorithm lives in C++, but it must return only the
+  validation or derived fields needed before Rust performs the final allocation.
+- Existing registered functions take precedence over adding duplicate methods.
+  Existing C++ virtual dispatch remains internal to C++ and Rust crosses the
+  standard packed-function ABI.
 
 ## Stubgen output ownership
 
@@ -259,7 +258,7 @@ a separately reviewed C++ ABI migration removes that blocker.
   constructor bodies whose semantics are fully available.
 - **RUNTIME:** `ObjectArc`, heterogeneous `Array<Any>`/`Map<K, Any>` support,
   `RValueRef<T>` packed argument holders, safe object identity,
-  `Function::from_type_method`, and reflected behavior/preparation calls.
+  `Function::from_type_method`, and reflected constructor-preparation calls.
 - **RECIPE:** reviewed constructor semantics that generate Rust validation,
   defaults, normalization, and derived fields.
 - **ABI BLOCKER:** native vptrs, unreflected members, or non-ABI-shareable

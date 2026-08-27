@@ -68,14 +68,26 @@ where
 }
 
 fn int_expression(value: i64) -> Expr {
-    Expr::int("int32", value).unwrap()
+    typed_int_expression("int32", value)
+}
+
+fn typed_int_expression(dtype: &str, value: i64) -> Expr {
+    IntImm::new(dtype, value).unwrap().into()
+}
+
+fn add_expression<L, R>(lhs: L, rhs: R) -> Expr
+where
+    L: Into<Expr>,
+    R: Into<Expr>,
+{
+    Add::new(lhs, rhs).unwrap().into()
 }
 
 fn sample_sum() -> Expr {
     let one = int_expression(1);
     let two = int_expression(2);
     let three = int_expression(3);
-    Expr::add(Expr::add(&one, &two).unwrap(), &three).unwrap()
+    add_expression(add_expression(&one, &two), &three)
 }
 
 fn cpp_pass(name: &str) -> transform::Pass {
@@ -131,8 +143,8 @@ fn structural_walk_interrupts_with_the_requested_payload() {
 #[test]
 fn structural_walk_skip_prunes_only_the_selected_subtree() {
     load_tvm_compiler();
-    let left = Expr::add(int_expression(1), int_expression(2)).unwrap();
-    let root = Expr::add(&left, int_expression(3)).unwrap();
+    let left = add_expression(int_expression(1), int_expression(2));
+    let root = add_expression(&left, int_expression(3));
     let left_pointer = object_pointer(&left);
     let mut seen_additions = 0;
     let mut seen_integers = Vec::new();
@@ -167,9 +179,9 @@ fn direct_fields_borrow_rust_allocated_nodes() {
     let one = IntImm::new("int32", 1).unwrap();
     let two = IntImm::new("int32", 2).unwrap();
     let add = Add::new(one.clone(), two.clone()).unwrap();
-    let assertion = AssertStmt::new(Expr::int("bool", 1).unwrap(), "ValueError", "bad").unwrap();
+    let assertion = AssertStmt::new(typed_int_expression("bool", 1), "ValueError", "bad").unwrap();
     let leaf_conditional = IfThenElse::new(
-        Expr::int("bool", 1).unwrap(),
+        typed_int_expression("bool", 1),
         Evaluate::from_i64(1).unwrap(),
         None,
     )
@@ -400,8 +412,8 @@ fn complete_field_allocators_preserve_supplied_inherited_fields() {
     load_tvm_compiler();
     let int_type: Type = PrimType::new("int32").unwrap().into();
     let missing = Type::missing();
-    let lhs = Expr::int("int32", 1).unwrap();
-    let rhs = Expr::int("int32", 2).unwrap();
+    let lhs = typed_int_expression("int32", 1);
+    let rhs = typed_int_expression("int32", 2);
 
     // These deliberately supplied annotations differ from the convenience
     // constructors' derived defaults.  A lossless stubgen path must store them
@@ -429,7 +441,7 @@ fn complete_field_allocators_preserve_supplied_inherited_fields() {
     let conditional = RelaxIf::from_complete_fields(
         None,
         int_type.clone(),
-        Expr::int("bool", 1).unwrap(),
+        typed_int_expression("bool", 1),
         sequence.clone(),
         sequence,
     );
@@ -493,7 +505,7 @@ fn statement_sequence_normalizes_empty_single_and_nested_inputs() {
 #[test]
 fn buffer_defaults_match_the_registered_constructor_recipe() {
     load_tvm_compiler();
-    let extent = Expr::int("int32", 8).unwrap();
+    let extent = typed_int_expression("int32", 8);
     let buffer_type = BufferType::new("", "float32", vec![extent.clone()]).unwrap();
     let element_offset = buffer_type
         .elem_offset
@@ -538,7 +550,7 @@ fn buffer_defaults_match_the_registered_constructor_recipe() {
         .call_packed(&[
             AnyView::from(&tvm::tvm_ffi::String::from("")),
             AnyView::from(&dtype),
-            AnyView::from(&Array::new(vec![Expr::int("int32", 8).unwrap()])),
+            AnyView::from(&Array::new(vec![typed_int_expression("int32", 8)])),
             AnyView::from(&Array::<Expr>::new(Vec::new())),
             AnyView::from(&()),
             AnyView::from(&0_i64),
@@ -554,7 +566,7 @@ fn buffer_defaults_match_the_registered_constructor_recipe() {
 }
 
 #[test]
-fn every_layout_reflected_method_is_callable() {
+fn every_layout_registered_operation_is_callable() {
     load_tvm_compiler();
 
     let axis = Axis::get("m").unwrap();
@@ -698,7 +710,7 @@ fn every_layout_reflected_method_is_callable() {
 #[test]
 fn rust_skip_assert_matches_the_cpp_pass() {
     load_tvm_compiler();
-    let condition = Expr::int("bool", 1).unwrap();
+    let condition = typed_int_expression("bool", 1);
     let assertion: Stmt = AssertStmt::new(&condition, "RuntimeError", "failed")
         .unwrap()
         .into();
@@ -722,7 +734,7 @@ fn rust_skip_assert_matches_the_cpp_pass() {
 #[test]
 fn rust_skip_assert_rebuilds_conditional_branches_like_cpp() {
     load_tvm_compiler();
-    let condition = Expr::int("bool", 1).unwrap();
+    let condition = typed_int_expression("bool", 1);
     let assertion = || -> Stmt {
         AssertStmt::new(&condition, "RuntimeError", "failed")
             .unwrap()
@@ -818,7 +830,7 @@ impl DagProbe {
 fn structural_map_memoizes_shared_relax_dag_nodes() {
     load_tvm_compiler();
     let shared = RelaxIf::new(
-        Expr::int("bool", 1).unwrap(),
+        typed_int_expression("bool", 1),
         int_expression(1),
         int_expression(2),
     );
@@ -866,8 +878,8 @@ fn rust_add_zero_pass_matches_cpp_stmt_simplify() {
     load_tvm_compiler();
     let one = int_expression(1);
     let zero = int_expression(0);
-    let inner = Expr::add(&zero, &one).unwrap();
-    let expression = Expr::add(&inner, int_expression(0)).unwrap();
+    let inner = add_expression(&zero, &one);
+    let expression = add_expression(&inner, int_expression(0));
     let expected = int_expression(1);
     assert_structural_equal(
         &transform::simplify_add_zero_expr(expression.clone()).unwrap(),
@@ -889,16 +901,15 @@ fn rust_add_zero_pass_matches_cpp_stmt_simplify() {
 #[test]
 fn rust_module_pass_maps_function_values_like_cpp() {
     load_tvm_compiler();
-    let expression = Expr::add(
-        Expr::add(int_expression(0), int_expression(4)).unwrap(),
+    let expression = add_expression(
+        add_expression(int_expression(0), int_expression(4)),
         int_expression(0),
-    )
-    .unwrap();
+    );
     let function = PrimFunc::from_body(Evaluate::new(&expression).unwrap()).unwrap();
     let main_module = IRModule::from_expr(&function).unwrap();
     let helper_var = GlobalVar::new("helper");
     let helper_function: tvm::ir::BaseFunc = PrimFunc::from_body(
-        Evaluate::new(Expr::add(int_expression(0), int_expression(9)).unwrap()).unwrap(),
+        Evaluate::new(add_expression(int_expression(0), int_expression(9))).unwrap(),
     )
     .unwrap()
     .into();
@@ -978,7 +989,7 @@ impl ReplaceAddProbe {
 #[test]
 fn structural_map_preorder_replacement_prunes_original_children() {
     load_tvm_compiler();
-    let expression = Expr::add(int_expression(1), int_expression(2)).unwrap();
+    let expression = add_expression(int_expression(1), int_expression(2));
 
     let mut pre = ReplaceAddProbe::default();
     let pre_result = structural_map(expression.clone(), &mut pre, WalkOrder::PreOrder)
@@ -1224,17 +1235,14 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
         .unwrap()
         .try_into()
         .unwrap();
-    assert!(tensor.shape().unwrap().is_empty());
-    assert_eq!(tensor.data_type().unwrap().dtype, tensor_dtype.dtype);
-    assert_eq!(tensor.name_hint().unwrap().as_str(), "scalar_input");
     let tensor_expr = PrimExprConvertible::from(tensor).to_prim_expr().unwrap();
     assert_eq!(
         tensor_expr.ty.clone().try_cast::<PrimType>().unwrap().dtype,
         tensor_dtype.dtype
     );
 
-    let extent = Expr::int("int64", 8).unwrap();
-    let stride = Expr::int("int64", 1).unwrap();
+    let extent = typed_int_expression("int64", 8);
+    let stride = typed_int_expression("int64", 1);
     let axis_name = Axis::get("m").unwrap();
     let layout_iter = Iter::new(&extent, &stride, &axis_name).unwrap();
     let tile_layout = TileLayout::new(vec![layout_iter.clone()], Vec::new(), Map::new()).unwrap();
@@ -1244,7 +1252,7 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
         PrimType::new("int32").unwrap(),
         vec![extent.clone()],
         Vec::new(),
-        Expr::int("int64", 0).unwrap(),
+        typed_int_expression("int64", 0),
         64,
         1,
         Some(layout),
@@ -1288,8 +1296,8 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
     let buffer = buffer_type.new_var("A");
     let axis = Var::new("vi", "int64").unwrap();
     let axis_domain = Range::from_min_extent(
-        Expr::int("int64", 0).unwrap(),
-        Expr::int("int64", 8).unwrap(),
+        typed_int_expression("int64", 0),
+        typed_int_expression("int64", 8),
     )
     .unwrap();
     let iter_var = IterVar::new(&axis_domain, &axis, IterVarType::DataParallel).unwrap();
@@ -1301,7 +1309,7 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
         .unwrap()
         .call_packed(&[
             AnyView::from(&iter_var),
-            AnyView::from(&Expr::int("int64", 1).unwrap()),
+            AnyView::from(&typed_int_expression("int64", 1)),
             AnyView::from(&()),
         ])
         .unwrap()
@@ -1321,8 +1329,8 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
         .to_prim_expr()
         .unwrap();
     assert_eq!(object_pointer(&converted_domainless), object_pointer(&axis));
-    assert!(BufferLoad::new(&axis, vec![Expr::int("int64", 0).unwrap()], None).is_err());
-    let predicate = Expr::int("bool", 1).unwrap();
+    assert!(BufferLoad::new(&axis, vec![typed_int_expression("int64", 0)], None).is_err());
+    let predicate = typed_int_expression("bool", 1);
     let load =
         BufferLoad::new(&buffer, vec![axis.clone().into()], Some(predicate.clone())).unwrap();
     let explicit_load_type = PrimType::new("int32").unwrap();
@@ -1418,8 +1426,8 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
     );
     assert_eq!(block.annotations.len(), 2);
     let realization = SBlockRealize::new(
-        vec![Expr::int("int64", 0).unwrap()],
-        Expr::int("bool", 1).unwrap(),
+        vec![typed_int_expression("int64", 0)],
+        typed_int_expression("bool", 1),
         &block,
     )
     .unwrap();
@@ -1497,7 +1505,7 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
 fn rust_unit_loop_elimination_matches_cpp_on_buffer_indices() {
     load_tvm_compiler();
     let buffer_type =
-        BufferType::new("global", "int32", vec![Expr::int("int64", 16).unwrap()]).unwrap();
+        BufferType::new("global", "int32", vec![typed_int_expression("int64", 16)]).unwrap();
     let buffer = buffer_type.new_var("A");
     let outer_var = Var::new("i", "int64").unwrap();
     let unit_var = Var::new("j", "int64").unwrap();
@@ -1512,16 +1520,16 @@ fn rust_unit_loop_elimination_matches_cpp_on_buffer_indices() {
         .into();
     let unit_loop: Stmt = TirFor::serial(
         &unit_var,
-        Expr::int("int64", 2).unwrap(),
-        Expr::int("int64", 1).unwrap(),
+        typed_int_expression("int64", 2),
+        typed_int_expression("int64", 1),
         &store,
     )
     .unwrap()
     .into();
     let outer_loop = TirFor::serial(
         &outer_var,
-        Expr::int("int64", 0).unwrap(),
-        Expr::int("int64", 4).unwrap(),
+        typed_int_expression("int64", 0),
+        typed_int_expression("int64", 4),
         &unit_loop,
     )
     .unwrap();
@@ -1585,8 +1593,8 @@ fn integer_constant_folding_matches_cpp_on_fast_and_analyzer_paths() {
     let cpp_result = cpp_pass("tirx.transform.StmtSimplify").run(module).unwrap();
     assert_structural_equal(&rust_result, &cpp_result);
 
-    let maximum = Expr::int("int8", 127).unwrap();
-    let one = Expr::int("int8", 1).unwrap();
+    let maximum = typed_int_expression("int8", 127);
+    let one = typed_int_expression("int8", 1);
     let overflow: Expr = Add::new(&maximum, &one).unwrap().into();
     let overflow_module =
         IRModule::from_expr(PrimFunc::from_body(Evaluate::new(&overflow).unwrap()).unwrap())
@@ -1605,13 +1613,13 @@ fn integer_constant_folding_matches_cpp_on_fast_and_analyzer_paths() {
 fn integer_increment_reports_overflow_without_panicking() {
     load_tvm_compiler();
 
-    let incremented = transform::increment_int_immediates(Expr::int("int64", 41).unwrap())
+    let incremented = transform::increment_int_immediates(typed_int_expression("int64", 41))
         .unwrap()
         .try_cast::<IntImm>()
         .unwrap();
     assert_eq!(incremented.value, 42);
 
-    let result = transform::increment_int_immediates(Expr::int("int64", i64::MAX).unwrap());
+    let result = transform::increment_int_immediates(typed_int_expression("int64", i64::MAX));
     assert!(result.is_err());
 }
 
@@ -1627,9 +1635,12 @@ fn call_effect_kind_preserves_future_native_values() {
 #[test]
 fn known_control_flow_simplification_matches_cpp_on_analyzed_constants() {
     load_tvm_compiler();
-    let condition: Expr = Add::new(Expr::int("bool", 1).unwrap(), Expr::int("bool", 0).unwrap())
-        .unwrap()
-        .into();
+    let condition: Expr = Add::new(
+        typed_int_expression("bool", 1),
+        typed_int_expression("bool", 0),
+    )
+    .unwrap()
+    .into();
     let then_case: Stmt = Evaluate::from_i64(7).unwrap().into();
     let else_case: Stmt = Evaluate::from_i64(9).unwrap().into();
     let conditional: Stmt = IfThenElse::new(&condition, &then_case, Some(else_case))
@@ -1675,10 +1686,10 @@ fn known_control_flow_simplification_matches_cpp_on_analyzed_constants() {
         .into();
     assert_eq!(side_effect(&pure_expression).unwrap(), CallEffectKind::Pure);
     let read_buffer_type =
-        BufferType::new("global", "int32", vec![Expr::int("int64", 1).unwrap()]).unwrap();
+        BufferType::new("global", "int32", vec![typed_int_expression("int64", 1)]).unwrap();
     let read_buffer = read_buffer_type.new_var("read_buffer");
     let read_expression: Expr =
-        BufferLoad::new(&read_buffer, vec![Expr::int("int64", 0).unwrap()], None)
+        BufferLoad::new(&read_buffer, vec![typed_int_expression("int64", 0)], None)
             .unwrap()
             .into();
     assert_eq!(
@@ -1804,8 +1815,8 @@ fn unit_loop_elimination_preserves_annotated_loops() {
     .collect();
     let loop_statement = TirFor::with_metadata(
         loop_var,
-        Expr::int("int64", 7).unwrap(),
-        Expr::int("int64", 1).unwrap(),
+        typed_int_expression("int64", 7),
+        typed_int_expression("int64", 1),
         tvm::tirx::ForKind::Serial,
         body,
         None,

@@ -19,9 +19,8 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, FieldGetter, Function,
-    Map, ObjectArc, ObjectCore, ObjectRefCast, ObjectRefCore, Result, String, TYPE_ERROR,
-    VALUE_ERROR,
+    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, FieldGetter, Map,
+    ObjectArc, ObjectCore, ObjectRefCast, ObjectRefCore, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
 /// ABI-complete Rust representation of TVM's `ExprNode` prefix.
@@ -431,9 +430,9 @@ impl std::ops::Deref for PrimExprConvertible {
 }
 
 impl PrimExprConvertible {
-    /// Convert through the concrete type's reflected method.
+    /// Invoke TVM's standard FFI fallback conversion to a primitive expression.
     pub fn to_prim_expr(&self) -> Result<Expr> {
-        Function::from_type_method(AnyView::from(self).type_index(), "to_prim_expr")?
+        tvm_ffi::cached_global_func!("tirx.convert")
             .call_tuple((self,))?
             .try_into()
     }

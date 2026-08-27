@@ -789,8 +789,7 @@ class BufferRegionNode : public PrimExprConvertibleNode {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<BufferRegionNode>()
         .def_ro("buffer", &BufferRegionNode::buffer, refl::AttachFieldFlag::SEqHashDefRecursive())
-        .def_ro("region", &BufferRegionNode::region)
-        .def("to_prim_expr", &BufferRegionNode::ToPrimExpr);
+        .def_ro("region", &BufferRegionNode::region);
   }
 
   TVM_DLL PrimExpr ToPrimExpr() const final;

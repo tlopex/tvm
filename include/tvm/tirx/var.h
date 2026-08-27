@@ -168,6 +168,8 @@ class IterVarNode : public PrimExprConvertibleNode {
    */
   mutable Span span;
 
+  PrimExpr ToPrimExpr() const final { return var; }
+
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<IterVarNode>()
@@ -176,11 +178,8 @@ class IterVarNode : public PrimExprConvertibleNode {
         .def_ro("iter_type", &IterVarNode::iter_type)
         .def_ro("thread_tag", &IterVarNode::thread_tag)
         .def_ro("span", &IterVarNode::span, refl::DefaultValue(Span()),
-                refl::AttachFieldFlag::SEqHashIgnore())
-        .def("to_prim_expr", &IterVarNode::ToPrimExpr);
+                refl::AttachFieldFlag::SEqHashIgnore());
   }
-
-  PrimExpr ToPrimExpr() const final { return var; }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.IterVar", IterVarNode, PrimExprConvertibleNode);

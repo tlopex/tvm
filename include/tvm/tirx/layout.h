@@ -320,28 +320,7 @@ class TileLayoutNode : public LayoutNode {
     refl::ObjectDef<TileLayoutNode>()
         .def_ro("shard", &TileLayoutNode::shard)
         .def_ro("replica", &TileLayoutNode::replica)
-        .def_ro("offset", &TileLayoutNode::offset)
-        .def("compatible_with_shape", &TileLayoutNode::CompatibleWithShape)
-        .def("verify_well_formed", &TileLayoutNode::VerifyWellFormed)
-        .def("get_size", &TileLayoutNode::GetSize)
-        .def("get_span", &TileLayoutNode::GetSpan)
-        .def("apply", static_cast<ffi::Map<ffi::String, PrimExpr> (TileLayoutNode::*)(
-                          ffi::Array<PrimExpr>) const>(&TileLayoutNode::Apply))
-        .def("apply_linear",
-             static_cast<ffi::Map<ffi::String, PrimExpr> (TileLayoutNode::*)(PrimExpr) const>(
-                 &TileLayoutNode::Apply))
-        .def("apply_with_shape",
-             static_cast<ffi::Map<ffi::String, PrimExpr> (TileLayoutNode::*)(
-                 const ffi::Array<PrimExpr>&, const ffi::Array<PrimExpr>&) const>(
-                 &TileLayoutNode::Apply))
-        .def("canonicalize", &TileLayoutNode::Canonicalize)
-        .def("tile", &TileLayoutNode::Tile)
-        .def("slice", &TileLayoutNode::Slice)
-        .def("direct_sum", &TileLayoutNode::DirectSum)
-        .def("is_tile_inner", &TileLayoutNode::IsTileInner)
-        .def("is_tile_outer", &TileLayoutNode::IsTileOuter)
-        .def("is_direct_sum_right", &TileLayoutNode::IsDirectSumRight)
-        .def("is_direct_sum_left", &TileLayoutNode::IsDirectSumLeft);
+        .def_ro("offset", &TileLayoutNode::offset);
   }
 
   /*! \brief Check if the layout is compatible with the shape */
@@ -452,28 +431,7 @@ class ComposeLayoutNode : public LayoutNode {
         .def_ro("swizzle_inner", &ComposeLayoutNode::swizzle_inner)
         .def_ro("inner_mask", &ComposeLayoutNode::inner_mask)
         .def_ro("outer_mask", &ComposeLayoutNode::outer_mask)
-        .def_ro("tile_layout", &ComposeLayoutNode::tile_layout)
-        .def("compatible_with_shape", &ComposeLayoutNode::CompatibleWithShape)
-        .def("verify_well_formed", &ComposeLayoutNode::VerifyWellFormed)
-        .def("get_size", &ComposeLayoutNode::GetSize)
-        .def("get_span", &ComposeLayoutNode::GetSpan)
-        .def("apply", static_cast<ffi::Map<ffi::String, PrimExpr> (ComposeLayoutNode::*)(
-                          ffi::Array<PrimExpr>) const>(&ComposeLayoutNode::Apply))
-        .def("apply_linear",
-             static_cast<ffi::Map<ffi::String, PrimExpr> (ComposeLayoutNode::*)(PrimExpr) const>(
-                 &ComposeLayoutNode::Apply))
-        .def("apply_with_shape",
-             static_cast<ffi::Map<ffi::String, PrimExpr> (ComposeLayoutNode::*)(
-                 const ffi::Array<PrimExpr>&, const ffi::Array<PrimExpr>&) const>(
-                 &ComposeLayoutNode::Apply))
-        .def("canonicalize", &ComposeLayoutNode::Canonicalize)
-        .def("tile", &ComposeLayoutNode::Tile)
-        .def("slice", &ComposeLayoutNode::Slice)
-        .def("direct_sum", &ComposeLayoutNode::DirectSum)
-        .def("is_tile_inner", &ComposeLayoutNode::IsTileInner)
-        .def("is_tile_outer", &ComposeLayoutNode::IsTileOuter)
-        .def("is_direct_sum_right", &ComposeLayoutNode::IsDirectSumRight)
-        .def("is_direct_sum_left", &ComposeLayoutNode::IsDirectSumLeft);
+        .def_ro("tile_layout", &ComposeLayoutNode::tile_layout);
   }
 
   /*! \brief Check if the layout is compatible with the shape */
