@@ -52,6 +52,16 @@ struct IntegerConstantFolder {
 }
 
 impl IntegerConstantFolder {
+    fn analyzer(&mut self) -> Result<&Analyzer> {
+        if self.analyzer.is_none() {
+            self.analyzer = Some(Analyzer::new()?);
+        }
+        Ok(self
+            .analyzer
+            .as_ref()
+            .expect("analyzer was initialized above"))
+    }
+
     fn fold_or_analyze(
         &mut self,
         original: Expr,
@@ -64,15 +74,7 @@ impl IntegerConstantFolder {
             return Ok(Any::from(folded));
         }
         if is_matching_integer_pair(lhs, rhs) {
-            if self.analyzer.is_none() {
-                self.analyzer = Some(Analyzer::new()?);
-            }
-            return Ok(Any::from(
-                self.analyzer
-                    .as_ref()
-                    .expect("the analyzer was initialized above")
-                    .simplify(&original)?,
-            ));
+            return Ok(Any::from(self.analyzer()?.simplify(&original)?));
         }
         Ok(Any::from(original))
     }

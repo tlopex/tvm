@@ -17,13 +17,13 @@
  * under the License.
  */
 
-use tvm_ffi::{ObjectRefCast, Result};
+use tvm_ffi::ObjectRefCast;
 
 use crate::ir::{Expr, IntImm};
 
-pub(super) fn int_value(expr: &Expr) -> Result<Option<i64>> {
-    match expr.clone().try_cast::<IntImm>() {
-        Ok(value) => Ok(Some(value.value)),
-        Err(_) => Ok(None),
-    }
+pub(super) fn int_value(expr: &Expr) -> Option<i64> {
+    expr.clone()
+        .try_cast::<IntImm>()
+        .ok()
+        .map(|value| value.value)
 }

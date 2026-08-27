@@ -18,8 +18,8 @@
  */
 
 use tvm_ffi::{
-    structural_map, structural_mutate, Any, AnyMap, DefRegionKind, MutateCallbacks, MutateContext,
-    Result, String, WalkOrder,
+    structural_map, structural_mutate, Any, AnyCompatible, AnyMap, DefRegionKind, MutateCallbacks,
+    MutateContext, Result, String, WalkOrder,
 };
 
 use super::utils::int_value;
@@ -46,28 +46,28 @@ struct NeutralElementSimplifier;
 #[tvm_ffi::dispatch(map)]
 impl NeutralElementSimplifier {
     fn map_add(&mut self, value: Add) -> Result<Any> {
-        if int_value(&value.a)? == Some(0) {
-            return Ok(Any::from(value.b.clone()));
+        if int_value(&value.a) == Some(0) {
+            return Ok(value.b.to_any());
         }
-        if int_value(&value.b)? == Some(0) {
-            return Ok(Any::from(value.a.clone()));
+        if int_value(&value.b) == Some(0) {
+            return Ok(value.a.to_any());
         }
         Ok(Any::from(value))
     }
 
     fn map_subtract(&mut self, value: Sub) -> Result<Any> {
-        if int_value(&value.b)? == Some(0) {
-            return Ok(Any::from(value.a.clone()));
+        if int_value(&value.b) == Some(0) {
+            return Ok(value.a.to_any());
         }
         Ok(Any::from(value))
     }
 
     fn map_multiply(&mut self, value: Mul) -> Result<Any> {
-        if int_value(&value.a)? == Some(1) {
-            return Ok(Any::from(value.b.clone()));
+        if int_value(&value.a) == Some(1) {
+            return Ok(value.b.to_any());
         }
-        if int_value(&value.b)? == Some(1) {
-            return Ok(Any::from(value.a.clone()));
+        if int_value(&value.b) == Some(1) {
+            return Ok(value.a.to_any());
         }
         Ok(Any::from(value))
     }
@@ -140,11 +140,11 @@ fn mutate_scoped_add(
     if mutator.state().depth == 0 {
         return Ok(Any::from(value));
     }
-    if int_value(&value.a)? == Some(0) {
-        return Ok(Any::from(value.b.clone()));
+    if int_value(&value.a) == Some(0) {
+        return Ok(value.b.to_any());
     }
-    if int_value(&value.b)? == Some(0) {
-        return Ok(Any::from(value.a.clone()));
+    if int_value(&value.b) == Some(0) {
+        return Ok(value.a.to_any());
     }
     Ok(Any::from(value))
 }
@@ -154,8 +154,8 @@ fn mutate_scoped_subtract(
     mutator: &mut MutateContext<'_, LoopBodyMutationState>,
 ) -> Result<Any> {
     let value = Sub::try_from(mutator.default_mutate()?)?;
-    if mutator.state().depth > 0 && int_value(&value.b)? == Some(0) {
-        return Ok(Any::from(value.a.clone()));
+    if mutator.state().depth > 0 && int_value(&value.b) == Some(0) {
+        return Ok(value.a.to_any());
     }
     Ok(Any::from(value))
 }
@@ -168,11 +168,11 @@ fn mutate_scoped_multiply(
     if mutator.state().depth == 0 {
         return Ok(Any::from(value));
     }
-    if int_value(&value.a)? == Some(1) {
-        return Ok(Any::from(value.b.clone()));
+    if int_value(&value.a) == Some(1) {
+        return Ok(value.b.to_any());
     }
-    if int_value(&value.b)? == Some(1) {
-        return Ok(Any::from(value.a.clone()));
+    if int_value(&value.b) == Some(1) {
+        return Ok(value.a.to_any());
     }
     Ok(Any::from(value))
 }

@@ -711,7 +711,7 @@ impl BufferType {
 
     /// Construct a buffer variable.  Its runtime identity is an ordinary `ir.Var`.
     pub fn new_var(&self, name: &str) -> Var {
-        Var::with_type(name, &self.clone().into())
+        Var::with_type(name, Type::from(self.clone()))
     }
 }
 

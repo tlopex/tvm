@@ -19,9 +19,6 @@
 
 //! Runtime conformance checks for the complete handwritten IR surface.
 
-use std::path::PathBuf;
-use std::sync::OnceLock;
-
 use tvm::abi::ObjectLayout;
 use tvm::ir::{
     Attrs, AttrsObj, BaseFunc, BaseFuncObj, Call, CallObj, DictAttrs, DictAttrsObj,
@@ -43,12 +40,11 @@ use tvm::tirx::{
     MulObj, PrimFunc, PrimFuncObj, SBlock, SBlockObj, SBlockRealize, SBlockRealizeObj, SeqStmt,
     SeqStmtObj, Stmt, StmtObj, StringImm, StringImmObj, Sub, SubObj, TileLayout, TileLayoutObj,
 };
-use tvm::tvm_ffi::tvm_ffi_sys::{
-    TVMFFIFieldFlagBitMask, TVMFFIFieldInfo, TVMFFIGetTypeInfo, TVMFFISEqHashKind, TVMFFITypeInfo,
-};
-use tvm::tvm_ffi::{AnyMap, Array, DLDataType, Map, Module, Object, ObjectCore, String};
+use tvm::tvm_ffi::tvm_ffi_sys::{TVMFFIFieldFlagBitMask, TVMFFISEqHashKind};
+use tvm::tvm_ffi::{AnyMap, Array, DLDataType, Map, Object, ObjectCore, String};
 
-static TVM_COMPILER: OnceLock<Module> = OnceLock::new();
+mod common;
+use common::{direct_fields, load_tvm_compiler, runtime_type_info};
 
 const DEFAULT: i64 = TVMFFIFieldFlagBitMask::kTVMFFIFieldFlagBitMaskHasDefault as i64;
 const IGNORE: i64 = TVMFFIFieldFlagBitMask::kTVMFFIFieldFlagBitMaskSEqHashIgnore as i64;
@@ -105,35 +101,6 @@ const SCHEMA_STRING: &str = r#"{"type":"ffi.String"}"#;
 const SCHEMA_STRING_IMM: &str = r#"{"type":"tirx.StringImm"}"#;
 const SCHEMA_TYPE: &str = r#"{"type":"ir.Type"}"#;
 const SCHEMA_VAR: &str = r#"{"type":"ir.Var"}"#;
-
-fn load_tvm_compiler() {
-    TVM_COMPILER.get_or_init(|| {
-        let default = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("build")
-            .join("lib")
-            .join("libtvm_compiler.so");
-        let library = std::env::var_os("TVM_COMPILER_LIBRARY")
-            .map(PathBuf::from)
-            .unwrap_or(default);
-        Module::load_from_file(library.to_string_lossy()).unwrap()
-    });
-}
-
-fn runtime_type_info<N: ObjectCore>() -> &'static TVMFFITypeInfo {
-    let pointer = unsafe { TVMFFIGetTypeInfo(N::type_index()) };
-    assert!(!pointer.is_null(), "missing type info for {}", N::TYPE_KEY);
-    unsafe { &*pointer }
-}
-
-fn direct_fields<N: ObjectCore>() -> &'static [TVMFFIFieldInfo] {
-    let info = runtime_type_info::<N>();
-    if info.num_fields == 0 {
-        return &[];
-    }
-    assert!(!info.fields.is_null(), "missing fields for {}", N::TYPE_KEY);
-    unsafe { std::slice::from_raw_parts(info.fields, info.num_fields as usize) }
-}
 
 fn assert_contract<N: ObjectCore, P: ObjectCore>(
     expected_final: bool,

@@ -17,9 +17,8 @@
  * under the License.
  */
 
-use tvm_ffi::{structural_map, Any, ObjectRefCast, Result, WalkOrder};
+use tvm_ffi::{structural_map, Any, Result, WalkOrder};
 
-use super::utils::int_value;
 use super::{create_prim_func_pass, Pass};
 use crate::tirx::{AssertStmtObj, Evaluate, PrimFunc, SeqStmt, Stmt};
 
@@ -38,27 +37,11 @@ impl AssertSkipper {
     }
 
     fn map_sequence(&mut self, value: SeqStmt) -> Result<Any> {
-        let mut flattened = Vec::new();
-        for statement in value.seq.iter() {
-            if let Ok(sequence) = statement.clone().try_cast::<SeqStmt>() {
-                flattened.extend(sequence.seq.iter());
-            } else if !is_evaluate_zero(&statement)? {
-                flattened.push(statement);
-            }
-        }
-        match flattened.len() {
-            0 => Ok(Any::from(Evaluate::from_i64(0)?)),
-            1 => Ok(Any::from(flattened.pop().unwrap())),
-            _ => Ok(Any::from(SeqStmt::new(flattened)?)),
-        }
+        Ok(Any::from(Stmt::sequence_with_span(
+            value.seq.iter().collect(),
+            value.span.as_ref(),
+        )?))
     }
-}
-
-fn is_evaluate_zero(statement: &Stmt) -> Result<bool> {
-    let Ok(evaluate) = statement.clone().try_cast::<Evaluate>() else {
-        return Ok(false);
-    };
-    Ok(int_value(&evaluate.value)? == Some(0))
 }
 
 /// Build the Rust implementation of `tirx.SkipAssert` as a normal TVM pass.

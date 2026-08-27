@@ -19,6 +19,9 @@
 
 //! Machine-checkable layouts for Rust-allocated TVM FFI objects.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use tvm_ffi::tvm_ffi_sys::{TVMFFIGetTypeInfo, TVMFFITypeInfo};
 use tvm_ffi::{
     Any, AnyMap, AnyView, Error, Function, ObjectArc, ObjectCore, Result, String, TYPE_ERROR,
     VALUE_ERROR,
@@ -134,6 +137,9 @@ pub trait ObjectLayout {
     const SIZE: usize;
     const ALIGNMENT: usize;
     const FIELDS: &'static [FieldLayout];
+
+    #[doc(hidden)]
+    fn loaded_layout_was_validated() -> &'static AtomicBool;
 }
 
 /// Marker for a complete native type that may be a final Rust allocation.
@@ -153,7 +159,146 @@ pub(crate) fn allocate_object<N>(value: N) -> ObjectArc<N>
 where
     N: ObjectCore + RustAllocatable,
 {
+    validate_loaded_layout::<N>().unwrap_or_else(|message| {
+        panic!(
+            "cannot allocate `{}` in Rust because the loaded native layout is incompatible: {message}",
+            N::TYPE_KEY
+        )
+    });
     ObjectArc::new(value)
+}
+
+fn runtime_type_info<N: ObjectCore>(
+) -> std::result::Result<&'static TVMFFITypeInfo, std::string::String> {
+    let type_index = N::type_index();
+    let pointer = unsafe { TVMFFIGetTypeInfo(type_index) };
+    if pointer.is_null() {
+        return Err(format!(
+            "the runtime returned no type information for type index {type_index}"
+        ));
+    }
+    Ok(unsafe { &*pointer })
+}
+
+/// Check every object-layout property exposed by the loaded TVM runtime.
+///
+/// This runs once per Rust object type before its first direct allocation.  A
+/// mismatch is fatal because writing a Rust value with a different native
+/// layout would make subsequent C++ field access memory-unsafe.
+fn validate_loaded_layout<N>() -> std::result::Result<(), std::string::String>
+where
+    N: ObjectCore + RustAllocatable,
+{
+    if N::loaded_layout_was_validated().load(Ordering::Acquire) {
+        return Ok(());
+    }
+
+    let info = runtime_type_info::<N>()?;
+    if info.type_index != N::type_index() {
+        return Err(format!(
+            "type index differs (Rust {}, native {})",
+            N::type_index(),
+            info.type_index
+        ));
+    }
+    if info.type_key.as_str() != N::TYPE_KEY {
+        return Err(format!(
+            "type key differs (Rust `{}`, native `{}`)",
+            N::TYPE_KEY,
+            info.type_key.as_str()
+        ));
+    }
+    if info.type_depth != N::TYPE_DEPTH {
+        return Err(format!(
+            "inheritance depth differs (Rust {}, native {})",
+            N::TYPE_DEPTH,
+            info.type_depth
+        ));
+    }
+    if info.metadata.is_null() {
+        return Err("the runtime did not publish object metadata".to_owned());
+    }
+
+    let native_size = unsafe { (*info.metadata).total_size };
+    if native_size <= 0 {
+        return Err("the runtime did not publish a fixed object size".to_owned());
+    }
+    if native_size as usize != N::SIZE {
+        return Err(format!(
+            "total size differs (Rust {}, native {})",
+            N::SIZE,
+            native_size
+        ));
+    }
+    if info.num_fields < 0 {
+        return Err(format!(
+            "the runtime published a negative field count ({})",
+            info.num_fields
+        ));
+    }
+    if info.num_fields as usize != N::FIELDS.len() {
+        return Err(format!(
+            "direct field count differs (Rust {}, native {})",
+            N::FIELDS.len(),
+            info.num_fields
+        ));
+    }
+    if info.num_fields != 0 && info.fields.is_null() {
+        return Err("the runtime published a null field table".to_owned());
+    }
+
+    let native_fields = if info.num_fields == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(info.fields, info.num_fields as usize) }
+    };
+    for rust_field in N::FIELDS {
+        let mut matching_fields = native_fields
+            .iter()
+            .filter(|field| field.name.as_str() == rust_field.name);
+        let native_field = matching_fields
+            .next()
+            .ok_or_else(|| format!("native field `{}` is missing", rust_field.name))?;
+        if matching_fields.next().is_some() {
+            return Err(format!(
+                "native field `{}` is registered more than once",
+                rust_field.name
+            ));
+        }
+        let native_name = native_field.name.as_str();
+        if native_field.offset < 0 || native_field.size < 0 || native_field.alignment <= 0 {
+            return Err(format!(
+                "field `{native_name}` has invalid native layout values (offset {}, size {}, alignment {})",
+                native_field.offset, native_field.size, native_field.alignment
+            ));
+        }
+        if native_field.offset as usize != rust_field.offset
+            || native_field.size as usize != rust_field.size
+            || native_field.alignment as usize != rust_field.alignment
+        {
+            return Err(format!(
+                "field `{native_name}` layout differs (Rust offset/size/alignment {}/{}/{}, native {}/{}/{})",
+                rust_field.offset,
+                rust_field.size,
+                rust_field.alignment,
+                native_field.offset,
+                native_field.size,
+                native_field.alignment
+            ));
+        }
+        let native_end = (native_field.offset as usize)
+            .checked_add(native_field.size as usize)
+            .ok_or_else(|| format!("field `{native_name}` extent overflows usize"))?;
+        if native_end > N::SIZE {
+            return Err(format!(
+                "field `{native_name}` ends at byte {native_end}, beyond object size {}",
+                N::SIZE
+            ));
+        }
+    }
+
+    N::loaded_layout_was_validated().store(true, Ordering::Release);
+    Ok(())
 }
 
 macro_rules! impl_object_layout {
@@ -171,6 +316,12 @@ macro_rules! impl_object_layout {
                     },
                 )*
             ];
+
+            fn loaded_layout_was_validated() -> &'static ::std::sync::atomic::AtomicBool {
+                static VALIDATED: ::std::sync::atomic::AtomicBool =
+                    ::std::sync::atomic::AtomicBool::new(false);
+                &VALIDATED
+            }
         }
     };
 }
@@ -206,8 +357,35 @@ macro_rules! impl_object_upcast {
                     <$target as tvm_ffi::ObjectRefCore>::from_data(data)
                 }
             }
+
+            impl From<&$source> for $target {
+                #[inline]
+                fn from(value: &$source) -> Self {
+                    value.clone().into()
+                }
+            }
         )+
     };
 }
 
 pub(crate) use impl_object_upcast;
+
+/// Let an owning constructor accept either an owned base handle or a borrow.
+///
+/// Converting an owned handle moves it without touching the reference count;
+/// converting a borrow explicitly creates the owning handle that a stored
+/// object field requires.
+macro_rules! impl_object_borrow_to_owned {
+    ($($reference:ty),+ $(,)?) => {
+        $(
+            impl From<&$reference> for $reference {
+                #[inline]
+                fn from(value: &$reference) -> Self {
+                    value.clone()
+                }
+            }
+        )+
+    };
+}
+
+pub(crate) use impl_object_borrow_to_owned;

@@ -23,34 +23,19 @@
 //! stubgen should replace first.  Once those bindings are generated, deleting
 //! their handwritten definitions must not require changing this file.
 
-use std::path::PathBuf;
-use std::sync::OnceLock;
-
 use tvm::ir::{BaseFuncObj, Expr, ExprObj, IntImm, IntImmObj, PrimType, Type, Var, VarObj};
 use tvm::tirx::{Add, AddObj, Evaluate, EvaluateObj, PrimFunc, PrimFuncObj, StmtObj};
-use tvm::tvm_ffi::tvm_ffi_sys::{
-    TVMFFIFieldFlagBitMask, TVMFFIFieldInfo, TVMFFIGetTypeInfo, TVMFFITypeInfo,
-};
+use tvm::tvm_ffi::tvm_ffi_sys::{TVMFFIFieldFlagBitMask, TVMFFIFieldInfo};
 use tvm::tvm_ffi::{
-    structural_map, structural_walk, Any, AnyCompatible, AnyView, DefRegionKind, Function, Module,
-    Object, ObjectArc, ObjectCore, ObjectRefCast, ObjectRefCore, Result, WalkOrder, WalkResult,
+    structural_map, structural_walk, Any, AnyView, DefRegionKind, Function, Object, ObjectArc,
+    ObjectCore, ObjectRefCast, ObjectRefCore, Result, WalkOrder, WalkResult,
 };
 
-static TVM_COMPILER: OnceLock<Module> = OnceLock::new();
-
-fn load_tvm_compiler() {
-    TVM_COMPILER.get_or_init(|| {
-        let default = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("build")
-            .join("lib")
-            .join("libtvm_compiler.so");
-        let library = std::env::var_os("TVM_COMPILER_LIBRARY")
-            .map(PathBuf::from)
-            .unwrap_or(default);
-        Module::load_from_file(library.to_string_lossy()).unwrap()
-    });
-}
+mod common;
+use common::{
+    assert_structural_equal as assert_cpp_structural_equal, direct_fields, load_tvm_compiler,
+    runtime_type_info,
+};
 
 fn sample_function() -> PrimFunc {
     let variable = Var::new("x", "int32").unwrap();
@@ -59,21 +44,6 @@ fn sample_function() -> PrimFunc {
     let value = Expr::from(Add::new(&variable_expr, &zero).unwrap());
     let body = Evaluate::new(&value).unwrap();
     PrimFunc::new(vec![variable], &body).unwrap()
-}
-
-fn runtime_type_info<N: ObjectCore>() -> &'static TVMFFITypeInfo {
-    let pointer = unsafe { TVMFFIGetTypeInfo(N::type_index()) };
-    assert!(!pointer.is_null(), "missing type info for {}", N::TYPE_KEY);
-    unsafe { &*pointer }
-}
-
-fn direct_fields<N: ObjectCore>() -> &'static [TVMFFIFieldInfo] {
-    let info = runtime_type_info::<N>();
-    if info.num_fields == 0 {
-        return &[];
-    }
-    assert!(!info.fields.is_null(), "missing fields for {}", N::TYPE_KEY);
-    unsafe { std::slice::from_raw_parts(info.fields, info.num_fields as usize) }
 }
 
 fn direct_field<N: ObjectCore>(name: &str) -> &'static TVMFFIFieldInfo {
@@ -121,9 +91,7 @@ fn assert_field_flag<N: ObjectCore>(name: &str, flag: TVMFFIFieldFlagBitMask) {
     assert_ne!(direct_field::<N>(name).flags & flag as i64, 0);
 }
 
-fn object_pointer<O: ObjectRefCore>(value: &O) -> *const () {
-    unsafe { ObjectArc::as_raw(O::data(value)).cast() }
-}
+use common::object_pointer;
 
 fn cpp_reflected_field<O: ObjectRefCore>(value: &O, name: &str) -> Any {
     let field = direct_field::<O::ContainerType>(name);
@@ -135,19 +103,6 @@ fn cpp_reflected_field<O: ObjectRefCore>(value: &O, name: &str) -> Any {
     let mut result = Any::new();
     assert_eq!(unsafe { getter(address, Any::as_data_ptr(&mut result)) }, 0);
     result
-}
-
-fn assert_cpp_structural_equal<L: AnyCompatible, R: AnyCompatible>(lhs: &L, rhs: &R) {
-    let equal = Function::get_global("ffi.StructuralEqual")
-        .unwrap()
-        .call_packed(&[
-            AnyView::from(lhs),
-            AnyView::from(rhs),
-            AnyView::from(&false),
-            AnyView::from(&false),
-        ])
-        .unwrap();
-    assert!(bool::try_from(equal).unwrap());
 }
 
 #[test]

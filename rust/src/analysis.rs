@@ -79,33 +79,46 @@ impl Analyzer {
     }
 }
 
-/// Rust mirror of TVM's `tirx::CallEffectKind` values.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(i32)]
-pub enum CallEffectKind {
-    /// The call is an expression annotation that behaves like an identity.
-    ExprAnnotation = 0,
-    /// The expression does not interact with external state.
-    Pure = 1,
-    /// The expression may read external state but does not update it.
-    ReadState = 2,
-    /// The expression may update state or has unknown behavior.
-    UpdateState = 3,
-    /// The call carries special argument information.
-    SpecialCallArg = 4,
-    /// The call embeds opaque information and cannot be generated as code.
-    EmbedInfo = 5,
-    /// The call changes control flow.
-    ControlJump = 6,
-}
+/// ABI-compatible Rust representation of TVM's `tirx::CallEffectKind`.
+///
+/// This is an open integer newtype rather than a closed Rust enum, so a value
+/// added by a newer native library remains representable and memory-safe.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct CallEffectKind(i32);
 
+#[allow(non_upper_case_globals)]
 impl CallEffectKind {
+    /// The call is an expression annotation that behaves like an identity.
+    pub const ExprAnnotation: Self = Self(0);
+    /// The expression does not interact with external state.
+    pub const Pure: Self = Self(1);
+    /// The expression may read external state but does not update it.
+    pub const ReadState: Self = Self(2);
+    /// The expression may update state or has unknown behavior.
+    pub const UpdateState: Self = Self(3);
+    /// The call carries special argument information.
+    pub const SpecialCallArg: Self = Self(4);
+    /// The call embeds opaque information and cannot be generated as code.
+    pub const EmbedInfo: Self = Self(5);
+    /// The call changes control flow.
+    pub const ControlJump: Self = Self(6);
     /// C++ `kOpaque` is an alias of `kUpdateState`.
     pub const OPAQUE: Self = Self::UpdateState;
 
+    /// Preserve an enumerator not yet known by this Rust binding.
+    pub const fn from_raw(value: i32) -> Self {
+        Self(value)
+    }
+
+    /// Return the native integer representation.
+    pub const fn as_raw(self) -> i32 {
+        self.0
+    }
+
     /// Return whether discarding evaluation could remove a state update.
     pub fn may_update_state(self) -> bool {
-        self as i32 >= Self::UpdateState as i32
+        self.0 >= Self::UpdateState.0
     }
 }
 
@@ -113,20 +126,15 @@ impl TryFrom<i64> for CallEffectKind {
     type Error = Error;
 
     fn try_from(value: i64) -> Result<Self> {
-        match value {
-            0 => Ok(Self::ExprAnnotation),
-            1 => Ok(Self::Pure),
-            2 => Ok(Self::ReadState),
-            3 => Ok(Self::UpdateState),
-            4 => Ok(Self::SpecialCallArg),
-            5 => Ok(Self::EmbedInfo),
-            6 => Ok(Self::ControlJump),
-            _ => Err(Error::new(
+        i32::try_from(value).map(Self).map_err(|_| {
+            Error::new(
                 VALUE_ERROR,
-                &format!("unknown TIR call-effect value {value}"),
+                &format!(
+                    "tirx.CallEffectKind value {value} does not fit its native i32 representation"
+                ),
                 "",
-            )),
-        }
+            )
+        })
     }
 }
 

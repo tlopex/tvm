@@ -19,8 +19,8 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, AnyCompatible, AnyMap, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error,
-    ObjectArc, ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
+    AnyMap, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, ObjectArc,
+    ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
 use crate::ir::{BaseFuncObj, DictAttrs, Expr, ExprObj, IntImm, Span, Var};
@@ -76,18 +76,28 @@ impl std::ops::Deref for AddObj {
 
 impl Add {
     /// Construct an addition expression directly in Rust.
-    pub fn new(lhs: &Expr, rhs: &Expr) -> Result<Self> {
+    pub fn new<L, R>(lhs: L, rhs: R) -> Result<Self>
+    where
+        L: Into<Expr>,
+        R: Into<Expr>,
+    {
         Self::with_span(lhs, rhs, None)
     }
 
     /// Construct an addition expression with optional source metadata.
-    pub fn with_span(lhs: &Expr, rhs: &Expr, span: Option<&Span>) -> Result<Self> {
-        let result_type = matching_binary_type(lhs, rhs)?;
+    pub fn with_span<L, R>(lhs: L, rhs: R, span: Option<&Span>) -> Result<Self>
+    where
+        L: Into<Expr>,
+        R: Into<Expr>,
+    {
+        let lhs = lhs.into();
+        let rhs = rhs.into();
+        let result_type = matching_binary_type(&lhs, &rhs)?;
         Ok(Self::from_complete_fields(
             span.cloned(),
             result_type,
-            lhs.clone(),
-            rhs.clone(),
+            lhs,
+            rhs,
         ))
     }
 
@@ -176,18 +186,28 @@ macro_rules! define_binary_expression {
 
         impl $reference {
             /// Construct the binary expression directly in Rust.
-            pub fn new(lhs: &Expr, rhs: &Expr) -> Result<Self> {
+            pub fn new<L, R>(lhs: L, rhs: R) -> Result<Self>
+            where
+                L: Into<Expr>,
+                R: Into<Expr>,
+            {
                 Self::with_span(lhs, rhs, None)
             }
 
             /// Construct the binary expression with optional source metadata.
-            pub fn with_span(lhs: &Expr, rhs: &Expr, span: Option<&Span>) -> Result<Self> {
-                let result_type = matching_binary_type(lhs, rhs)?;
+            pub fn with_span<L, R>(lhs: L, rhs: R, span: Option<&Span>) -> Result<Self>
+            where
+                L: Into<Expr>,
+                R: Into<Expr>,
+            {
+                let lhs = lhs.into();
+                let rhs = rhs.into();
+                let result_type = matching_binary_type(&lhs, &rhs)?;
                 Ok(Self::from_complete_fields(
                     span.cloned(),
                     result_type,
-                    lhs.clone(),
-                    rhs.clone(),
+                    lhs,
+                    rhs,
                 ))
             }
 
@@ -304,6 +324,30 @@ impl StmtObj {
         Self {
             base: tvm_ffi::Object::new(),
             span,
+        }
+    }
+}
+
+impl Stmt {
+    /// Normalize statements into TVM's canonical sequence representation.
+    ///
+    /// Nested sequences are flattened and `Evaluate(0)` nodes are removed.
+    /// An empty result becomes `Evaluate(0)`, one remaining statement is
+    /// returned directly, and two or more statements become a [`SeqStmt`].
+    pub fn sequence(statements: Vec<Stmt>) -> Result<Self> {
+        Self::sequence_with_span(statements, None)
+    }
+
+    /// Normalize statements while retaining a span on a newly created sequence.
+    pub fn sequence_with_span(statements: Vec<Stmt>, span: Option<&Span>) -> Result<Self> {
+        let mut flattened = Vec::new();
+        for statement in statements {
+            flatten_statement(statement, &mut flattened);
+        }
+        match flattened.len() {
+            0 => Ok(Evaluate::from_i64(0)?.into()),
+            1 => Ok(flattened.pop().expect("one statement is present")),
+            _ => Ok(SeqStmt::from_complete_fields(span.cloned(), Array::new(flattened)).into()),
         }
     }
 }
@@ -434,7 +478,7 @@ impl SeqStmt {
         let flattened = if requires_flattening {
             let mut flattened = Vec::new();
             for statement in statements {
-                flatten_statement(statement, &mut flattened)?;
+                flatten_statement(statement, &mut flattened);
             }
             flattened
         } else {
@@ -468,17 +512,16 @@ impl SeqStmt {
     }
 }
 
-fn flatten_statement(statement: Stmt, output: &mut Vec<Stmt>) -> Result<()> {
+fn flatten_statement(statement: Stmt, output: &mut Vec<Stmt>) {
     match statement.clone().try_cast::<SeqStmt>() {
         Ok(sequence) => {
             for child in sequence.seq.iter() {
-                flatten_statement(child, output)?;
+                flatten_statement(child, output);
             }
         }
         Err(_) if !is_evaluate_zero(&statement) => output.push(statement),
         Err(_) => {}
     }
-    Ok(())
 }
 
 fn is_evaluate_zero(statement: &Stmt) -> bool {
@@ -878,12 +921,19 @@ impl AssertStmt {
 
 impl Evaluate {
     /// Construct `Evaluate(value)` directly in Rust.
-    pub fn new(value: &Expr) -> Result<Self> {
+    pub fn new<E>(value: E) -> Result<Self>
+    where
+        E: Into<Expr>,
+    {
         Self::with_span(value, None)
     }
 
     /// Construct `Evaluate(value)` with optional source metadata.
-    pub fn with_span(value: &Expr, span: Option<&Span>) -> Result<Self> {
+    pub fn with_span<E>(value: E, span: Option<&Span>) -> Result<Self>
+    where
+        E: Into<Expr>,
+    {
+        let value = value.into();
         if value.clone().try_cast::<Var>().is_ok()
             && value.ty.clone().try_cast::<buffer::BufferType>().is_ok()
         {
@@ -893,7 +943,7 @@ impl Evaluate {
                 "",
             ));
         }
-        Ok(Self::from_complete_fields(span.cloned(), value.clone()))
+        Ok(Self::from_complete_fields(span.cloned(), value))
     }
 
     /// Construct an evaluation statement from every physical field after external validation.
@@ -908,32 +958,41 @@ impl Evaluate {
 
     /// Construct `Evaluate(IntImm("int32", value))`.
     pub fn from_i64(value: i64) -> Result<Self> {
-        Self::new(&Expr::int("int32", value)?)
+        Self::new(IntImm::new("int32", value)?)
     }
 }
 
 impl PrimFunc {
     /// Construct a parameterless PrimFunc around `body`.
-    pub fn from_body<S: AnyCompatible>(body: &S) -> Result<Self> {
+    pub fn from_body<S>(body: S) -> Result<Self>
+    where
+        S: Into<Stmt>,
+    {
         Self::new(Vec::new(), body)
     }
 
     /// Construct a PrimFunc in Rust after deriving type metadata through its reflected method.
-    pub fn new<S: AnyCompatible>(params: Vec<Var>, body: &S) -> Result<Self> {
+    pub fn new<S>(params: Vec<Var>, body: S) -> Result<Self>
+    where
+        S: Into<Stmt>,
+    {
         let attrs = DictAttrs::empty();
         let ret_type = crate::ir::Type::missing();
         Self::with_metadata(params, body, &ret_type, &attrs, None)
     }
 
     /// Construct a PrimFunc in Rust after deriving type metadata through its reflected method.
-    pub fn with_metadata<S: AnyCompatible>(
+    pub fn with_metadata<S>(
         params: Vec<Var>,
-        body: &S,
+        body: S,
         ret_type: &crate::ir::Type,
         attrs: &DictAttrs,
         span: Option<&Span>,
-    ) -> Result<Self> {
-        let body = Stmt::try_from(Any::from(AnyView::from(body)))?;
+    ) -> Result<Self>
+    where
+        S: Into<Stmt>,
+    {
+        let body: Stmt = body.into();
         let params = Array::new(params);
         let prepared = crate::abi::prepare_constructor::<PrimFuncObj>(&[
             AnyView::from(&params),
@@ -991,6 +1050,7 @@ crate::abi::impl_object_upcast!(
     PrimFunc => crate::ir::BaseFunc,
     PrimFunc => Expr,
 );
+crate::abi::impl_object_borrow_to_owned!(Stmt);
 
 crate::abi::impl_rust_allocatable!(
     AddObj,

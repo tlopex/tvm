@@ -66,6 +66,6 @@ impl BoundVariableRenamer {
             return Ok(Any::from(value));
         }
         let name = format!("{}{}", value.name.as_str(), self.suffix);
-        Ok(Any::from(Var::with_type(&name, &value.ty)))
+        Ok(Any::from(Var::with_type(&name, value.ty.clone())))
     }
 }

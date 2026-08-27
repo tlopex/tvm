@@ -17,7 +17,7 @@
  * under the License.
  */
 
-use tvm_ffi::{structural_map, Any, Result, WalkOrder};
+use tvm_ffi::{structural_map, Any, AnyCompatible, Result, WalkOrder};
 
 use super::utils::int_value;
 use super::{create_module_pass, create_prim_func_pass, Pass};
@@ -77,11 +77,11 @@ struct AddZeroSimplifier;
 #[tvm_ffi::dispatch(map)]
 impl AddZeroSimplifier {
     fn map_add(&mut self, value: Add) -> Result<Any> {
-        if int_value(&value.a)? == Some(0) {
-            return Ok(Any::from(value.b.clone()));
+        if int_value(&value.a) == Some(0) {
+            return Ok(value.b.to_any());
         }
-        if int_value(&value.b)? == Some(0) {
-            return Ok(Any::from(value.a.clone()));
+        if int_value(&value.b) == Some(0) {
+            return Ok(value.a.to_any());
         }
         Ok(Any::from(value))
     }

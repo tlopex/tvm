@@ -20,8 +20,8 @@
 use std::collections::HashMap;
 
 use tvm_ffi::{
-    structural_mutate, Any, AnyMap, DefRegionKind, MutateCallbacks, MutateContext, ObjectArc,
-    ObjectRefCore, Result, String,
+    structural_mutate, Any, AnyCompatible, AnyMap, DefRegionKind, MutateCallbacks, MutateContext,
+    ObjectArc, ObjectRefCore, Result, String,
 };
 
 use super::utils::int_value;
@@ -67,7 +67,7 @@ fn eliminate_unit_loop(
     let annotations = value.annotations.clone();
     let kind = value.kind;
     let should_eliminate = kind != crate::tirx::ForKind::ThreadBinding
-        && int_value(&extent)? == Some(1)
+        && int_value(&extent) == Some(1)
         && annotations.is_empty();
 
     if should_eliminate {
@@ -117,7 +117,7 @@ fn substitute_unit_loop_variable(
     mutator: &mut MutateContext<'_, UnitLoopEliminationState>,
 ) -> Result<Any> {
     if let Some(replacement) = mutator.state().replacements.get(&object_identity(&value)) {
-        return Ok(Any::from(replacement.clone()));
+        return Ok(replacement.to_any());
     }
     mutator.default_mutate()
 }

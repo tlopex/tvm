@@ -33,7 +33,9 @@ semantics. For an ordinary data node, generated Rust should therefore:
 2. use ABI-equivalent Rust field types under `#[repr(C)]`;
 3. allocate through the generated crate's `allocate_object` guard, which
    requires both `ObjectLayout` evidence and an explicit `RustAllocatable`
-   marker before using `ObjectArc::new` to install the runtime type index,
+   marker and, once per type, compares the generated type key, inheritance
+   depth, total size, and reflected-field layouts with the loaded
+   runtime before using `ObjectArc::new` to install the runtime type index,
    reference counts, and Rust deleter;
 4. initialize the same defaults and validate the same invariants as C++; and
 5. expose physical fields directly through the reference wrapper's `Deref`, so
@@ -104,7 +106,7 @@ A binding is accepted only when every applicable check passes:
 | --- | --- |
 | Runtime identity | exact type key, parent, depth, and finality |
 | Physical layout | complete base prefix, field order, size, alignment, and exact scalar widths |
-| Loaded-library compatibility | generated per-type layout fingerprints match the library before direct allocation |
+| Loaded-library compatibility | every layout property exposed by runtime reflection matches before direct allocation; the complete native fingerprint remains required for properties reflection does not expose |
 | Reflected surface | exact reflected names, schemas, defaults, and structural flags |
 | Complete allocator API | exact stored types by value, direct `Self` return, no hidden clone/conversion work, and visibility that preserves external invariants |
 | Constructor parity | matching defaults, rejection cases, normalization, and derived state |
@@ -126,7 +128,9 @@ values, and compile-checks every public owned `from_complete_fields` signature;
 the private `Axis` allocator has the same zero-cost compile-time signature
 assertion beside its implementation. Authoritative type-level C++ alignment
 and proof that no physical field is unreflected still require the
-build-generated native-layout manifest.
+build-generated native-layout manifest. The production allocator repeats the
+reflection-exposed subset once per type before its first allocation, so a
+different loaded library fails before C++ can read a mismatched Rust object.
 Broader pass behavior is in
 `tests/structural_passes.rs`.
 
@@ -210,12 +214,15 @@ constructible only after its behavior is moved to registered tvm-ffi type method
 - A Rust-created node carries a Rust deleter. C++ must release it through the
   header rather than assuming a C++ `delete` expression.
 - A generated crate must not assume that a dynamically loaded TVM library has
-  the layout used during generation.  Before the first direct allocation of a
-  type, runtime support must compare a generated per-type layout fingerprint
-  (parent, finality, total size/alignment, ordered physical fields, and ABI
-  widths) with a fingerprint published by the loaded library.  A missing or
-  mismatched fingerprint disables allocation with an error; continuing would
-  be memory-unsafe.
+  the layout used during generation. Before the first direct allocation of a
+  type, the current runtime guard checks identity, inheritance depth,
+  registered total size, and every reflected field's offset, size, and
+  alignment. Reflection registration order is not treated as physical field
+  order. A missing or mismatched value stops allocation because continuing
+  would be memory-unsafe. Full
+  acceptance still requires a native fingerprint containing the exact parent,
+  finality, total alignment, and every physical field, including unreflected
+  members; those values are not all present in today's reflection ABI.
 - A C++-created node keeps its C++ deleter; the same Rust wrapper can reference
   either origin.
 - Reflection describes structural fields, not necessarily all physical fields.

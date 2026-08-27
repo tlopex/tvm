@@ -17,21 +17,25 @@
  * under the License.
  */
 
-//! Minimal handwritten TVM IR bindings used to develop Rust analyses and passes.
-//!
-//! Nodes use ABI-complete `#[repr(C)]` Rust layouts and are allocated by Rust.
-//! Type-specific validation, derived fields, and formerly virtual behavior use
-//! registered tvm-ffi type methods rather than packed global constructors or
-//! the C++ object ABI. All objects share the FFI header and runtime type table for
-//! ownership, checked casts, and structural traversal.
+//! Handwritten convenience builders layered above the generated IR bindings.
 
-#[doc(hidden)]
-pub mod abi;
-pub mod analysis;
-mod builders;
-pub mod ir;
-pub mod relax;
-pub mod tirx;
-pub mod transform;
+use tvm_ffi::Result;
 
-pub use tvm_ffi;
+use crate::ir::{Expr, IntImm};
+use crate::tirx::Add;
+
+impl Expr {
+    /// Construct an integer literal expression.
+    pub fn int(dtype: &str, value: i64) -> Result<Self> {
+        Ok(IntImm::new(dtype, value)?.into())
+    }
+
+    /// Construct an addition expression.
+    pub fn add<L, R>(lhs: L, rhs: R) -> Result<Self>
+    where
+        L: Into<Expr>,
+        R: Into<Expr>,
+    {
+        Ok(Add::new(lhs, rhs)?.into())
+    }
+}

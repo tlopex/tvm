@@ -47,25 +47,26 @@ struct KnownControlFlowSimplifier {
 }
 
 impl KnownControlFlowSimplifier {
-    fn known_integer(&mut self, expression: &Expr) -> Result<Option<i64>> {
-        if let Some(value) = int_value(expression)? {
-            return Ok(Some(value));
-        }
+    fn analyzer(&mut self) -> Result<&Analyzer> {
         if self.analyzer.is_none() {
             self.analyzer = Some(Analyzer::new()?);
         }
-        int_value(
-            &self
-                .analyzer
-                .as_ref()
-                .expect("the analyzer was initialized above")
-                .simplify(expression)?,
-        )
+        Ok(self
+            .analyzer
+            .as_ref()
+            .expect("analyzer was initialized above"))
+    }
+
+    fn known_integer(&mut self, expression: &Expr) -> Result<Option<i64>> {
+        if let Some(value) = int_value(expression) {
+            return Ok(Some(value));
+        }
+        Ok(int_value(&self.analyzer()?.simplify(expression)?))
     }
 
     fn preserve_update_or_no_op(&self, expression: &Expr) -> Result<Stmt> {
         if side_effect(expression)?.may_update_state() {
-            Ok(Evaluate::new(expression)?.into())
+            Ok(Evaluate::new(expression.clone())?.into())
         } else {
             no_op()
         }
@@ -75,7 +76,7 @@ impl KnownControlFlowSimplifier {
 #[tvm_ffi::dispatch(map)]
 impl KnownControlFlowSimplifier {
     fn map_evaluation(&mut self, value: Evaluate) -> Result<Any> {
-        if int_value(&value.value)?.is_some() {
+        if int_value(&value.value).is_some() {
             Ok(Any::from(no_op()?))
         } else if side_effect(&value.value)?.may_update_state() {
             Ok(Any::from(value))
@@ -97,16 +98,16 @@ impl KnownControlFlowSimplifier {
             return Ok(Any::from(canonical_no_op(selected)?));
         }
 
-        let no_op_then = is_no_op(&value.then_case)?;
+        let no_op_then = is_no_op(&value.then_case);
         let no_op_else = match &value.else_case {
-            Some(else_case) => is_no_op(else_case)?,
+            Some(else_case) => is_no_op(else_case),
             None => true,
         };
         if no_op_then && no_op_else {
             return Ok(Any::from(self.preserve_update_or_no_op(&value.condition)?));
         }
         if let Some(else_case) = &value.else_case {
-            if is_no_op(else_case)? {
+            if is_no_op(else_case) {
                 return Ok(Any::from(Stmt::from(IfThenElse::with_span(
                     &value.condition,
                     &value.then_case,
@@ -122,7 +123,7 @@ impl KnownControlFlowSimplifier {
         if self.known_integer(&value.extent)? == Some(0) {
             return Ok(Any::from(no_op()?));
         }
-        if is_no_op(&value.body)?
+        if is_no_op(&value.body)
             && self.known_integer(&value.min)?.is_some()
             && self.known_integer(&value.extent)?.is_some()
         {
@@ -132,15 +133,10 @@ impl KnownControlFlowSimplifier {
     }
 
     fn map_sequence(&mut self, value: SeqStmt) -> Result<Any> {
-        let mut statements = Vec::new();
-        for statement in value.seq.iter() {
-            append_non_empty(statement, &mut statements)?;
-        }
-        Ok(Any::from(match statements.len() {
-            0 => no_op()?,
-            1 => statements.pop().expect("one statement must be present"),
-            _ => Stmt::from(SeqStmt::with_span(statements, value.span.as_ref())?),
-        }))
+        Ok(Any::from(Stmt::sequence_with_span(
+            value.seq.iter().collect(),
+            value.span.as_ref(),
+        )?))
     }
 }
 
@@ -149,27 +145,16 @@ fn no_op() -> Result<Stmt> {
 }
 
 fn canonical_no_op(statement: Stmt) -> Result<Stmt> {
-    if is_no_op(&statement)? {
+    if is_no_op(&statement) {
         no_op()
     } else {
         Ok(statement)
     }
 }
 
-fn is_no_op(statement: &Stmt) -> Result<bool> {
+fn is_no_op(statement: &Stmt) -> bool {
     let Ok(evaluate) = statement.clone().try_cast::<Evaluate>() else {
-        return Ok(false);
+        return false;
     };
-    Ok(int_value(&evaluate.value)?.is_some())
-}
-
-fn append_non_empty(statement: Stmt, output: &mut Vec<Stmt>) -> Result<()> {
-    if let Ok(sequence) = statement.clone().try_cast::<SeqStmt>() {
-        for child in sequence.seq.iter() {
-            append_non_empty(child, output)?;
-        }
-    } else if !is_no_op(&statement)? {
-        output.push(statement);
-    }
-    Ok(())
+    int_value(&evaluate.value).is_some()
 }

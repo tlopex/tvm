@@ -19,9 +19,8 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, AnyCompatible, AnyMap, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error,
-    Function, Map, ObjectArc, ObjectRefCast, ObjectRefCore, Result, String, TYPE_ERROR,
-    VALUE_ERROR,
+    AnyMap, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Function, Map,
+    ObjectArc, ObjectRefCast, ObjectRefCore, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
 /// ABI-complete Rust representation of TVM's `ExprNode` prefix.
@@ -538,23 +537,29 @@ impl std::ops::Deref for Range {
 
 impl Range {
     /// Construct a range from its minimum and extent.
-    pub fn from_min_extent(minimum: &Expr, extent: &Expr) -> Result<Self> {
+    pub fn from_min_extent<M, E>(minimum: M, extent: E) -> Result<Self>
+    where
+        M: Into<Expr>,
+        E: Into<Expr>,
+    {
         Self::from_min_extent_with_span(minimum, extent, None)
     }
 
     /// Construct a range from all of its physical fields.
-    pub fn from_min_extent_with_span(
-        minimum: &Expr,
-        extent: &Expr,
+    pub fn from_min_extent_with_span<M, E>(
+        minimum: M,
+        extent: E,
         span: Option<&Span>,
-    ) -> Result<Self> {
-        require_primitive_expr(minimum, "Range minimum")?;
-        require_primitive_expr(extent, "Range extent")?;
-        Ok(Self::from_complete_fields(
-            minimum.clone(),
-            extent.clone(),
-            span.cloned(),
-        ))
+    ) -> Result<Self>
+    where
+        M: Into<Expr>,
+        E: Into<Expr>,
+    {
+        let minimum = minimum.into();
+        let extent = extent.into();
+        require_primitive_expr(&minimum, "Range minimum")?;
+        require_primitive_expr(&extent, "Range extent")?;
+        Ok(Self::from_complete_fields(minimum, extent, span.cloned()))
     }
 
     /// Construct a range from every physical field after external validation.
@@ -985,18 +990,6 @@ impl std::ops::Deref for IRModule {
     }
 }
 
-impl Expr {
-    /// Construct an integer literal.
-    pub fn int(dtype: &str, value: i64) -> Result<Self> {
-        Ok(IntImm::new(dtype, value)?.into())
-    }
-
-    /// Construct an addition expression.
-    pub fn add(lhs: &Expr, rhs: &Expr) -> Result<Self> {
-        Ok(crate::tirx::Add::new(lhs, rhs)?.into())
-    }
-}
-
 impl IntImm {
     /// Construct an integer literal directly in Rust.
     pub fn new(dtype: &str, value: i64) -> Result<Self> {
@@ -1152,24 +1145,30 @@ impl Type {
 impl Var {
     /// Construct a variable directly in Rust with an explicit primitive type.
     pub fn new(name: &str, dtype: &str) -> Result<Self> {
-        Ok(Self::with_type(name, &PrimType::new(dtype)?.into()))
+        Ok(Self::with_type(name, PrimType::new(dtype)?))
     }
 
     /// Construct a variable with an arbitrary TVM type annotation.
-    pub fn with_type(name: &str, ty: &Type) -> Self {
+    pub fn with_type<T>(name: &str, ty: T) -> Self
+    where
+        T: Into<Type>,
+    {
         Self::with_type_and_span(name, ty, None)
     }
 
     /// Construct a variable directly in Rust with its complete base fields.
-    pub fn with_type_and_span(name: &str, ty: &Type, span: Option<&Span>) -> Self {
-        Self::with_optional_type_and_span(name, Some(ty), span)
+    pub fn with_type_and_span<T>(name: &str, ty: T, span: Option<&Span>) -> Self
+    where
+        T: Into<Type>,
+    {
+        Self::with_optional_type_and_span(name, Some(ty.into()), span)
     }
 
     /// Construct a variable with the native constructor's optional type annotation.
-    pub fn with_optional_type_and_span(name: &str, ty: Option<&Type>, span: Option<&Span>) -> Self {
+    pub fn with_optional_type_and_span(name: &str, ty: Option<Type>, span: Option<&Span>) -> Self {
         Self::from_complete_fields(
             span.cloned(),
-            ty.cloned().unwrap_or_else(Type::missing),
+            ty.unwrap_or_else(Type::missing),
             String::from(name),
         )
     }
@@ -1209,25 +1208,33 @@ impl GlobalVar {
 
 impl Call {
     /// Construct a call directly in Rust with no attributes or explicit type arguments.
-    pub fn new(ret_type: &Type, operator: &Expr, arguments: Vec<Expr>) -> Self {
+    pub fn new<T, O>(ret_type: T, operator: O, arguments: Vec<Expr>) -> Self
+    where
+        T: Into<Type>,
+        O: Into<Expr>,
+    {
         Self::with_metadata(ret_type, operator, arguments, None, Vec::new(), None)
     }
 
     /// Construct a call with all reflected metadata supplied explicitly.
-    pub fn with_metadata(
-        ret_type: &Type,
-        operator: &Expr,
+    pub fn with_metadata<T, O>(
+        ret_type: T,
+        operator: O,
         arguments: Vec<Expr>,
-        attrs: Option<&Attrs>,
+        attrs: Option<Attrs>,
         type_arguments: Vec<Type>,
         span: Option<&Span>,
-    ) -> Self {
+    ) -> Self
+    where
+        T: Into<Type>,
+        O: Into<Expr>,
+    {
         Self::from_complete_fields(
             span.cloned(),
-            ret_type.clone(),
-            operator.clone(),
+            ret_type.into(),
+            operator.into(),
             Array::new(arguments),
-            attrs.cloned(),
+            attrs,
             Array::new(type_arguments),
         )
     }
@@ -1254,6 +1261,7 @@ impl Call {
 }
 
 crate::abi::impl_object_upcast!(
+    BaseFunc => Expr,
     IntImm => Expr,
     PrimType => Type,
     TupleType => Type,
@@ -1262,11 +1270,15 @@ crate::abi::impl_object_upcast!(
     Call => Expr,
     DictAttrs => Attrs,
 );
+crate::abi::impl_object_borrow_to_owned!(Expr, Type, Attrs, BaseFunc);
 
 impl IRModule {
     /// Wrap a function expression in an IRModule whose entry is `main`.
-    pub fn from_expr<E: AnyCompatible + Clone>(expr: &E) -> Result<Self> {
-        let function = BaseFunc::try_from(Any::from(expr.clone()))?;
+    pub fn from_expr<E>(expr: E) -> Result<Self>
+    where
+        E: Into<Expr>,
+    {
+        let function = expr.into().try_cast::<BaseFunc>()?;
         let global_symbol = function
             .attrs
             .dict

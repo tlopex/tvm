@@ -17,7 +17,7 @@
  * under the License.
  */
 
-use tvm_ffi::{structural_map, Any, ObjectRefCast, Result, WalkOrder};
+use tvm_ffi::{structural_map, Any, Error, ObjectRefCast, Result, WalkOrder, VALUE_ERROR};
 
 use crate::ir::{Expr, IntImm, PrimType};
 
@@ -33,6 +33,16 @@ struct IncrementIntImmediates;
 impl IncrementIntImmediates {
     fn map_integer(&mut self, value: IntImm) -> Result<Any> {
         let dtype = value.ty.clone().try_cast::<PrimType>()?.dtype;
-        Ok(Any::from(IntImm::from_dtype(dtype, value.value + 1)?))
+        let incremented = value.value.checked_add(1).ok_or_else(|| {
+            Error::new(
+                VALUE_ERROR,
+                &format!(
+                    "cannot increment integer literal {} without overflow",
+                    value.value
+                ),
+                "",
+            )
+        })?;
+        Ok(Any::from(IntImm::from_dtype(dtype, incremented)?))
     }
 }
