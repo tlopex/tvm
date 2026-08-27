@@ -21,10 +21,10 @@ use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{AnyView, Array, ObjectArc, ObjectCore, ObjectRefCast, Result};
 
 use crate::ir::{BaseFunc, BaseFuncObj, DictAttrs, Expr, ExprObj, Span, TupleType, Type, Var};
-/// ABI-complete Rust representation of Relax's tuple expression.
+/// ABI-complete Rust representation of the common IR tuple used by Relax.
 #[repr(C)]
 #[derive(Object)]
-#[type_key = "relax.expr.Tuple"]
+#[type_key = "ir.Tuple"]
 #[type_final]
 pub struct TupleObj {
     base: ExprObj,
@@ -130,23 +130,34 @@ impl std::ops::Deref for IfObj {
 
 impl If {
     /// Construct a Relax conditional directly in Rust, wrapping each branch in `SeqExpr`.
-    pub fn new(condition: &Expr, true_branch: &Expr, false_branch: &Expr) -> Self {
+    pub fn new<C, T, F>(condition: C, true_branch: T, false_branch: F) -> Self
+    where
+        C: Into<Expr>,
+        T: Into<Expr>,
+        F: Into<Expr>,
+    {
         Self::with_span(condition, true_branch, false_branch, None)
     }
 
     /// Construct a Relax conditional with optional source metadata.
-    pub fn with_span(
-        condition: &Expr,
-        true_branch: &Expr,
-        false_branch: &Expr,
+    pub fn with_span<C, T, F>(
+        condition: C,
+        true_branch: T,
+        false_branch: F,
         span: Option<&Span>,
-    ) -> Self {
+    ) -> Self
+    where
+        C: Into<Expr>,
+        T: Into<Expr>,
+        F: Into<Expr>,
+    {
+        let condition = condition.into();
         let true_branch = SeqExpr::from_expr(true_branch);
         let false_branch = SeqExpr::from_expr(false_branch);
         Self::from_complete_fields(
             span.cloned(),
             Type::missing(),
-            condition.clone(),
+            condition,
             true_branch,
             false_branch,
         )
@@ -238,13 +249,21 @@ impl std::ops::Deref for VarBindingObj {
 
 impl VarBinding {
     /// Construct `variable = value` directly in Rust.
-    pub fn new(variable: &Var, value: &Expr) -> Self {
+    pub fn new<V, E>(variable: V, value: E) -> Self
+    where
+        V: Into<Var>,
+        E: Into<Expr>,
+    {
         Self::with_span(variable, value, None)
     }
 
     /// Construct `variable = value` with optional source metadata.
-    pub fn with_span(variable: &Var, value: &Expr, span: Option<&Span>) -> Self {
-        Self::from_complete_fields(span.cloned(), variable.clone(), value.clone())
+    pub fn with_span<V, E>(variable: V, value: E, span: Option<&Span>) -> Self
+    where
+        V: Into<Var>,
+        E: Into<Expr>,
+    {
+        Self::from_complete_fields(span.cloned(), variable.into(), value.into())
     }
 
     /// Construct a variable binding from every physical field.
@@ -354,17 +373,23 @@ impl std::ops::Deref for SeqExprObj {
 
 impl SeqExpr {
     /// Construct ordered binding blocks followed by `body` directly in Rust.
-    pub fn new(blocks: Vec<BindingBlock>, body: &Expr) -> Self {
+    pub fn new<E>(blocks: Vec<BindingBlock>, body: E) -> Self
+    where
+        E: Into<Expr>,
+    {
         Self::with_span(blocks, body, None)
     }
 
     /// Construct a sequence expression with optional source metadata.
-    pub fn with_span(blocks: Vec<BindingBlock>, body: &Expr, span: Option<&Span>) -> Self {
+    pub fn with_span<E>(blocks: Vec<BindingBlock>, body: E, span: Option<&Span>) -> Self
+    where
+        E: Into<Expr>,
+    {
         Self::from_complete_fields(
             span.cloned(),
             Type::missing(),
             Array::new(blocks),
-            body.clone(),
+            body.into(),
         )
     }
 
@@ -384,7 +409,11 @@ impl SeqExpr {
         }
     }
 
-    fn from_expr(body: &Expr) -> Self {
+    fn from_expr<E>(body: E) -> Self
+    where
+        E: Into<Expr>,
+    {
+        let body = body.into();
         match body.clone().try_cast::<Self>() {
             Ok(sequence) => sequence,
             Err(_) => Self::new(Vec::new(), body),
@@ -441,13 +470,17 @@ impl std::ops::Deref for RelaxFunctionObj {
 
 impl RelaxFunction {
     /// Construct a typed Relax function in Rust using its reflected preparation method.
-    pub fn new(params: Vec<Var>, body: &Expr, return_type: &Type, is_pure: bool) -> Result<Self> {
+    pub fn new<B, T>(params: Vec<Var>, body: B, return_type: T, is_pure: bool) -> Result<Self>
+    where
+        B: Into<Expr>,
+        T: Into<Type>,
+    {
         Self::with_metadata(
             params,
-            body,
-            Some(return_type),
+            body.into(),
+            Some(return_type.into()),
             is_pure,
-            &DictAttrs::empty(),
+            DictAttrs::empty(),
             None,
         )
     }
@@ -455,17 +488,16 @@ impl RelaxFunction {
     /// Construct a Relax function in Rust using its reflected preparation method.
     pub fn with_metadata(
         params: Vec<Var>,
-        body: &Expr,
-        return_type: Option<&Type>,
+        body: Expr,
+        return_type: Option<Type>,
         is_pure: bool,
-        attrs: &DictAttrs,
+        attrs: DictAttrs,
         span: Option<&Span>,
     ) -> Result<Self> {
         let params = Array::new(params);
-        let return_type = return_type.cloned();
         let prepared = crate::abi::prepare_constructor::<RelaxFunctionObj>(&[
             AnyView::from(&params),
-            AnyView::from(body),
+            AnyView::from(&body),
             AnyView::from(&return_type),
             AnyView::from(&is_pure),
         ])?;
@@ -477,7 +509,7 @@ impl RelaxFunction {
         Ok(Self::from_complete_fields(
             span.cloned(),
             function_type,
-            attrs.clone(),
+            attrs,
             params,
             body,
             return_type,
@@ -519,6 +551,15 @@ crate::abi::impl_object_upcast!(
     SeqExpr => Expr,
     RelaxFunction => BaseFunc,
     RelaxFunction => Expr,
+);
+crate::abi::impl_object_borrow_to_owned!(
+    Tuple,
+    If,
+    Binding,
+    VarBinding,
+    BindingBlock,
+    SeqExpr,
+    RelaxFunction,
 );
 
 crate::abi::impl_rust_allocatable!(

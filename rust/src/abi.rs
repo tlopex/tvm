@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tvm_ffi::tvm_ffi_sys::{TVMFFIGetTypeInfo, TVMFFITypeInfo};
 use tvm_ffi::{
-    Any, AnyMap, AnyView, Error, Function, ObjectArc, ObjectCore, Result, String, TYPE_ERROR,
+    Any, AnyView, Error, Function, Map, ObjectArc, ObjectCore, Result, String, TYPE_ERROR,
     VALUE_ERROR,
 };
 
@@ -47,7 +47,7 @@ pub(crate) trait ConstructorRecipe: ObjectCore {
 /// inputs and defaults, then allocates the complete object in Rust.
 pub(crate) fn prepare_constructor<N: ConstructorRecipe>(
     args: &[AnyView<'_>],
-) -> Result<AnyMap<String>> {
+) -> Result<Map<String, Any>> {
     if args.len() != N::NUM_INPUTS {
         return Err(Error::new(
             TYPE_ERROR,
@@ -60,7 +60,7 @@ pub(crate) fn prepare_constructor<N: ConstructorRecipe>(
             "",
         ));
     }
-    let fields = AnyMap::<String>::try_from(
+    let fields = Map::<String, Any>::try_from(
         Function::from_type_method(N::type_index(), CONSTRUCTOR_PREPARE_METHOD)?
             .call_packed(args)?,
     )?;
@@ -97,7 +97,7 @@ pub(crate) fn prepare_constructor<N: ConstructorRecipe>(
 
 /// Read and cast one derived field returned by a constructor recipe.
 pub(crate) fn prepared_field<T>(
-    fields: &AnyMap<String>,
+    fields: &Map<String, Any>,
     owner_type_key: &'static str,
     field_name: &'static str,
 ) -> Result<T>
@@ -213,6 +213,25 @@ where
             "inheritance depth differs (Rust {}, native {})",
             N::TYPE_DEPTH,
             info.type_depth
+        ));
+    }
+    let native_parent_key = if info.type_depth == 0 {
+        None
+    } else {
+        if info.type_acenstors.is_null() {
+            return Err("the runtime published a null ancestor table".to_owned());
+        }
+        let parent = unsafe { *info.type_acenstors.add((info.type_depth - 1) as usize) };
+        if parent.is_null() {
+            return Err("the runtime published a null direct parent".to_owned());
+        }
+        Some(unsafe { (*parent).type_key.as_str() })
+    };
+    if native_parent_key != N::TYPE_PARENT_KEY {
+        return Err(format!(
+            "direct parent differs (Rust {:?}, native {:?})",
+            N::TYPE_PARENT_KEY,
+            native_parent_key
         ));
     }
     if info.metadata.is_null() {

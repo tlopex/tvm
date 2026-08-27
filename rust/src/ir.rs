@@ -19,7 +19,7 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    AnyMap, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Function, Map,
+    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Function, Map,
     ObjectArc, ObjectRefCast, ObjectRefCore, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
@@ -269,9 +269,17 @@ impl SourceObj {
                     .is_some_and(|last| last < self.line_map.len())
             })
             .ok_or_else(|| Error::new(VALUE_ERROR, "source line is out of range", ""))?;
-        let start = usize::try_from(self.line_map.get(pair_index).unwrap())
+        let start = self
+            .line_map
+            .get(pair_index)
+            .map_err(|_| Error::new(VALUE_ERROR, "source line metadata is incomplete", ""))?;
+        let start = usize::try_from(start)
             .map_err(|_| Error::new(VALUE_ERROR, "source line offset is negative", ""))?;
-        let length = usize::try_from(self.line_map.get(pair_index + 1).unwrap())
+        let length = self
+            .line_map
+            .get(pair_index + 1)
+            .map_err(|_| Error::new(VALUE_ERROR, "source line metadata is incomplete", ""))?;
+        let length = usize::try_from(length)
             .map_err(|_| Error::new(VALUE_ERROR, "source line length is negative", ""))?;
         let bytes = self.source.as_str().as_bytes();
         let end = start
@@ -286,7 +294,10 @@ impl SourceObj {
 
 impl Source {
     /// Construct a source fragment and its line index directly in Rust.
-    pub fn new(source_name: &SourceName, source: &str) -> Self {
+    pub fn new<S>(source_name: S, source: &str) -> Self
+    where
+        S: Into<SourceName>,
+    {
         let mut line_map = Vec::new();
         let mut start = 0usize;
         for (index, byte) in source.as_bytes().iter().enumerate() {
@@ -299,7 +310,7 @@ impl Source {
         line_map.push(start as i64);
         line_map.push((source.len() - start) as i64);
         Self::from_complete_fields(
-            source_name.clone(),
+            source_name.into(),
             String::from(source),
             Array::new(line_map),
         )
@@ -374,7 +385,7 @@ impl SourceMap {
     /// Add a Rust-allocated source fragment to this map.
     pub fn add(&mut self, name: &str, content: &str) -> SourceName {
         let source_name = SourceName::get(name);
-        let source = Source::new(&source_name, content);
+        let source = Source::new(source_name.clone(), content);
         let mut entries = self.source_map.iter().collect::<Vec<_>>();
         entries.push((source_name.clone(), source));
         *self = Self::from_map(entries.into_iter().collect());
@@ -411,13 +422,16 @@ pub struct Span {
 
 impl Span {
     /// Construct source-location metadata in TVM's `(line, end_line, column, end_column)` order.
-    pub fn new(
-        source_name: &SourceName,
+    pub fn new<S>(
+        source_name: S,
         line: i64,
         end_line: i64,
         column: i64,
         end_column: i64,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        S: Into<SourceName>,
+    {
         let line = i32::try_from(line).map_err(|_| integer_field_overflow("line", line))?;
         let end_line =
             i32::try_from(end_line).map_err(|_| integer_field_overflow("end_line", end_line))?;
@@ -425,7 +439,7 @@ impl Span {
         let end_column = i32::try_from(end_column)
             .map_err(|_| integer_field_overflow("end_column", end_column))?;
         Ok(Self::from_complete_fields(
-            source_name.clone(),
+            source_name.into(),
             line,
             column,
             end_line,
@@ -842,10 +856,10 @@ impl std::ops::Deref for Attrs {
 #[type_final]
 pub struct DictAttrsObj {
     base: AttrsObj,
-    pub dict: AnyMap<String>,
+    pub dict: Map<String, Any>,
 }
 crate::abi::impl_object_layout!(DictAttrsObj {
-    "__dict__" => dict: AnyMap<String>,
+    "__dict__" => dict: Map<String, Any>,
 });
 
 /// Reference-counted handle to dictionary-backed TVM attributes.
@@ -1270,7 +1284,10 @@ crate::abi::impl_object_upcast!(
     Call => Expr,
     DictAttrs => Attrs,
 );
-crate::abi::impl_object_borrow_to_owned!(Expr, Type, Attrs, BaseFunc);
+crate::abi::impl_object_borrow_to_owned!(
+    Expr, Type, Attrs, BaseFunc, GlobalVar, Var, SourceName, Source, SourceMap, Span, Range, Call,
+    DictAttrs,
+);
 
 impl IRModule {
     /// Wrap a function expression in an IRModule whose entry is `main`.
@@ -1403,7 +1420,7 @@ impl IRModule {
         let mut functions = Vec::with_capacity(self.functions.len() + 1);
         for (existing_var, existing_function) in self.functions.iter() {
             if existing_var.name_hint.as_str() == name.as_str() {
-                if !same_object(&existing_var, global_var) {
+                if !existing_var.same_as(global_var) {
                     return Err(Error::new(
                         VALUE_ERROR,
                         &format!("duplicate global function name {}", name.as_str()),
@@ -1424,30 +1441,19 @@ impl IRModule {
     }
 }
 
-fn same_object<T: ObjectRefCore>(lhs: &T, rhs: &T) -> bool {
-    // Both raw pointers are borrowed from live handles for the duration of
-    // this comparison; no ownership is transferred or reconstructed.
-    unsafe {
-        std::ptr::eq(
-            ObjectArc::as_raw(T::data(lhs)),
-            ObjectArc::as_raw(T::data(rhs)),
-        )
-    }
-}
-
 impl DictAttrs {
     /// Construct a defined, empty DictAttrs object.
     pub fn empty() -> Self {
-        Self::from_dictionary(&AnyMap::new())
+        Self::from_dictionary(Map::new())
     }
 
     /// Construct DictAttrs from a heterogeneous string-to-value map.
-    pub fn from_dictionary(dictionary: &AnyMap<String>) -> Self {
-        Self::from_complete_fields(dictionary.clone())
+    pub fn from_dictionary(dictionary: Map<String, Any>) -> Self {
+        Self::from_complete_fields(dictionary)
     }
 
     /// Construct dictionary attributes from their complete physical state.
-    pub fn from_complete_fields(dict: AnyMap<String>) -> Self {
+    pub fn from_complete_fields(dict: Map<String, Any>) -> Self {
         Self {
             data: crate::abi::allocate_object(DictAttrsObj {
                 base: AttrsObj {

@@ -18,7 +18,7 @@
  */
 
 use tvm_ffi::derive::{Object, ObjectRef};
-use tvm_ffi::{Any, Array, Error, Function, ObjectArc, Result, String, RUNTIME_ERROR};
+use tvm_ffi::{Any, Array, Function, ObjectArc, RValueRef, Result, String};
 
 use crate::ir::IRModule;
 use crate::relax::RelaxFunction;
@@ -110,12 +110,11 @@ impl std::ops::Deref for PassContext {
 impl Pass {
     /// Run this pass on an IRModule using TVM's current PassContext.
     ///
-    /// This consumes the Rust module handle. The current Rust FFI still
-    /// transports it as an lvalue, so C++ may perform one copy-on-write step at
-    /// the boundary.
+    /// This consumes the Rust module handle and transfers its strong reference
+    /// through the same rvalue-reference ABI used by C++ passes.
     pub fn run(&self, module: IRModule) -> Result<IRModule> {
         tvm_ffi::cached_global_func!("transform.RunPass")
-            .call_tuple_with_len::<2, _>((self, module))?
+            .call_tuple_with_len::<2, _>((self, RValueRef::new(module)))?
             .try_into()
     }
 }
@@ -134,21 +133,11 @@ pub fn create_prim_func_pass<F>(
 where
     F: Fn(PrimFunc, IRModule, PassContext) -> Result<PrimFunc> + 'static,
 {
-    let pass_func = Function::from_packed(move |args| {
-        if args.len() != 3 {
-            return Err(Error::new(
-                RUNTIME_ERROR,
-                "Rust PrimFunc pass expected (PrimFunc, IRModule, PassContext)",
-                "",
-            ));
-        }
-        // PrimFunc passes receive their first argument as an ABI RValueRef.
-        // Owning the view normalizes that transport wrapper to the object.
-        let func = PrimFunc::try_from(Any::from(args[0]))?;
-        let module = IRModule::try_from(args[1])?;
-        let context = PassContext::try_from(args[2])?;
-        Ok(Any::from(pass_func(func, module, context)?))
-    });
+    let pass_func = Function::from_typed(
+        move |func: RValueRef<PrimFunc>, module: IRModule, context: PassContext| {
+            pass_func(func.into_inner(), module, context)
+        },
+    );
 
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
@@ -171,19 +160,11 @@ pub fn create_relax_function_pass<F>(
 where
     F: Fn(RelaxFunction, IRModule, PassContext) -> Result<RelaxFunction> + 'static,
 {
-    let pass_func = Function::from_packed(move |args| {
-        if args.len() != 3 {
-            return Err(Error::new(
-                RUNTIME_ERROR,
-                "Rust Relax function pass expected (Function, IRModule, PassContext)",
-                "",
-            ));
-        }
-        let function = RelaxFunction::try_from(Any::from(args[0]))?;
-        let module = IRModule::try_from(args[1])?;
-        let context = PassContext::try_from(args[2])?;
-        Ok(Any::from(pass_func(function, module, context)?))
-    });
+    let pass_func = Function::from_typed(
+        move |function: RValueRef<RelaxFunction>, module: IRModule, context: PassContext| {
+            pass_func(function.into_inner(), module, context)
+        },
+    );
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
     tvm_ffi::cached_global_func!("relax.transform.MakeFunctionPass")
@@ -205,19 +186,10 @@ pub fn create_module_pass<F>(
 where
     F: Fn(IRModule, PassContext) -> Result<IRModule> + 'static,
 {
-    let pass_func = Function::from_packed(move |args| {
-        if args.len() != 2 {
-            return Err(Error::new(
-                RUNTIME_ERROR,
-                "Rust module pass expected (IRModule, PassContext)",
-                "",
-            ));
-        }
-        // Module passes receive their first argument through the RValueRef ABI.
-        let module = IRModule::try_from(Any::from(args[0]))?;
-        let context = PassContext::try_from(args[1])?;
-        Ok(Any::from(pass_func(module, context)?))
-    });
+    let pass_func =
+        Function::from_typed(move |module: RValueRef<IRModule>, context: PassContext| {
+            pass_func(module.into_inner(), context)
+        });
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
     tvm_ffi::cached_global_func!("transform.MakeModulePass")

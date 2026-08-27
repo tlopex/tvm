@@ -19,7 +19,7 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    AnyMap, Array, DLDataTypeCode, Error, ObjectArc, ObjectRefCast, Result, String, TYPE_ERROR,
+    Any, Array, DLDataTypeCode, Error, Map, ObjectArc, ObjectRefCast, Result, String, TYPE_ERROR,
     VALUE_ERROR,
 };
 
@@ -118,23 +118,27 @@ impl std::ops::Deref for IterVarObj {
 
 impl IterVar {
     /// Construct an untagged iteration variable directly in Rust.
-    pub fn new(domain: &Range, variable: &Var, iter_type: IterVarType) -> Result<Self> {
-        Self::with_metadata(Some(domain), variable, iter_type, "", None)
+    pub fn new<D, V>(domain: D, variable: V, iter_type: IterVarType) -> Result<Self>
+    where
+        D: Into<Range>,
+        V: Into<Var>,
+    {
+        Self::with_metadata(Some(domain.into()), variable.into(), iter_type, "", None)
     }
 
     /// Validate and construct an iteration variable, allowing a missing domain
     /// for thread axes just like the native constructor.
     pub fn with_metadata(
-        domain: Option<&Range>,
-        variable: &Var,
+        domain: Option<Range>,
+        variable: Var,
         iter_type: IterVarType,
         thread_tag: &str,
         span: Option<&Span>,
     ) -> Result<Self> {
-        validate_iter_var(domain, variable)?;
+        validate_iter_var(domain.as_ref(), &variable)?;
         Ok(Self::from_complete_fields(
-            domain.cloned(),
-            variable.clone(),
+            domain,
+            variable,
             iter_type,
             String::from(thread_tag),
             span.cloned(),
@@ -211,7 +215,7 @@ pub struct SBlockObj {
     pub name_hint: String,
     pub alloc_buffers: Array<Var>,
     pub match_buffers: Array<MatchBufferRegion>,
-    pub annotations: AnyMap<String>,
+    pub annotations: Map<String, Any>,
     pub init: Option<Stmt>,
     pub body: Stmt,
 }
@@ -222,7 +226,7 @@ crate::abi::impl_object_layout!(SBlockObj {
     "name_hint" => name_hint: String,
     "alloc_buffers" => alloc_buffers: Array<Var>,
     "match_buffers" => match_buffers: Array<MatchBufferRegion>,
-    "annotations" => annotations: AnyMap<String>,
+    "annotations" => annotations: Map<String, Any>,
     "init" => init: Option<Stmt>,
     "body" => body: Stmt,
 });
@@ -252,17 +256,20 @@ impl std::ops::Deref for SBlockObj {
 
 impl SBlock {
     /// Construct a block with no axes, declared regions, or local buffers.
-    pub fn new(name_hint: &str, body: &Stmt) -> Self {
+    pub fn new<B>(name_hint: &str, body: B) -> Self
+    where
+        B: Into<Stmt>,
+    {
         Self::with_metadata(
             Vec::new(),
             Vec::new(),
             Vec::new(),
             name_hint,
-            body,
+            body.into(),
             None,
             Vec::new(),
             Vec::new(),
-            &AnyMap::new(),
+            Map::new(),
             None,
         )
     }
@@ -274,11 +281,11 @@ impl SBlock {
         reads: Vec<BufferRegion>,
         writes: Vec<BufferRegion>,
         name_hint: &str,
-        body: &Stmt,
-        init: Option<&Stmt>,
+        body: Stmt,
+        init: Option<Stmt>,
         allocated_buffers: Vec<Var>,
         match_buffers: Vec<MatchBufferRegion>,
-        annotations: &AnyMap<String>,
+        annotations: Map<String, Any>,
         span: Option<&Span>,
     ) -> Self {
         Self::from_complete_fields(
@@ -289,9 +296,9 @@ impl SBlock {
             String::from(name_hint),
             Array::new(allocated_buffers),
             Array::new(match_buffers),
-            annotations.clone(),
-            init.cloned(),
-            body.clone(),
+            annotations,
+            init,
+            body,
         )
     }
 
@@ -305,7 +312,7 @@ impl SBlock {
         name_hint: String,
         alloc_buffers: Array<Var>,
         match_buffers: Array<MatchBufferRegion>,
-        annotations: AnyMap<String>,
+        annotations: Map<String, Any>,
         init: Option<Stmt>,
         body: Stmt,
     ) -> Self {
@@ -368,17 +375,27 @@ impl std::ops::Deref for SBlockRealizeObj {
 
 impl SBlockRealize {
     /// Construct one realization of `block` directly in Rust.
-    pub fn new(iter_values: Vec<Expr>, predicate: &Expr, block: &SBlock) -> Result<Self> {
+    pub fn new<P, B>(iter_values: Vec<Expr>, predicate: P, block: B) -> Result<Self>
+    where
+        P: Into<Expr>,
+        B: Into<SBlock>,
+    {
         Self::with_span(iter_values, predicate, block, None)
     }
 
     /// Construct one realization with optional source metadata.
-    pub fn with_span(
+    pub fn with_span<P, B>(
         iter_values: Vec<Expr>,
-        predicate: &Expr,
-        block: &SBlock,
+        predicate: P,
+        block: B,
         span: Option<&Span>,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        P: Into<Expr>,
+        B: Into<SBlock>,
+    {
+        let predicate = predicate.into();
+        let block = block.into();
         if block.iter_vars.len() != iter_values.len() {
             return Err(Error::new(
                 VALUE_ERROR,
@@ -389,7 +406,7 @@ impl SBlockRealize {
         for value in &iter_values {
             primitive_type(value, "SBlockRealize binding value")?;
         }
-        let predicate_dtype = primitive_type(predicate, "SBlockRealize predicate")?.dtype;
+        let predicate_dtype = primitive_type(&predicate, "SBlockRealize predicate")?.dtype;
         if predicate_dtype.code != DLDataTypeCode::kDLBool as u8 {
             return Err(Error::new(
                 TYPE_ERROR,
@@ -400,8 +417,8 @@ impl SBlockRealize {
         Ok(Self::from_complete_fields(
             span.cloned(),
             Array::new(iter_values),
-            predicate.clone(),
-            block.clone(),
+            predicate,
+            block,
         ))
     }
 
@@ -428,5 +445,6 @@ crate::abi::impl_object_upcast!(
     SBlock => Stmt,
     SBlockRealize => Stmt,
 );
+crate::abi::impl_object_borrow_to_owned!(IterVar, SBlock, SBlockRealize);
 
 crate::abi::impl_rust_allocatable!(IterVarObj, SBlockObj, SBlockRealizeObj);

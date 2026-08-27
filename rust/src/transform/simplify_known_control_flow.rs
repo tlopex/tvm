@@ -19,15 +19,15 @@
 
 use tvm_ffi::{structural_map, Any, ObjectRefCast, Result, WalkOrder};
 
-use super::utils::int_value;
+use super::utils::{int_value, LazyAnalyzer};
 use super::{create_prim_func_pass, Pass};
-use crate::analysis::{side_effect, Analyzer};
+use crate::analysis::side_effect;
 use crate::ir::Expr;
 use crate::tirx::{Evaluate, For as TirFor, IfThenElse, PrimFunc, SeqStmt, Stmt};
 
 /// Remove control flow proven inactive by literals or TVM's arithmetic analyzer.
 pub fn simplify_known_control_flow_prim_func(function: PrimFunc) -> Result<PrimFunc> {
-    let mut mapper = KnownControlFlowSimplifier { analyzer: None };
+    let mut mapper = KnownControlFlowSimplifier::default();
     structural_map(function, &mut mapper, WalkOrder::PostOrder)?.try_into()
 }
 
@@ -42,26 +42,17 @@ pub fn simplify_known_control_flow() -> Result<Pass> {
     )
 }
 
+#[derive(Default)]
 struct KnownControlFlowSimplifier {
-    analyzer: Option<Analyzer>,
+    analyzer: LazyAnalyzer,
 }
 
 impl KnownControlFlowSimplifier {
-    fn analyzer(&mut self) -> Result<&Analyzer> {
-        if self.analyzer.is_none() {
-            self.analyzer = Some(Analyzer::new()?);
-        }
-        Ok(self
-            .analyzer
-            .as_ref()
-            .expect("analyzer was initialized above"))
-    }
-
     fn known_integer(&mut self, expression: &Expr) -> Result<Option<i64>> {
         if let Some(value) = int_value(expression) {
             return Ok(Some(value));
         }
-        Ok(int_value(&self.analyzer()?.simplify(expression)?))
+        Ok(int_value(&self.analyzer.get()?.simplify(expression)?))
     }
 
     fn preserve_update_or_no_op(&self, expression: &Expr) -> Result<Stmt> {

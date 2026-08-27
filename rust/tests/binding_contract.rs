@@ -41,7 +41,7 @@ use tvm::tirx::{
     SeqStmtObj, Stmt, StmtObj, StringImm, StringImmObj, Sub, SubObj, TileLayout, TileLayoutObj,
 };
 use tvm::tvm_ffi::tvm_ffi_sys::{TVMFFIFieldFlagBitMask, TVMFFISEqHashKind};
-use tvm::tvm_ffi::{AnyMap, Array, DLDataType, Map, Object, ObjectCore, String};
+use tvm::tvm_ffi::{Any, Array, DLDataType, Map, Object, ObjectCore, String};
 
 mod common;
 use common::{direct_fields, load_tvm_compiler, runtime_type_info};
@@ -704,7 +704,7 @@ fn complete_field_allocators_follow_owned_native_field_order() {
     assert_complete_allocator!(GlobalVar::from_complete_fields: fn(Option<Span>, Type, String) -> GlobalVar);
     assert_complete_allocator!(Call::from_complete_fields: fn(Option<Span>, Type, Expr, Array<Expr>, Option<Attrs>, Array<Type>) -> Call);
     assert_complete_allocator!(IRModule::from_complete_fields: fn(Map<GlobalVar, BaseFunc>, SourceMap, DictAttrs, Map<String, Array<GlobalInfo>>, Map<String, GlobalVar>) -> IRModule);
-    assert_complete_allocator!(DictAttrs::from_complete_fields: fn(AnyMap<String>) -> DictAttrs);
+    assert_complete_allocator!(DictAttrs::from_complete_fields: fn(Map<String, Any>) -> DictAttrs);
 
     assert_complete_allocator!(Add::from_complete_fields: fn(Option<Span>, Type, Expr, Expr) -> Add);
     assert_complete_allocator!(Sub::from_complete_fields: fn(Option<Span>, Type, Expr, Expr) -> Sub);
@@ -714,7 +714,7 @@ fn complete_field_allocators_follow_owned_native_field_order() {
     assert_complete_allocator!(Evaluate::from_complete_fields: fn(Option<Span>, Expr) -> Evaluate);
     assert_complete_allocator!(SeqStmt::from_complete_fields: fn(Option<Span>, Array<Stmt>) -> SeqStmt);
     assert_complete_allocator!(IfThenElse::from_complete_fields: fn(Option<Span>, Expr, Stmt, Option<Stmt>) -> IfThenElse);
-    assert_complete_allocator!(For::from_complete_fields: fn(Option<Span>, Var, Expr, Expr, ForKind, Stmt, Option<IterVar>, AnyMap<String>, Option<Expr>) -> For);
+    assert_complete_allocator!(For::from_complete_fields: fn(Option<Span>, Var, Expr, Expr, ForKind, Stmt, Option<IterVar>, Map<String, Any>, Option<Expr>) -> For);
     assert_complete_allocator!(PrimFunc::from_complete_fields: fn(Option<Span>, Type, DictAttrs, Array<Var>, Type, Stmt) -> PrimFunc);
 
     assert_complete_allocator!(Iter::from_complete_fields: fn(Expr, Expr, Axis) -> Iter);
@@ -725,7 +725,7 @@ fn complete_field_allocators_follow_owned_native_field_order() {
     assert_complete_allocator!(BufferRegion::from_complete_fields: fn(Var, Array<Range>) -> BufferRegion);
     assert_complete_allocator!(MatchBufferRegion::from_complete_fields: fn(Var, BufferRegion) -> MatchBufferRegion);
     assert_complete_allocator!(IterVar::from_complete_fields: fn(Option<Range>, Var, IterVarType, String, Option<Span>) -> IterVar);
-    assert_complete_allocator!(SBlock::from_complete_fields: fn(Option<Span>, Array<IterVar>, Array<BufferRegion>, Array<BufferRegion>, String, Array<Var>, Array<MatchBufferRegion>, AnyMap<String>, Option<Stmt>, Stmt) -> SBlock);
+    assert_complete_allocator!(SBlock::from_complete_fields: fn(Option<Span>, Array<IterVar>, Array<BufferRegion>, Array<BufferRegion>, String, Array<Var>, Array<MatchBufferRegion>, Map<String, Any>, Option<Stmt>, Stmt) -> SBlock);
     assert_complete_allocator!(SBlockRealize::from_complete_fields: fn(Option<Span>, Array<Expr>, Expr, SBlock) -> SBlockRealize);
 
     assert_complete_allocator!(RelaxTuple::from_complete_fields: fn(Option<Span>, Type, Array<Expr>) -> RelaxTuple);

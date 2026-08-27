@@ -39,11 +39,10 @@ use common::{
 
 fn sample_function() -> PrimFunc {
     let variable = Var::new("x", "int32").unwrap();
-    let variable_expr = Expr::from(variable.clone());
-    let zero = Expr::from(IntImm::new("int32", 0).unwrap());
-    let value = Expr::from(Add::new(&variable_expr, &zero).unwrap());
-    let body = Evaluate::new(&value).unwrap();
-    PrimFunc::new(vec![variable], &body).unwrap()
+    let zero = IntImm::new("int32", 0).unwrap();
+    let value = Add::new(variable.clone(), zero).unwrap();
+    let body = Evaluate::new(value).unwrap();
+    PrimFunc::new(vec![variable], body).unwrap()
 }
 
 fn direct_field<N: ObjectCore>(name: &str) -> &'static TVMFFIFieldInfo {

@@ -17,9 +17,23 @@
  * under the License.
  */
 
-use tvm_ffi::ObjectRefCast;
+use tvm_ffi::{ObjectRefCast, Result};
 
+use crate::analysis::Analyzer;
 use crate::ir::{Expr, IntImm};
+
+/// Lazily create the native analyzer only when a pass reaches a case that needs it.
+#[derive(Default)]
+pub(super) struct LazyAnalyzer(Option<Analyzer>);
+
+impl LazyAnalyzer {
+    pub(super) fn get(&mut self) -> Result<&Analyzer> {
+        if self.0.is_none() {
+            self.0 = Some(Analyzer::new()?);
+        }
+        Ok(self.0.as_ref().expect("analyzer was initialized above"))
+    }
+}
 
 pub(super) fn int_value(expr: &Expr) -> Option<i64> {
     expr.clone()

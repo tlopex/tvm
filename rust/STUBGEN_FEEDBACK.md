@@ -284,13 +284,15 @@ not preserve binary compatibility with the former C++ vtable layout.
 
 ## Runtime support learned from the experiment
 
-### Heterogeneous maps
+### Heterogeneous containers
 
-TVM fields such as `DictAttrs::__dict__`, loop annotations, and block
-annotations are `Map<String, Any>`. A blanket `AnyCompatible for Any` conflicts
-with Rust's identity conversion rules, so the prototype adds `AnyMap<K>`: an
-ABI-compatible map wrapper whose public values are owning `Any` objects. This
-belongs in `tvm-ffi`, not in generated IR bindings.
+TVM fields include both heterogeneous arrays and maps, such as schedule values,
+`DictAttrs::__dict__`, loop annotations, and block annotations. A blanket
+`AnyCompatible for Any` conflicts with Rust's identity conversion rules. The
+runtime therefore provides one sealed container-element conversion contract,
+shared by `Array<T>` and both sides of `Map<K, V>`. Generated bindings can use
+`Array<Any>`, `Map<String, Any>`, or `Map<Any, T>` directly without defining a
+TVM-specific container. This support belongs in `tvm-ffi`, not generated IR.
 
 ### Object origins and deletion
 
@@ -311,9 +313,11 @@ behavior methods.
 
 ### Consuming packed arguments
 
-C++ pass APIs use `RValueRef<T>` at some boundaries. Rust still needs a reusable
-safe owning packed-argument holder so a consumed Rust handle is encoded as an
-rvalue rather than copied as an ordinary `AnyView`. This remains a runtime gap.
+C++ pass APIs use `RValueRef<T>` at some boundaries. `tvm-ffi::RValueRef<T>` is
+the reusable owning packed-argument holder for the same ABI representation. A
+matching callee steals its object slot without an extra reference-count
+increment; an ordinary lvalue remains supported through the C++-compatible
+copy path. Generated pass wrappers should use this standard holder.
 
 ## Metadata gaps
 
@@ -391,11 +395,11 @@ IR surface they consume, not generate those transformations.
    `IntImm`, `Add`, `Evaluate`, `For`, buffers, tuples, and modules.
 4. Run `tests/stubgen_acceptance.rs` unchanged, including the C++-getter-on-Rust
    allocation test.
-5. Generate container fields using `AnyMap` and the normal typed `Array`/`Map`
-   wrappers.
+5. Generate heterogeneous fields as `Map<K, Any>` and other container fields
+   with the normal typed `Array`/`Map` wrappers.
 6. Generate reflected behavior/preparation-method calls for reviewed recipes,
    and reject unrefactored vptr/STL-backed nodes.
-7. Add the packed rvalue holder and pass boundaries separately.
+7. Generate pass boundaries with the standard `RValueRef<T>` holder.
 8. Expand the type slice only after each new layout/constructor pattern has a
    focused test and a named owner.
 

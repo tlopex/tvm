@@ -141,7 +141,7 @@ Broader pass behavior is in
 | Complete ordinary data layout | `Expr`, `Var`, `IntImm`, `Add`, `Stmt`, `Evaluate`, `Span`, `Range` | **GENERATE / verified** |
 | Owning object reference and checked casts | all reference wrappers | **GENERATE / verified** |
 | Direct scalar/object/optional/array/map fields | `IntImm`, `Call`, `For`, `SBlock`, Relax bindings | **GENERATE / verified** |
-| Heterogeneous `Map<String, Any>` | `DictAttrs`, annotations | **RUNTIME / verified via `AnyMap`** |
+| Heterogeneous `Array<Any>` / `Map<K, Any>` | schedule values, `DictAttrs`, annotations | **RUNTIME / verified via shared container-element support** |
 | Direct construction with validation | `IntImm`, binary arithmetic, `SeqStmt`, `SBlockRealize` | **GENERATE or reviewed template** |
 | Complete layout, build-dependent defaults | `BufferType` | **reflected static prepare method + Rust allocation / verified** |
 | Shared registry metadata | `Axis` | **reflected static prepare method + private Rust allocation / verified** |
@@ -150,7 +150,7 @@ Broader pass behavior is in
 | Former hidden STL storage | `Source` | **ABI-shareable fields + Rust allocation / verified** |
 | Complex semantic constructor | `BufferType`, `PrimFunc`, Relax `Function`, match buffer | **reflected static preparation + complete-field Rust allocation / verified** |
 | Derived mutable indexes | `IRModule` construction/update | **GENERATE rebuild logic / verified** |
-| Consuming `RValueRef<T>` packed argument | pass boundaries | **RUNTIME gap** |
+| Consuming `RValueRef<T>` packed argument | pass boundaries | **RUNTIME / verified without an extra reference-count increment** |
 | Pass examples and analyses | `analysis`, `transform/*` | **PROTOTYPE ONLY** |
 
 An incomplete type is safe only as a runtime-owned handle. Stubgen must not
@@ -249,7 +249,8 @@ constructible only after its behavior is moved to registered tvm-ffi type method
 - **GENERATE:** ABI-complete ordinary object structs with public physical
   fields, reference wrappers, read-only `Deref`, inheritance, casts, and
   constructor bodies whose semantics are fully available.
-- **RUNTIME:** `ObjectArc`, `AnyMap`, reusable packed argument holders,
+- **RUNTIME:** `ObjectArc`, heterogeneous `Array<Any>`/`Map<K, Any>` support,
+  `RValueRef<T>` packed argument holders, safe object identity,
   `Function::from_type_method`, and reflected behavior/preparation calls.
 - **RECIPE:** reviewed constructor semantics that generate Rust validation,
   defaults, normalization, and derived fields.

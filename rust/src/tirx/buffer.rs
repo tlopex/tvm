@@ -421,14 +421,17 @@ impl std::ops::Deref for Iter {
 
 impl Iter {
     /// Construct one layout iterator directly in Rust.
-    pub fn new(extent: &Expr, stride: &Expr, axis: &Axis) -> Result<Self> {
-        primitive_type(extent, "layout iterator extent")?;
-        primitive_type(stride, "layout iterator stride")?;
-        Ok(Self::from_complete_fields(
-            extent.clone(),
-            stride.clone(),
-            axis.clone(),
-        ))
+    pub fn new<E, S, A>(extent: E, stride: S, axis: A) -> Result<Self>
+    where
+        E: Into<Expr>,
+        S: Into<Expr>,
+        A: Into<Axis>,
+    {
+        let extent = extent.into();
+        let stride = stride.into();
+        primitive_type(&extent, "layout iterator extent")?;
+        primitive_type(&stride, "layout iterator stride")?;
+        Ok(Self::from_complete_fields(extent, stride, axis.into()))
     }
 
     /// Construct one layout iterator from every physical field after external validation.
@@ -575,7 +578,7 @@ impl BufferType {
         let dtype = PrimType::new(dtype)?;
         Self::prepare_and_allocate(
             storage_scope,
-            &dtype,
+            dtype,
             shape,
             Vec::new(),
             None,
@@ -591,13 +594,13 @@ impl BufferType {
     #[allow(clippy::too_many_arguments)]
     pub fn with_metadata(
         storage_scope: &str,
-        dtype: &PrimType,
+        dtype: PrimType,
         shape: Vec<Expr>,
         strides: Vec<Expr>,
-        element_offset: &Expr,
+        element_offset: Expr,
         data_alignment: i32,
         offset_factor: i32,
-        layout: Option<&Layout>,
+        layout: Option<Layout>,
         allocated_addresses: Vec<Expr>,
         span: Option<&Span>,
     ) -> Result<Self> {
@@ -618,13 +621,13 @@ impl BufferType {
     #[allow(clippy::too_many_arguments)]
     fn prepare_and_allocate(
         storage_scope: &str,
-        dtype: &PrimType,
+        dtype: PrimType,
         shape: Vec<Expr>,
         strides: Vec<Expr>,
-        element_offset: Option<&Expr>,
+        element_offset: Option<Expr>,
         data_alignment: i32,
         offset_factor: i32,
-        layout: Option<&Layout>,
+        layout: Option<Layout>,
         allocated_addresses: Vec<Expr>,
         span: Option<&Span>,
     ) -> Result<Self> {
@@ -634,7 +637,7 @@ impl BufferType {
         for stride in &strides {
             primitive_type(stride, "buffer stride")?;
         }
-        if let Some(element_offset) = element_offset {
+        if let Some(element_offset) = element_offset.as_ref() {
             primitive_type(element_offset, "buffer element offset")?;
         }
         for address in &allocated_addresses {
@@ -644,8 +647,6 @@ impl BufferType {
         let shape = Array::new(shape);
         let strides = Array::new(strides);
         let allocated_addresses = Array::new(allocated_addresses);
-        let layout = layout.cloned();
-        let element_offset = element_offset.cloned();
         let prepared = crate::abi::prepare_constructor::<BufferTypeObj>(&[
             AnyView::from(&storage_scope),
             AnyView::from(&shape),
@@ -667,7 +668,7 @@ impl BufferType {
             i32::try_from(offset_factor).map_err(|_| integer_overflow("offset_factor"))?;
         Ok(Self::from_complete_fields(
             span.cloned(),
-            dtype.clone(),
+            dtype,
             storage_scope,
             shape,
             strides,
@@ -765,19 +766,22 @@ impl std::ops::Deref for BufferLoadObj {
 
 impl BufferLoad {
     /// Construct a buffer read directly in Rust after validating its access types.
-    pub fn new(buffer: &Var, indices: Vec<Expr>, predicate: Option<&Expr>) -> Result<Self> {
-        Self::with_span(buffer, indices, predicate, None)
+    pub fn new<B>(buffer: B, indices: Vec<Expr>, predicate: Option<Expr>) -> Result<Self>
+    where
+        B: Into<Var>,
+    {
+        Self::with_span(buffer.into(), indices, predicate, None)
     }
 
     /// Construct a validated buffer read with optional source metadata.
     pub fn with_span(
-        buffer: &Var,
+        buffer: Var,
         indices: Vec<Expr>,
-        predicate: Option<&Expr>,
+        predicate: Option<Expr>,
         span: Option<&Span>,
     ) -> Result<Self> {
-        let buffer_type = buffer_type(buffer)?;
-        validate_access_dimensions(buffer, &buffer_type, &indices)?;
+        let buffer_type = buffer_type(&buffer)?;
+        validate_access_dimensions(&buffer, &buffer_type, &indices)?;
         validate_nonfinal_indices(&indices)?;
 
         let buffer_dtype = buffer_type.dtype.clone();
@@ -787,16 +791,16 @@ impl BufferLoad {
         } else {
             buffer_dtype.clone()
         };
-        if let Some(predicate) = predicate {
+        if let Some(predicate) = predicate.as_ref() {
             validate_load_predicate(&buffer_dtype, indices.last(), predicate)?;
         }
 
         Ok(Self::from_complete_fields(
             span.cloned(),
             result_type.into(),
-            buffer.clone(),
+            buffer,
             Array::new(indices),
-            predicate.cloned(),
+            predicate,
         ))
     }
 
@@ -863,29 +867,33 @@ impl std::ops::Deref for BufferStoreObj {
 
 impl BufferStore {
     /// Construct a buffer write directly in Rust after validating its access types.
-    pub fn new(
-        buffer: &Var,
-        value: &Expr,
+    pub fn new<B, V>(
+        buffer: B,
+        value: V,
         indices: Vec<Expr>,
-        predicate: Option<&Expr>,
-    ) -> Result<Self> {
-        Self::with_span(buffer, value, indices, predicate, None)
+        predicate: Option<Expr>,
+    ) -> Result<Self>
+    where
+        B: Into<Var>,
+        V: Into<Expr>,
+    {
+        Self::with_span(buffer.into(), value.into(), indices, predicate, None)
     }
 
     /// Construct a validated buffer write with optional source metadata.
     pub fn with_span(
-        buffer: &Var,
-        value: &Expr,
+        buffer: Var,
+        value: Expr,
         indices: Vec<Expr>,
-        predicate: Option<&Expr>,
+        predicate: Option<Expr>,
         span: Option<&Span>,
     ) -> Result<Self> {
-        let buffer_type = buffer_type(buffer)?;
-        validate_access_dimensions(buffer, &buffer_type, &indices)?;
+        let buffer_type = buffer_type(&buffer)?;
+        validate_access_dimensions(&buffer, &buffer_type, &indices)?;
         validate_nonfinal_indices(&indices)?;
 
         let buffer_dtype = buffer_type.dtype.clone();
-        let value_dtype = primitive_type(value, "buffer store value")?;
+        let value_dtype = primitive_type(&value, "buffer store value")?;
         let index_dtype = indices
             .last()
             .map(|index| primitive_type(index, "buffer store index"))
@@ -905,16 +913,16 @@ impl BufferStore {
                 "",
             ));
         }
-        if let Some(predicate) = predicate {
+        if let Some(predicate) = predicate.as_ref() {
             validate_store_predicate(&value_dtype, predicate)?;
         }
 
         Ok(Self::from_complete_fields(
             span.cloned(),
-            buffer.clone(),
-            value.clone(),
+            buffer,
+            value,
             Array::new(indices),
-            predicate.cloned(),
+            predicate,
         ))
     }
 
@@ -1149,9 +1157,13 @@ impl std::ops::Deref for BufferRegionObj {
 
 impl BufferRegion {
     /// Validate and construct a declared region directly in Rust.
-    pub fn new(buffer: &Var, region: Vec<Range>) -> Result<Self> {
+    pub fn new<B>(buffer: B, region: Vec<Range>) -> Result<Self>
+    where
+        B: Into<Var>,
+    {
+        let buffer = buffer.into();
         let region = Array::new(region);
-        let dimensions = buffer_type(buffer)?.shape.len();
+        let dimensions = buffer_type(&buffer)?.shape.len();
         if dimensions != region.len() {
             return Err(Error::new(
                 VALUE_ERROR,
@@ -1162,7 +1174,7 @@ impl BufferRegion {
                 "",
             ));
         }
-        Ok(Self::from_complete_fields(buffer.clone(), region))
+        Ok(Self::from_complete_fields(buffer, region))
     }
 
     /// Construct a buffer region from every physical field after external validation.
@@ -1217,12 +1229,18 @@ impl MatchBufferRegion {
     ///
     /// Analyzer-backed validation runs through the type's reflected static
     /// preparation method; it never allocates the final node.
-    pub fn new(buffer: &Var, source: &BufferRegion) -> Result<Self> {
+    pub fn new<B, S>(buffer: B, source: S) -> Result<Self>
+    where
+        B: Into<Var>,
+        S: Into<BufferRegion>,
+    {
+        let buffer = buffer.into();
+        let source = source.into();
         let _ = crate::abi::prepare_constructor::<MatchBufferRegionObj>(&[
-            AnyView::from(buffer),
-            AnyView::from(source),
+            AnyView::from(&buffer),
+            AnyView::from(&source),
         ])?;
-        Ok(Self::from_complete_fields(buffer.clone(), source.clone()))
+        Ok(Self::from_complete_fields(buffer, source))
     }
 
     /// Allocate a match-buffer declaration directly after its invariants have been validated.
@@ -1244,6 +1262,18 @@ crate::abi::impl_object_upcast!(
     BufferLoad => Expr,
     BufferStore => Stmt,
     BufferRegion => PrimExprConvertible,
+);
+crate::abi::impl_object_borrow_to_owned!(
+    DataProducer,
+    Layout,
+    Axis,
+    Iter,
+    TileLayout,
+    BufferType,
+    BufferLoad,
+    BufferStore,
+    BufferRegion,
+    MatchBufferRegion,
 );
 
 crate::abi::impl_rust_allocatable!(

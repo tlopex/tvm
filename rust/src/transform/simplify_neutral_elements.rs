@@ -18,8 +18,8 @@
  */
 
 use tvm_ffi::{
-    structural_map, structural_mutate, Any, AnyCompatible, AnyMap, DefRegionKind, MutateCallbacks,
-    MutateContext, Result, String, WalkOrder,
+    structural_map, structural_mutate, Any, AnyCompatible, DefRegionKind, Map, Result, String,
+    StructuralMutator, WalkOrder,
 };
 
 use super::utils::int_value;
@@ -74,7 +74,7 @@ impl NeutralElementSimplifier {
 }
 
 #[derive(Default)]
-struct LoopBodyMutationState {
+struct LoopBodyMutator {
     depth: usize,
 }
 
@@ -85,94 +85,80 @@ struct LoopBodyMutationState {
 /// left unchanged, while bounds of a nested loop are transformed because that
 /// loop itself occurs inside its parent's body.
 pub fn simplify_neutral_elements_in_loop_bodies(statement: Stmt) -> Result<Stmt> {
-    let mut mutator = MutateCallbacks::new(
-        LoopBodyMutationState::default(),
-        (
-            mutate_loop,
-            mutate_scoped_add,
-            mutate_scoped_subtract,
-            mutate_scoped_multiply,
-        ),
-    );
+    let mut mutator = LoopBodyMutator::default();
     structural_mutate(statement, &mut mutator)?.try_into()
 }
 
-fn mutate_loop(
-    value: TirFor,
-    mutator: &mut MutateContext<'_, LoopBodyMutationState>,
-) -> Result<Any> {
-    let loop_var = Var::try_from(mutator.mutate_with(&value.loop_var, DefRegionKind::Recursive)?)?;
-    let minimum = Expr::try_from(mutator.mutate(&value.min)?)?;
-    let extent = Expr::try_from(mutator.mutate(&value.extent)?)?;
+#[tvm_ffi::dispatch(mutate)]
+impl LoopBodyMutator {
+    fn mutate_loop(&mut self, value: TirFor, region: DefRegionKind) -> Result<Any> {
+        let loop_var =
+            Var::try_from(self.mutate_child(&value.loop_var, DefRegionKind::Recursive)?)?;
+        let minimum = Expr::try_from(self.mutate_child(&value.min, region)?)?;
+        let extent = Expr::try_from(self.mutate_child(&value.extent, region)?)?;
 
-    mutator.state_mut().depth += 1;
-    let body_result = mutator.mutate(&value.body);
-    mutator.state_mut().depth -= 1;
-    let body = Stmt::try_from(body_result?)?;
+        self.depth += 1;
+        let body_result = self.mutate_child(&value.body, region);
+        self.depth -= 1;
+        let body = Stmt::try_from(body_result?)?;
 
-    let thread_binding =
-        Option::<crate::tirx::IterVar>::try_from(mutator.mutate(&value.thread_binding)?)?;
-    let annotations = AnyMap::<String>::try_from(mutator.mutate(&value.annotations)?)?;
-    let step = value
-        .step
-        .as_ref()
-        .map(|step| mutator.mutate(step).and_then(Expr::try_from))
-        .transpose()?;
+        let thread_binding = Option::<crate::tirx::IterVar>::try_from(
+            self.mutate_child(&value.thread_binding, region)?,
+        )?;
+        let annotations =
+            Map::<String, Any>::try_from(self.mutate_child(&value.annotations, region)?)?;
+        let step = value
+            .step
+            .as_ref()
+            .map(|step| self.mutate_child(step, region).and_then(Expr::try_from))
+            .transpose()?;
 
-    Ok(Any::from(TirFor::with_metadata(
-        &loop_var,
-        &minimum,
-        &extent,
-        value.kind,
-        &body,
-        thread_binding.as_ref(),
-        &annotations,
-        step.as_ref(),
-        value.span.as_ref(),
-    )?))
-}
+        Ok(Any::from(TirFor::with_metadata(
+            loop_var,
+            minimum,
+            extent,
+            value.kind,
+            body,
+            thread_binding,
+            annotations,
+            step,
+            value.span.as_ref(),
+        )?))
+    }
 
-fn mutate_scoped_add(
-    _value: Add,
-    mutator: &mut MutateContext<'_, LoopBodyMutationState>,
-) -> Result<Any> {
-    let value = Add::try_from(mutator.default_mutate()?)?;
-    if mutator.state().depth == 0 {
-        return Ok(Any::from(value));
+    fn mutate_scoped_add(&mut self, value: Add, region: DefRegionKind) -> Result<Any> {
+        let value = Add::try_from(self.default_mutate_value(&value, region)?)?;
+        if self.depth == 0 {
+            return Ok(Any::from(value));
+        }
+        if int_value(&value.a) == Some(0) {
+            return Ok(value.b.to_any());
+        }
+        if int_value(&value.b) == Some(0) {
+            return Ok(value.a.to_any());
+        }
+        Ok(Any::from(value))
     }
-    if int_value(&value.a) == Some(0) {
-        return Ok(value.b.to_any());
-    }
-    if int_value(&value.b) == Some(0) {
-        return Ok(value.a.to_any());
-    }
-    Ok(Any::from(value))
-}
 
-fn mutate_scoped_subtract(
-    _value: Sub,
-    mutator: &mut MutateContext<'_, LoopBodyMutationState>,
-) -> Result<Any> {
-    let value = Sub::try_from(mutator.default_mutate()?)?;
-    if mutator.state().depth > 0 && int_value(&value.b) == Some(0) {
-        return Ok(value.a.to_any());
+    fn mutate_scoped_subtract(&mut self, value: Sub, region: DefRegionKind) -> Result<Any> {
+        let value = Sub::try_from(self.default_mutate_value(&value, region)?)?;
+        if self.depth > 0 && int_value(&value.b) == Some(0) {
+            return Ok(value.a.to_any());
+        }
+        Ok(Any::from(value))
     }
-    Ok(Any::from(value))
-}
 
-fn mutate_scoped_multiply(
-    _value: Mul,
-    mutator: &mut MutateContext<'_, LoopBodyMutationState>,
-) -> Result<Any> {
-    let value = Mul::try_from(mutator.default_mutate()?)?;
-    if mutator.state().depth == 0 {
-        return Ok(Any::from(value));
+    fn mutate_scoped_multiply(&mut self, value: Mul, region: DefRegionKind) -> Result<Any> {
+        let value = Mul::try_from(self.default_mutate_value(&value, region)?)?;
+        if self.depth == 0 {
+            return Ok(Any::from(value));
+        }
+        if int_value(&value.a) == Some(1) {
+            return Ok(value.b.to_any());
+        }
+        if int_value(&value.b) == Some(1) {
+            return Ok(value.a.to_any());
+        }
+        Ok(Any::from(value))
     }
-    if int_value(&value.a) == Some(1) {
-        return Ok(value.b.to_any());
-    }
-    if int_value(&value.b) == Some(1) {
-        return Ok(value.a.to_any());
-    }
-    Ok(Any::from(value))
 }

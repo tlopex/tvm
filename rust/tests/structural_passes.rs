@@ -36,8 +36,8 @@ use tvm::tirx::{
 };
 use tvm::transform;
 use tvm::tvm_ffi::{
-    dispatch, structural_map, structural_walk, Any, AnyMap, AnyView, Array, DefRegionKind,
-    Function, Map, ObjectRefCast, Result, WalkOrder, WalkResult,
+    dispatch, structural_map, structural_walk, Any, AnyView, Array, DefRegionKind, Function, Map,
+    ObjectRefCast, Result, WalkOrder, WalkResult,
 };
 
 mod common;
@@ -167,10 +167,10 @@ fn direct_fields_borrow_rust_allocated_nodes() {
     let one = IntImm::new("int32", 1).unwrap();
     let two = IntImm::new("int32", 2).unwrap();
     let add = Add::new(one.clone(), two.clone()).unwrap();
-    let assertion = AssertStmt::new(&Expr::int("bool", 1).unwrap(), "ValueError", "bad").unwrap();
+    let assertion = AssertStmt::new(Expr::int("bool", 1).unwrap(), "ValueError", "bad").unwrap();
     let leaf_conditional = IfThenElse::new(
-        &Expr::int("bool", 1).unwrap(),
-        &Evaluate::from_i64(1).unwrap().into(),
+        Expr::int("bool", 1).unwrap(),
+        Evaluate::from_i64(1).unwrap(),
         None,
     )
     .unwrap();
@@ -280,7 +280,7 @@ fn source_and_module_metadata_round_trip_cpp_objects() {
     assert_eq!(source.get_line(1).unwrap().as_str(), "first line");
     assert_eq!(source.get_line(2).unwrap().as_str(), "second line");
 
-    let dictionary: AnyMap<tvm::tvm_ffi::String> = [
+    let dictionary: Map<tvm::tvm_ffi::String, Any> = [
         (tvm::tvm_ffi::String::from("number"), Any::from(7i64)),
         (
             tvm::tvm_ffi::String::from("text"),
@@ -289,7 +289,7 @@ fn source_and_module_metadata_round_trip_cpp_objects() {
     ]
     .into_iter()
     .collect();
-    let attrs = DictAttrs::from_dictionary(&dictionary);
+    let attrs = DictAttrs::from_dictionary(dictionary);
     let dictionary = attrs.dict.clone();
     assert_eq!(
         i64::try_from(
@@ -369,9 +369,9 @@ fn full_direct_constructors_preserve_source_spans() {
         Some(&span),
     )
     .unwrap();
-    let binding = VarBinding::with_span(&variable, &addition.clone().into(), Some(&span));
+    let binding = VarBinding::with_span(&variable, addition.clone(), Some(&span));
     let block = BindingBlock::with_span(vec![binding.clone().into()], Some(&span));
-    let seq_expr = SeqExpr::with_span(vec![block.clone()], &variable.clone().into(), Some(&span));
+    let seq_expr = SeqExpr::with_span(vec![block.clone()], &variable, Some(&span));
 
     for actual in [
         variable.span.as_ref(),
@@ -518,10 +518,10 @@ fn buffer_defaults_match_the_registered_constructor_recipe() {
     let dtype = PrimType::new("float32").unwrap();
     let normalized_defaults = BufferType::with_metadata(
         "global",
-        &dtype,
+        dtype.clone(),
         vec![extent],
         Vec::new(),
-        &element_offset.into(),
+        element_offset.into(),
         0,
         0,
         None,
@@ -654,16 +654,16 @@ fn every_layout_reflected_method_is_callable() {
 
     let left = TileLayout::new(
         vec![
-            Iter::new(&int_expression(2), &int_expression(8), &axis).unwrap(),
-            Iter::new(&int_expression(2), &int_expression(2), &axis).unwrap(),
+            Iter::new(int_expression(2), int_expression(8), &axis).unwrap(),
+            Iter::new(int_expression(2), int_expression(2), &axis).unwrap(),
         ],
         Vec::new(),
         Map::new(),
     );
     let right = TileLayout::new(
         vec![
-            Iter::new(&int_expression(2), &int_expression(4), &axis).unwrap(),
-            Iter::new(&int_expression(2), &one, &axis).unwrap(),
+            Iter::new(int_expression(2), int_expression(4), &axis).unwrap(),
+            Iter::new(int_expression(2), one, &axis).unwrap(),
         ],
         Vec::new(),
         Map::new(),
@@ -736,7 +736,7 @@ fn rust_skip_assert_rebuilds_conditional_branches_like_cpp() {
     ])
     .unwrap()
     .into();
-    let conditional = IfThenElse::new(&condition, &then_case, Some(&else_case)).unwrap();
+    let conditional = IfThenElse::new(&condition, &then_case, Some(else_case)).unwrap();
     assert!(conditional.else_case.is_some());
 
     let function = PrimFunc::from_body(&conditional).unwrap();
@@ -814,9 +814,9 @@ impl DagProbe {
 fn structural_map_memoizes_shared_relax_dag_nodes() {
     load_tvm_compiler();
     let shared = RelaxIf::new(
-        &Expr::int("bool", 1).unwrap(),
-        &int_expression(1),
-        &int_expression(2),
+        Expr::int("bool", 1).unwrap(),
+        int_expression(1),
+        int_expression(2),
     );
     assert_eq!(shared.cond.clone().try_cast::<IntImm>().unwrap().value, 1);
     assert_eq!(
@@ -997,10 +997,10 @@ fn nested_loop_statement() -> Stmt {
     let sum = Add::new(outer.clone(), inner.clone()).unwrap();
     let inner_body: Stmt = Evaluate::new(Expr::from(sum)).unwrap().into();
     let inner_loop: Stmt =
-        TirFor::serial(&inner, &int_expression(1), &int_expression(3), &inner_body)
+        TirFor::serial(&inner, int_expression(1), int_expression(3), &inner_body)
             .unwrap()
             .into();
-    TirFor::serial(&outer, &int_expression(0), &int_expression(4), &inner_loop)
+    TirFor::serial(&outer, int_expression(0), int_expression(4), &inner_loop)
         .unwrap()
         .into()
 }
@@ -1060,7 +1060,7 @@ fn map_renames_relax_definitions_and_preserves_identity_links() {
     assert!(binding.span.is_none());
     let block = BindingBlock::new(vec![binding.into()]);
     assert!(block.span.is_none());
-    let sequence = SeqExpr::new(vec![block], &bound.clone().into());
+    let sequence = SeqExpr::new(vec![block], &bound);
     let sequence_expr: Expr = sequence.clone().into();
     let function =
         RelaxFunction::new(vec![parameter.clone()], &sequence_expr, &int_type, true).unwrap();
@@ -1148,24 +1148,16 @@ fn mutate_can_limit_a_rewrite_to_loop_bodies() {
     let inner_body: Stmt = Evaluate::new(&inner_value).unwrap().into();
     let inner_loop: Stmt = TirFor::serial(
         &inner_var,
-        &Sub::new(int_expression(1), int_expression(0))
-            .unwrap()
-            .into(),
-        &Mul::new(int_expression(3), int_expression(1))
-            .unwrap()
-            .into(),
+        Sub::new(int_expression(1), int_expression(0)).unwrap(),
+        Mul::new(int_expression(3), int_expression(1)).unwrap(),
         &inner_body,
     )
     .unwrap()
     .into();
     let statement: Stmt = TirFor::serial(
         &outer_var,
-        &Add::new(int_expression(0), int_expression(0))
-            .unwrap()
-            .into(),
-        &Add::new(int_expression(4), int_expression(0))
-            .unwrap()
-            .into(),
+        Add::new(int_expression(0), int_expression(0)).unwrap(),
+        Add::new(int_expression(4), int_expression(0)).unwrap(),
         &inner_loop,
     )
     .unwrap()
@@ -1245,13 +1237,13 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
     let layout = Layout::from(tile_layout.clone());
     let buffer_type = BufferType::with_metadata(
         "global",
-        &PrimType::new("int32").unwrap(),
+        PrimType::new("int32").unwrap(),
         vec![extent.clone()],
         Vec::new(),
-        &Expr::int("int64", 0).unwrap(),
+        Expr::int("int64", 0).unwrap(),
         64,
         1,
-        Some(&layout),
+        Some(layout),
         Vec::new(),
         None,
     )
@@ -1312,8 +1304,14 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
         .try_into()
         .unwrap();
     assert_eq!(object_pointer(&converted_by_cpp.a), object_pointer(&axis));
-    let domainless_iter =
-        IterVar::with_metadata(None, &axis, IterVarType::ThreadIndex, "threadIdx.x", None).unwrap();
+    let domainless_iter = IterVar::with_metadata(
+        None,
+        axis.clone(),
+        IterVarType::ThreadIndex,
+        "threadIdx.x",
+        None,
+    )
+    .unwrap();
     assert!(domainless_iter.dom.is_none());
     let converted_domainless = PrimExprConvertible::from(domainless_iter)
         .to_prim_expr()
@@ -1321,7 +1319,8 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
     assert_eq!(object_pointer(&converted_domainless), object_pointer(&axis));
     assert!(BufferLoad::new(&axis, vec![Expr::int("int64", 0).unwrap()], None).is_err());
     let predicate = Expr::int("bool", 1).unwrap();
-    let load = BufferLoad::new(&buffer, vec![axis.clone().into()], Some(&predicate)).unwrap();
+    let load =
+        BufferLoad::new(&buffer, vec![axis.clone().into()], Some(predicate.clone())).unwrap();
     let explicit_load_type = PrimType::new("int32").unwrap();
     let complete_load = BufferLoad::from_complete_fields(
         None,
@@ -1337,9 +1336,9 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
     );
     let store = BufferStore::new(
         &buffer,
-        &load.clone().into(),
+        load.clone(),
         vec![axis.clone().into()],
-        Some(&predicate),
+        Some(predicate),
     )
     .unwrap();
     let cpp_indices = tvm::tvm_ffi::Array::new(load.indices.iter().collect());
@@ -1392,7 +1391,7 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
         object_pointer(&match_buffer.source),
         object_pointer(&region)
     );
-    let annotations: AnyMap<tvm::tvm_ffi::String> = [
+    let annotations: Map<tvm::tvm_ffi::String, Any> = [
         (tvm::tvm_ffi::String::from("pipeline"), Any::from(2i64)),
         (
             tvm::tvm_ffi::String::from("tag"),
@@ -1406,17 +1405,17 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
         vec![region.clone()],
         vec![region],
         "copy",
-        &store.clone().into(),
+        store.clone().into(),
         None,
         Vec::new(),
         Vec::new(),
-        &annotations,
+        annotations,
         None,
     );
     assert_eq!(block.annotations.len(), 2);
     let realization = SBlockRealize::new(
         vec![Expr::int("int64", 0).unwrap()],
-        &Expr::int("bool", 1).unwrap(),
+        Expr::int("bool", 1).unwrap(),
         &block,
     )
     .unwrap();
@@ -1502,16 +1501,16 @@ fn rust_unit_loop_elimination_matches_cpp_on_buffer_indices() {
         .into();
     let unit_loop: Stmt = TirFor::serial(
         &unit_var,
-        &Expr::int("int64", 2).unwrap(),
-        &Expr::int("int64", 1).unwrap(),
+        Expr::int("int64", 2).unwrap(),
+        Expr::int("int64", 1).unwrap(),
         &store,
     )
     .unwrap()
     .into();
     let outer_loop = TirFor::serial(
         &outer_var,
-        &Expr::int("int64", 0).unwrap(),
-        &Expr::int("int64", 4).unwrap(),
+        Expr::int("int64", 0).unwrap(),
+        Expr::int("int64", 4).unwrap(),
         &unit_loop,
     )
     .unwrap();
@@ -1622,7 +1621,7 @@ fn known_control_flow_simplification_matches_cpp_on_analyzed_constants() {
         .into();
     let then_case: Stmt = Evaluate::from_i64(7).unwrap().into();
     let else_case: Stmt = Evaluate::from_i64(9).unwrap().into();
-    let conditional: Stmt = IfThenElse::new(&condition, &then_case, Some(&else_case))
+    let conditional: Stmt = IfThenElse::new(&condition, &then_case, Some(else_case))
         .unwrap()
         .into();
     let standalone = IRModule::from_expr(PrimFunc::from_body(&conditional).unwrap()).unwrap();
@@ -1641,9 +1640,9 @@ fn known_control_flow_simplification_matches_cpp_on_analyzed_constants() {
         .into();
     let empty_loop: Stmt = TirFor::serial(
         &loop_var,
-        &int_expression(0),
+        int_expression(0),
         &zero_extent,
-        &Evaluate::from_i64(11).unwrap().into(),
+        Evaluate::from_i64(11).unwrap(),
     )
     .unwrap()
     .into();
@@ -1718,7 +1717,7 @@ fn module_reachability_pruning_keeps_callees_and_external_roots() {
         .unwrap()
         .into();
     let exported_attributes = DictAttrs::from_dictionary(
-        &[(
+        [(
             tvm::tvm_ffi::String::from("global_symbol"),
             Any::from(tvm::tvm_ffi::String::from("exported_symbol")),
         )]
@@ -1728,8 +1727,8 @@ fn module_reachability_pruning_keeps_callees_and_external_roots() {
     let exported_function: tvm::ir::BaseFunc = PrimFunc::with_metadata(
         Vec::new(),
         Evaluate::from_i64(7).unwrap(),
-        &Type::missing(),
-        &exported_attributes,
+        Type::missing(),
+        exported_attributes,
         None,
     )
     .unwrap()
@@ -1786,20 +1785,20 @@ fn unit_loop_elimination_preserves_annotated_loops() {
     load_tvm_compiler();
     let loop_var = Var::new("i", "int64").unwrap();
     let body: Stmt = Evaluate::new(Expr::from(loop_var.clone())).unwrap().into();
-    let annotations: AnyMap<tvm::tvm_ffi::String> = [(
+    let annotations: Map<tvm::tvm_ffi::String, Any> = [(
         tvm::tvm_ffi::String::from("keep_unit_loop"),
         Any::from(1i64),
     )]
     .into_iter()
     .collect();
     let loop_statement = TirFor::with_metadata(
-        &loop_var,
-        &Expr::int("int64", 7).unwrap(),
-        &Expr::int("int64", 1).unwrap(),
+        loop_var,
+        Expr::int("int64", 7).unwrap(),
+        Expr::int("int64", 1).unwrap(),
         tvm::tirx::ForKind::Serial,
-        &body,
+        body,
         None,
-        &annotations,
+        annotations,
         None,
         None,
     )

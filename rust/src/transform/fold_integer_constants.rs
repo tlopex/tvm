@@ -19,20 +19,20 @@
 
 use tvm_ffi::{structural_map, Any, DLDataType, DLDataTypeCode, ObjectRefCast, Result, WalkOrder};
 
+use super::utils::LazyAnalyzer;
 use super::{create_prim_func_pass, Pass};
-use crate::analysis::Analyzer;
 use crate::ir::{Expr, IntImm, PrimType, Span};
 use crate::tirx::{Add, Mul, PrimFunc, Sub};
 
 /// Fold binary integer expressions with checked Rust arithmetic and TVM's analyzer.
 pub fn fold_integer_constants_expr(expr: Expr) -> Result<Expr> {
-    let mut mapper = IntegerConstantFolder { analyzer: None };
+    let mut mapper = IntegerConstantFolder::default();
     structural_map(expr, &mut mapper, WalkOrder::PostOrder)?.try_into()
 }
 
 /// Fold binary integer constants throughout a TIR PrimFunc.
 pub fn fold_integer_constants_prim_func(function: PrimFunc) -> Result<PrimFunc> {
-    let mut mapper = IntegerConstantFolder { analyzer: None };
+    let mut mapper = IntegerConstantFolder::default();
     structural_map(function, &mut mapper, WalkOrder::PostOrder)?.try_into()
 }
 
@@ -47,21 +47,12 @@ pub fn fold_integer_constants() -> Result<Pass> {
     )
 }
 
+#[derive(Default)]
 struct IntegerConstantFolder {
-    analyzer: Option<Analyzer>,
+    analyzer: LazyAnalyzer,
 }
 
 impl IntegerConstantFolder {
-    fn analyzer(&mut self) -> Result<&Analyzer> {
-        if self.analyzer.is_none() {
-            self.analyzer = Some(Analyzer::new()?);
-        }
-        Ok(self
-            .analyzer
-            .as_ref()
-            .expect("analyzer was initialized above"))
-    }
-
     fn fold_or_analyze(
         &mut self,
         original: Expr,
@@ -74,7 +65,7 @@ impl IntegerConstantFolder {
             return Ok(Any::from(folded));
         }
         if is_matching_integer_pair(lhs, rhs) {
-            return Ok(Any::from(self.analyzer()?.simplify(&original)?));
+            return Ok(Any::from(self.analyzer.get()?.simplify(&original)?));
         }
         Ok(Any::from(original))
     }

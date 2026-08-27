@@ -19,7 +19,7 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    AnyMap, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, ObjectArc,
+    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Map, ObjectArc,
     ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
@@ -575,23 +575,32 @@ impl std::ops::Deref for IfThenElseObj {
 
 impl IfThenElse {
     /// Construct a conditional statement directly in Rust.
-    pub fn new(condition: &Expr, then_case: &Stmt, else_case: Option<&Stmt>) -> Result<Self> {
+    pub fn new<C, T>(condition: C, then_case: T, else_case: Option<Stmt>) -> Result<Self>
+    where
+        C: Into<Expr>,
+        T: Into<Stmt>,
+    {
         Self::with_span(condition, then_case, else_case, None)
     }
 
     /// Construct a conditional statement with optional source metadata.
-    pub fn with_span(
-        condition: &Expr,
-        then_case: &Stmt,
-        else_case: Option<&Stmt>,
+    pub fn with_span<C, T>(
+        condition: C,
+        then_case: T,
+        else_case: Option<Stmt>,
         span: Option<&Span>,
-    ) -> Result<Self> {
-        primitive_type(condition, "IfThenElse condition")?;
+    ) -> Result<Self>
+    where
+        C: Into<Expr>,
+        T: Into<Stmt>,
+    {
+        let condition = condition.into();
+        primitive_type(&condition, "IfThenElse condition")?;
         Ok(Self::from_complete_fields(
             span.cloned(),
-            condition.clone(),
-            then_case.clone(),
-            else_case.cloned(),
+            condition,
+            then_case.into(),
+            else_case,
         ))
     }
 
@@ -666,7 +675,7 @@ pub struct ForObj {
     pub kind: ForKind,
     pub body: Stmt,
     pub thread_binding: Option<IterVar>,
-    pub annotations: AnyMap<String>,
+    pub annotations: Map<String, Any>,
     pub step: Option<Expr>,
 }
 crate::abi::impl_object_layout!(ForObj {
@@ -676,7 +685,7 @@ crate::abi::impl_object_layout!(ForObj {
     "kind" => kind: ForKind,
     "body" => body: Stmt,
     "thread_binding" => thread_binding: Option<IterVar>,
-    "annotations" => annotations: AnyMap<String>,
+    "annotations" => annotations: Map<String, Any>,
     "step" => step: Option<Expr>,
 });
 
@@ -705,15 +714,21 @@ impl std::ops::Deref for ForObj {
 
 impl For {
     /// Construct a serial loop with no thread binding, annotations, or custom step.
-    pub fn serial(loop_var: &Var, minimum: &Expr, extent: &Expr, body: &Stmt) -> Result<Self> {
+    pub fn serial<V, M, E, B>(loop_var: V, minimum: M, extent: E, body: B) -> Result<Self>
+    where
+        V: Into<Var>,
+        M: Into<Expr>,
+        E: Into<Expr>,
+        B: Into<Stmt>,
+    {
         Self::with_metadata(
-            loop_var,
-            minimum,
-            extent,
+            loop_var.into(),
+            minimum.into(),
+            extent.into(),
             ForKind::Serial,
-            body,
+            body.into(),
             None,
-            &AnyMap::new(),
+            Map::new(),
             None,
             None,
         )
@@ -722,23 +737,24 @@ impl For {
     /// Construct a loop directly in Rust with TVM's bound normalization and validation.
     #[allow(clippy::too_many_arguments)]
     pub fn with_metadata(
-        loop_var: &Var,
-        minimum: &Expr,
-        extent: &Expr,
+        loop_var: Var,
+        minimum: Expr,
+        extent: Expr,
         kind: ForKind,
-        body: &Stmt,
-        thread_binding: Option<&IterVar>,
-        annotations: &AnyMap<String>,
-        step: Option<&Expr>,
+        body: Stmt,
+        thread_binding: Option<IterVar>,
+        annotations: Map<String, Any>,
+        step: Option<Expr>,
         span: Option<&Span>,
     ) -> Result<Self> {
         let loop_expr: Expr = loop_var.clone().into();
         let loop_dtype = require_scalar_integer(&loop_expr, "loop_var")?;
-        require_scalar_integer(minimum, "min")?;
-        require_scalar_integer(extent, "extent")?;
-        let minimum = normalize_loop_bound(minimum, loop_dtype, "min")?;
-        let extent = normalize_loop_bound(extent, loop_dtype, "extent")?;
+        require_scalar_integer(&minimum, "min")?;
+        require_scalar_integer(&extent, "extent")?;
+        let minimum = normalize_loop_bound(&minimum, loop_dtype, "min")?;
+        let extent = normalize_loop_bound(&extent, loop_dtype, "extent")?;
         let step = step
+            .as_ref()
             .map(|step| {
                 require_scalar_integer(step, "step")?;
                 normalize_loop_bound(step, loop_dtype, "step")
@@ -746,13 +762,13 @@ impl For {
             .transpose()?;
         Ok(Self::from_complete_fields(
             span.cloned(),
-            loop_var.clone(),
+            loop_var,
             minimum,
             extent,
             kind,
-            body.clone(),
-            thread_binding.cloned(),
-            annotations.clone(),
+            body,
+            thread_binding,
+            annotations,
             step,
         ))
     }
@@ -767,7 +783,7 @@ impl For {
         kind: ForKind,
         body: Stmt,
         thread_binding: Option<IterVar>,
-        annotations: AnyMap<String>,
+        annotations: Map<String, Any>,
         step: Option<Expr>,
     ) -> Self {
         Self {
@@ -869,20 +885,28 @@ impl std::ops::Deref for PrimFuncObj {
 
 impl AssertStmt {
     /// Construct a leaf assertion directly in Rust with one string message part.
-    pub fn new(condition: &Expr, error_kind: &str, message: &str) -> Result<Self> {
+    pub fn new<C>(condition: C, error_kind: &str, message: &str) -> Result<Self>
+    where
+        C: Into<Expr>,
+    {
         let error_kind = StringImm::new(error_kind);
         let message = StringImm::new(message);
-        Self::with_metadata(condition, &error_kind, vec![message], None)
+        Self::with_metadata(condition, error_kind, vec![message], None)
     }
 
     /// Construct an assertion from all fields accepted by the C++ constructor.
-    pub fn with_metadata(
-        condition: &Expr,
-        error_kind: &StringImm,
+    pub fn with_metadata<C, K>(
+        condition: C,
+        error_kind: K,
         message_parts: Vec<StringImm>,
         span: Option<&Span>,
-    ) -> Result<Self> {
-        let dtype = primitive_type(condition, "AssertStmt condition")?.dtype;
+    ) -> Result<Self>
+    where
+        C: Into<Expr>,
+        K: Into<StringImm>,
+    {
+        let condition = condition.into();
+        let dtype = primitive_type(&condition, "AssertStmt condition")?.dtype;
         if dtype.code != DLDataTypeCode::kDLBool as u8 {
             return Err(Error::new(
                 TYPE_ERROR,
@@ -895,8 +919,8 @@ impl AssertStmt {
         }
         Ok(Self::from_complete_fields(
             span.cloned(),
-            condition.clone(),
-            error_kind.clone(),
+            condition,
+            error_kind.into(),
             Array::new(message_parts),
         ))
     }
@@ -978,33 +1002,37 @@ impl PrimFunc {
     {
         let attrs = DictAttrs::empty();
         let ret_type = crate::ir::Type::missing();
-        Self::with_metadata(params, body, &ret_type, &attrs, None)
+        Self::with_metadata(params, body, ret_type, attrs, None)
     }
 
     /// Construct a PrimFunc in Rust after deriving type metadata through its reflected method.
-    pub fn with_metadata<S>(
+    pub fn with_metadata<S, T, A>(
         params: Vec<Var>,
         body: S,
-        ret_type: &crate::ir::Type,
-        attrs: &DictAttrs,
+        ret_type: T,
+        attrs: A,
         span: Option<&Span>,
     ) -> Result<Self>
     where
         S: Into<Stmt>,
+        T: Into<crate::ir::Type>,
+        A: Into<DictAttrs>,
     {
         let body: Stmt = body.into();
+        let ret_type = ret_type.into();
+        let attrs = attrs.into();
         let params = Array::new(params);
         let prepared = crate::abi::prepare_constructor::<PrimFuncObj>(&[
             AnyView::from(&params),
             AnyView::from(&body),
-            AnyView::from(ret_type),
+            AnyView::from(&ret_type),
         ])?;
         let ret_type = crate::abi::prepared_field(&prepared, PrimFuncObj::TYPE_KEY, "ret_type")?;
         let function_type = crate::abi::prepared_field(&prepared, PrimFuncObj::TYPE_KEY, "ty")?;
         Ok(Self::from_complete_fields(
             span.cloned(),
             function_type,
-            attrs.clone(),
+            attrs,
             params,
             ret_type,
             body,
@@ -1050,7 +1078,9 @@ crate::abi::impl_object_upcast!(
     PrimFunc => crate::ir::BaseFunc,
     PrimFunc => Expr,
 );
-crate::abi::impl_object_borrow_to_owned!(Stmt);
+crate::abi::impl_object_borrow_to_owned!(
+    Stmt, Add, Sub, Mul, StringImm, AssertStmt, Evaluate, SeqStmt, IfThenElse, For, PrimFunc,
+);
 
 crate::abi::impl_rust_allocatable!(
     AddObj,
