@@ -138,7 +138,8 @@ class IRModuleNode : public ffi::Object {
         .def_ro("global_var_map_", &IRModuleNode::global_var_map_)
         .def_ro("source_map", &IRModuleNode::source_map)
         .def_ro("attrs", &IRModuleNode::attrs)
-        .def_ro("global_infos", &IRModuleNode::global_infos);
+        .def_ro("global_infos", &IRModuleNode::global_infos)
+        .def_complete_layout();
     // register custom structural equal and hash.
     refl::TypeAttrDef<IRModuleNode>()
         .def("__s_equal__", &IRModuleNode::SEqual)

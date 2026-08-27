@@ -52,7 +52,7 @@ class TupleNode : public ExprNode {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<TupleNode>().def_ro("fields", &TupleNode::fields);
+    refl::ObjectDef<TupleNode>().def_ro("fields", &TupleNode::fields).def_complete_layout();
   }
 
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("ir.Tuple", TupleNode, ExprNode);
@@ -333,8 +333,9 @@ class VarNode : public ExprNode {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<VarNode>().def_ro("name", &VarNode::name,
-                                      refl::AttachFieldFlag::SEqHashIgnore());
+    refl::ObjectDef<VarNode>()
+        .def_ro("name", &VarNode::name, refl::AttachFieldFlag::SEqHashIgnore())
+        .def_complete_layout();
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindFreeVar;
@@ -375,7 +376,9 @@ class GlobalVarNode : public ExprNode {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<GlobalVarNode>().def_ro("name_hint", &GlobalVarNode::name_hint);
+    refl::ObjectDef<GlobalVarNode>()
+        .def_ro("name_hint", &GlobalVarNode::name_hint)
+        .def_complete_layout();
     // A GlobalVar identifies a module-level symbol.  Its type is derived from the
     // corresponding function definition and is not part of the symbol identity.
     refl::TypeAttrDef<GlobalVarNode>()
@@ -436,7 +439,8 @@ class CallNode : public ExprNode {
         .def_ro("op", &CallNode::op)
         .def_ro("args", &CallNode::args)
         .def_ro("attrs", &CallNode::attrs)
-        .def_ro("ty_args", &CallNode::ty_args);
+        .def_ro("ty_args", &CallNode::ty_args)
+        .def_complete_layout();
   }
 
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("ir.Call", CallNode, ExprNode);
@@ -465,7 +469,7 @@ class IntImmNode : public ExprNode {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<IntImmNode>().def_ro("value", &IntImmNode::value);
+    refl::ObjectDef<IntImmNode>().def_ro("value", &IntImmNode::value).def_complete_layout();
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("ir.IntImm", IntImmNode, ExprNode);
 };
@@ -572,7 +576,8 @@ class RangeNode : public ffi::Object {
     refl::ObjectDef<RangeNode>()
         .def_ro("min", &RangeNode::min)
         .def_ro("extent", &RangeNode::extent)
-        .def_ro("span", &RangeNode::span, refl::AttachFieldFlag::SEqHashIgnore());
+        .def_ro("span", &RangeNode::span, refl::AttachFieldFlag::SEqHashIgnore())
+        .def_complete_layout();
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;

@@ -29,14 +29,19 @@ supplied by `tvm-ffi`, or recorded as an explicit ABI blocker.
 The prototype now exercises the object ABI in both directions.  For ordinary
 data nodes, Rust declares the complete `#[repr(C)]` layout, reads fields
 directly, and allocates through an `ObjectLayout`- and
-`RustAllocatable`-checked wrapper around `ObjectArc::new`; C++ can consume those allocations
+`RustAllocatable`-checked wrapper around `ObjectArc::new`; before allocation,
+the wrapper checks the native completeness certificate, alignment, finality,
+and exact layout fingerprint. C++ can consume those allocations
 because the object header, field layout, reference counting, and deleter all
 follow the shared TVM FFI ABI. Complete-field Rust allocation is separate from
 a convenience `new()`: the latter additionally needs generated validation,
 defaults, normalization, and derived-field recipes. A packed C++ constructor is
-not considered a final stubgen implementation. The formerly polymorphic
-`Layout`, `PrimExprConvertible`, and `DataProducer` bases now use tvm-ffi's
-registered type methods, and semantic constructors use a reflected static
+not considered a final stubgen implementation. Polymorphic `Layout`,
+`PrimExprConvertible`, and `DataProducer` objects remain opaque, preserving
+their native virtual ABI; registry-owned `Axis`, interned `SourceName`, the
+STL-backed `Source`, and the `Type::Missing` singleton likewise reuse their
+existing native operations. Reflected fields and type methods provide Rust
+access without changing those C++ semantics. Semantic constructors use a reflected static
 preparation method that never allocates the final node. C++ registers these
 methods with `ObjectDef::def` or `def_static`, while Rust finds them with
 `Function::from_type_method`; argument conversion, result ownership, and error
@@ -106,11 +111,12 @@ test surface becomes immutable only after the golden-reference freeze gate in
 [`BINDING_CONTRACT.md`](BINDING_CONTRACT.md) passes.
 [`tests/binding_contract.rs`](tests/binding_contract.rs) separately checks the
 runtime metadata contract of every object wrapper currently handwritten by the
-prototype. For every ABI-complete object it compares total size and each
-reflected direct field's offset, size, and alignment, plus the exact field
-schema, flags, and registered defaults. Authoritative native total alignment
-and proof of unreflected-field coverage remain inputs for the planned
-build-generated layout manifest.
+prototype. For every ABI-complete object it requires an explicit native
+completeness certificate and compares total size, alignment, finality,
+fingerprint, and each reflected direct field's offset, size, and alignment,
+plus the exact field schema, flags, and registered defaults. Polymorphic,
+registry-owned, interned, and STL-backed types are checked to remain opaque and
+uncertified for direct Rust allocation.
 
 See [BINDING_CONTRACT.md](BINDING_CONTRACT.md) for the correctness standard and
 [STUBGEN_FEEDBACK.md](STUBGEN_FEEDBACK.md) for the concrete generator, runtime,
@@ -119,19 +125,17 @@ and metadata requirements found by the experiment.
 ## Current design verdict
 
 For the exact TVM/tvm-ffi build used to generate and test it, the handwritten
-surface is now a suitable golden Rust API: complete nodes allocate in Rust,
-fields borrow directly, semantic constructors do not use packed C++
-constructors, and language-specific behavior crosses only registered tvm-ffi
-type methods. The acceptance tests cover both object origins and all four structural
+surface is now a suitable golden Rust API: certified complete nodes allocate in
+Rust, fields borrow directly, semantic constructors use machine-readable
+preparation recipes, and native semantic blockers retain their identity,
+resource ownership, or virtual ABI behind opaque wrappers. The acceptance tests cover both object origins and all four structural
 APIs.
 
 This repository is not yet the one-command generator itself.  Reaching that
-state still requires `RustGenerator` in `tvm-ffi-stubgen`, a build-generated
-native-layout/finality/blocker manifest with matching runtime fingerprints,
-machine-readable constructor recipes, and the remaining reusable
-`RValueRef<T>` packed-argument support.  Until the runtime layout fingerprint
-check exists, direct allocation is supported only against the exact library
-build validated with this golden reference.
+state still requires `RustGenerator` in `tvm-ffi-stubgen`, extraction of the
+new native layout and constructor-recipe attributes into generated Rust, enum
+metadata, and reviewed semantic recipe templates. Reusable `RValueRef<T>`
+support and runtime fingerprint validation are already implemented and tested.
 
 Build TVM first, ensure `tvm-ffi-config` resolves that build, and run:
 

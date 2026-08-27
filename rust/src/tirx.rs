@@ -856,7 +856,7 @@ crate::abi::impl_object_layout!(PrimFuncObj: BaseFuncObj {
 });
 
 impl crate::abi::ConstructorRecipe for PrimFuncObj {
-    const NUM_INPUTS: usize = 3;
+    const INPUTS: &'static [&'static str] = &["params", "body", "ret_type"];
     const DERIVED_FIELDS: &'static [&'static str] = &["ret_type", "ty"];
 }
 

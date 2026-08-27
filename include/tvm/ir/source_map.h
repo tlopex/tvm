@@ -31,6 +31,7 @@
 #include <fstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace tvm {
 
@@ -100,7 +101,8 @@ class SpanNode : public ffi::Object {
         .def_ro("line", &SpanNode::line)
         .def_ro("column", &SpanNode::column)
         .def_ro("end_line", &SpanNode::end_line)
-        .def_ro("end_column", &SpanNode::end_column);
+        .def_ro("end_column", &SpanNode::end_column)
+        .def_complete_layout();
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
@@ -160,15 +162,14 @@ class SourceNode : public ffi::Object {
   /*! \brief The raw source. */
   ffi::String source;
 
-  /*! \brief Flattened pairs of byte offsets and line lengths. */
-  ffi::Array<int64_t> line_map;
+  /*! \brief A mapping of line breaks into the raw source. */
+  std::vector<std::pair<int, int>> line_map;
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<SourceNode>()
         .def_ro("source_name", &SourceNode::source_name)
-        .def_ro("source", &SourceNode::source)
-        .def_ro("line_map", &SourceNode::line_map);
+        .def_ro("source", &SourceNode::source);
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("ir.Source", SourceNode, ffi::Object);
 };
@@ -195,7 +196,9 @@ class SourceMapObj : public ffi::Object {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<SourceMapObj>().def_ro("source_map", &SourceMapObj::source_map);
+    refl::ObjectDef<SourceMapObj>()
+        .def_ro("source_map", &SourceMapObj::source_map)
+        .def_complete_layout();
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;

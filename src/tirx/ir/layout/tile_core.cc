@@ -180,7 +180,7 @@ ffi::Map<ffi::String, PrimExpr> TileLayoutNode::Apply(const ffi::Array<PrimExpr>
     return grouped->Apply(per_shard_coords);
   }
   // Fallback: flatten across input shape then split against shard shape.
-  return Apply(FlattenCoord(coord, shape));
+  return LayoutNode::Apply(coord, shape);
 }
 
 ffi::Map<ffi::String, PrimExpr> TileLayoutNode::Apply(Array<PrimExpr> coord) const {

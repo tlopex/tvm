@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 #include <tvm/ffi/function.h>
+#include <tvm/ffi/reflection/accessor.h>
 #include <tvm/ir/base_expr.h>
 #include <tvm/tirx/buffer.h>
 #include <tvm/tirx/layout.h>
@@ -94,12 +95,12 @@ TEST(IRReflectedMethod, EveryConcreteBehaviorSubtypeRegistersRequiredMethods) {
        "is_tile_inner", "is_tile_outer", "is_direct_sum_right", "is_direct_sum_left"});
 }
 
-TEST(IRReflectedMethod, SemanticConstructorsRegisterStaticPreparationMethod) {
-  for (std::string_view type_key : {"tirx.Axis", "tirx.BufferType", "tirx.PrimFunc",
-                                    "relax.expr.Function", "tirx.MatchBufferRegion"}) {
+TEST(IRReflectedMethod, RustAllocatedSemanticConstructorsRegisterPreparationMethod) {
+  for (std::string_view type_key :
+       {"tirx.BufferType", "tirx.PrimFunc", "relax.expr.Function", "tirx.MatchBufferRegion"}) {
     SCOPED_TRACE(std::string(type_key));
     const TVMFFITypeInfo* info = TVMFFIGetTypeInfo(tvm::ffi::TypeKeyToIndex(type_key));
     ASSERT_NE(info, nullptr);
-    RequireMethod(info, "__ffi_prepare__", true);
+    RequireMethod(info, tvm::ffi::reflection::type_attr::kPrepare, true);
   }
 }

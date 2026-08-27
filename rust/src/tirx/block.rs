@@ -19,8 +19,8 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, Array, DLDataTypeCode, Error, Map, ObjectArc, ObjectRefCast, Result, String, TYPE_ERROR,
-    VALUE_ERROR,
+    Any, Array, DLDataTypeCode, Error, FieldGetter, Map, ObjectArc, ObjectCore, ObjectRefCast,
+    Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
 use super::{primitive_type, BufferRegion, MatchBufferRegion, Stmt, StmtObj};
@@ -72,26 +72,17 @@ impl TryFrom<i64> for IterVarType {
     }
 }
 
-/// ABI-complete Rust representation of a TIR block iteration variable.
+/// Opaque Rust representation of a polymorphic TIR block iteration variable.
+///
+/// The native class carries a C++ vtable, so Rust accesses its reflected fields
+/// and asks the native constructor to allocate it instead of reproducing its bytes.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.IterVar"]
 #[type_final]
 pub struct IterVarObj {
     base: PrimExprConvertibleObj,
-    pub dom: Option<Range>,
-    pub var: Var,
-    pub iter_type: IterVarType,
-    pub thread_tag: String,
-    pub span: Option<Span>,
 }
-crate::abi::impl_object_layout!(IterVarObj: PrimExprConvertibleObj {
-    "dom" => dom: Option<Range>,
-    "var" => var: Var,
-    "iter_type" => iter_type: IterVarType,
-    "thread_tag" => thread_tag: String,
-    "span" => span: Option<Span>,
-});
 
 /// Reference-counted handle to a block iteration variable.
 #[repr(C)]
@@ -117,7 +108,35 @@ impl std::ops::Deref for IterVarObj {
 }
 
 impl IterVar {
-    /// Construct an untagged iteration variable directly in Rust.
+    fn field<T>(&self, name: &str) -> Result<T>
+    where
+        T: TryFrom<Any, Error = Error>,
+    {
+        FieldGetter::new(IterVarObj::type_index(), name)?.get(&**self)
+    }
+
+    pub fn dom(&self) -> Result<Option<Range>> {
+        self.field("dom")
+    }
+
+    pub fn var(&self) -> Result<Var> {
+        self.field("var")
+    }
+
+    pub fn iter_type(&self) -> Result<IterVarType> {
+        let raw: i64 = self.field("iter_type")?;
+        IterVarType::try_from(raw)
+    }
+
+    pub fn thread_tag(&self) -> Result<String> {
+        self.field("thread_tag")
+    }
+
+    pub fn span(&self) -> Result<Option<Span>> {
+        self.field("span")
+    }
+
+    /// Construct an untagged iteration variable through its native constructor.
     pub fn new<D, V>(domain: D, variable: V, iter_type: IterVarType) -> Result<Self>
     where
         D: Into<Range>,
@@ -136,37 +155,15 @@ impl IterVar {
         span: Option<&Span>,
     ) -> Result<Self> {
         validate_iter_var(domain.as_ref(), &variable)?;
-        Ok(Self::from_complete_fields(
-            domain,
-            variable,
-            iter_type,
-            String::from(thread_tag),
-            span.cloned(),
-        ))
-    }
-
-    /// Construct an iteration variable from every physical field.
-    ///
-    /// A missing domain is valid for some thread axes and must remain
-    /// representable by generated bindings even though [`IterVar::new`] uses a
-    /// concrete range for convenience.
-    pub fn from_complete_fields(
-        dom: Option<Range>,
-        var: Var,
-        iter_type: IterVarType,
-        thread_tag: String,
-        span: Option<Span>,
-    ) -> Self {
-        Self {
-            data: crate::abi::allocate_object(IterVarObj {
-                base: PrimExprConvertibleObj::new(),
-                dom,
-                var,
-                iter_type,
-                thread_tag,
-                span,
-            }),
-        }
+        tvm_ffi::cached_global_func!("tirx.IterVar")
+            .call_tuple((
+                domain,
+                variable,
+                i64::from(iter_type.as_raw()),
+                String::from(thread_tag),
+                span.cloned(),
+            ))?
+            .try_into()
     }
 }
 
@@ -446,4 +443,4 @@ tvm_ffi::impl_object_upcast!(
     SBlockRealize => Stmt,
 );
 
-crate::abi::impl_rust_allocatable!(IterVarObj, SBlockObj, SBlockRealizeObj);
+crate::abi::impl_rust_allocatable!(SBlockObj, SBlockRealizeObj);

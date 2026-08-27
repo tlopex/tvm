@@ -236,7 +236,7 @@ class BaseFuncNode : public ExprNode {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<BaseFuncNode>().def_ro("attrs", &BaseFuncNode::attrs);
+    refl::ObjectDef<BaseFuncNode>().def_ro("attrs", &BaseFuncNode::attrs).def_complete_layout();
   }
 
   static constexpr const uint32_t _type_child_slots = 2;

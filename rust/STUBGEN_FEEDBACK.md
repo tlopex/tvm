@@ -112,10 +112,9 @@ For a directly constructible node, generate:
 - no cloning getter boilerplate and no second reflection-backed field path;
 - no unconditional `DerefMut`, because two reference wrappers may share one
   allocation; mutation belongs in structural mutation or a checked COW API;
-- no public standalone allocator for a behavior-only base: after replacing a
-  C++ abstract vtable with type-registered reflected methods, keep the base native
-  constructor protected and publish no reflection creator; only concrete types
-  that register the table may be allocated;
+- no Rust allocator for a polymorphic base or concrete subclass: reflected
+  methods may provide Rust access, but they do not reproduce a compiler-owned
+  vptr or authorize a C++ ABI migration;
 - a direct Rust constructor only when its full validation/default logic is
   known and reproduced;
 - one lossless complete-field allocation path for every ABI-complete concrete
@@ -123,10 +122,9 @@ For a directly constructible node, generate:
   `from_complete_fields(...)` when the type already has a reviewed semantic
   `new(...)`; names such as `with_span` and `with_metadata` are semantic
   convenience APIs, never substitutes for this uniform generated entry;
-- internal visibility for that lossless allocator when raw fields encode an
-  external identity invariant; for example, `Axis` exposes only `get(name)`
-  publicly because a caller-chosen name/index pair could address the wrong C++
-  registry entry;
+- no generated allocator when raw fields encode an external identity invariant;
+  for example, `Axis` exposes `get(name)` through TVM's existing registry lookup
+  instead of creating a second object with a copied registry index;
 - complete-construction parameters use the exact stored Rust field types and
   take them by value (`String`, `Array<T>`, `Option<T>`, and object handles),
   so moving a field performs no hidden clone, conversion, or allocation;
@@ -140,9 +138,9 @@ For a directly constructible node, generate:
   `RustAllocatable`, so neither an opaque wrapper nor a layout-only base prefix
   can accidentally be constructed merely because it has an object header;
 - a generated `ConstructorRecipe` contract for each preparation-backed
-  constructor. It records input arity and the complete returned field-key set,
-  and the runtime helper rejects a native method result that differs instead of
-  silently ignoring new derived state.
+  constructor. It records ordered input names and the complete returned
+  field-key set, and the runtime helper compares it with the native type
+  attribute before calling the preparation method.
 
 The generator cannot recover complete physical layout from reflection alone.
 It needs a layout source derived from C++ declarations or an explicitly curated
@@ -238,36 +236,40 @@ must not rediscover C++ layout or constructor semantics while formatting Rust.
 
 ## Constructor classification
 
-Direct Rust allocation is the target. Classification determines what input the
-generator needs; it does not authorize a packed C++ constructor fallback:
+Direct Rust allocation is the target for ordinary ABI-complete data nodes.
+Classification also identifies native semantic blockers that must reuse an
+existing TVM operation:
 
 | Class | Examples | Generated behavior |
 | --- | --- | --- |
 | Plain data node | `Span`, `Range`, `Var`, `IntImm`, `Add`, `Evaluate`, `VarBinding`, `SBlock` | complete layout and direct Rust allocation |
 | Plain node with local validation | integer literals, binary ops, `SeqStmt`, `SBlockRealize` | direct allocation plus equivalent Rust validation |
-| Shared registry metadata | `Axis` | call the registered reflected constructor-preparation method, then allocate the final handle in Rust |
-| Cross-origin value key | `SourceName` | allocate in Rust and define equality/hash by immutable value rather than allocation identity or a language-local cache |
-| Former C++ polymorphic base | `Layout`, `PrimExprConvertible`, `DataProducer` | remove the C++ vptr and dispatch behavior through tvm-ffi's reflected type methods |
-| Former hidden STL storage | `Source` | replace it with an ABI-shareable field representation and allocate in Rust |
+| Native registry identity | `Axis` | emit an opaque wrapper and call the existing `tirx.AxisGet` singleton lookup |
+| Native interned identity | `SourceName` | emit an opaque wrapper and call the existing `ir.SourceName` lookup |
+| C++ polymorphic hierarchy | `Layout`, `PrimExprConvertible`, `DataProducer`, `IterVar`, `BufferRegion` | preserve the virtual ABI, emit opaque Rust wrappers, and allocate concrete objects through existing native constructors |
+| Native STL storage | `Source` | keep the node opaque and construct it through the existing `SourceMapAdd` operation |
 | Complex semantic constructor | `PrimFunc`, Relax `Function`, match buffer | call a reflected static preparation method for analysis/validation, then allocate complete fields in Rust |
 | Build-dependent defaults | `BufferType` | read normalized physical fields through its reflected static preparation method, then allocate in Rust |
 | Derived mutable state | `IRModule` | rebuild and validate derived indexes in generated Rust code |
 
-`Type::Missing`, `PrimType`, `TupleType`, `For`, `BufferType`, buffer load/store,
-Relax `Tuple`, and `IRModule` now demonstrate that these formerly classified
-exceptions can be Rust-native once their semantics are made explicit.
+`PrimType`, `TupleType`, `For`, `BufferType`, buffer load/store, Relax `Tuple`,
+and `IRModule` demonstrate that many former exceptions can be Rust-native once
+their semantics are made explicit. `Type::Missing` deliberately remains the
+native singleton.
 
 ## Language-neutral behavior and constructor preparation
 
-The handwritten IR constructors no longer call packed global constructors or
-maintain custom raw vtables. They reuse tvm-ffi's per-type method table:
+Ordinary ABI-complete constructors do not call packed global constructors or
+maintain custom raw vtables. Registry, interning, STL, and polymorphic blockers
+reuse existing native operations, while Rust behavior access reuses tvm-ffi's
+per-type method table:
 
 | Reflected method | Purpose | Final allocation |
 | --- | --- | --- |
-| static `__ffi_prepare__` | validate inputs and return a uniform `Map<String, Any>` of derived physical fields for `Axis`, `BufferType`, `PrimFunc`, Relax `Function`, and `MatchBufferRegion` | Rust |
+| static `__ffi_prepare__` | validate inputs and return a uniform `Map<String, Any>` of derived physical fields for `BufferType`, `PrimFunc`, Relax `Function`, and `MatchBufferRegion` | Rust |
 | `to_prim_expr` | convert `IterVar`, `BufferRegion`, or `Tensor` | Rust receives an owning result through the normal `ffi.Function` ABI |
-| `Layout` methods | dispatch all layout operations without a C++ virtual table | Rust-created layouts remain ordinary FFI objects |
-| `DataProducer` methods | dispatch shape, element type, and name queries without a C++ virtual table | Rust receives normal tvm-ffi values |
+| `Layout` methods | provide a parallel Rust-visible entry while C++ retains virtual dispatch | layouts remain native-owned opaque objects |
+| `DataProducer` methods | expose shape, element type, and name queries to Rust while C++ retains virtual dispatch | Rust receives normal tvm-ffi values |
 
 C++ registers these methods with `ObjectDef::def` or `def_static`. Rust looks
 them up with `Function::from_type_method`, so tvm-ffi owns method storage,
@@ -276,23 +278,24 @@ contract is the semantic method name and its typed signature; there are no
 handwritten ABI structs, version fields, opaque pointers, or raw `TVMFFIAny`
 converters. A constructor preparation method is not an allocator: it returns
 validation/derived data and Rust performs the final node allocation. Generated
-recipes still publish the expected input count and derived-field names, which
-detects stale bindings when the native constructor semantics change.
+recipes publish ordered input names and derived-field names in a type
+attribute, which detects stale bindings when native constructor semantics
+change.
 
 The tests exercise both directions: Rust calls reflected methods on native and
 Rust-created objects, while C++ entry points inspect and transform Rust-created
-objects through the same tvm-ffi object ABI.
+ordinary nodes through the same tvm-ffi object ABI. Identity- and
+resource-owning blockers are separately checked to remain native objects.
 
 Calls that execute passes, structural protocols, and container runtime
 operations remain cross-language services. They are not hidden implementations
 of generated IR constructors.
 
-Moving a native virtual interface to reflected type methods is a coordinated C++
-ABI migration, not work that Rust stubgen can perform by itself.  Every
-concrete native subclass must register all required methods, and an
-out-of-tree subclass that previously overrode the virtual methods must migrate
-at the same time. The method table makes future objects language-neutral; it does
-not preserve binary compatibility with the former C++ vtable layout.
+Adding reflected type methods is not a C++ ABI migration. Existing virtual
+interfaces remain intact for native and out-of-tree subclasses; the reflected
+entry is an additional language-neutral route for Rust. Stubgen must keep such
+types opaque until a separate, explicitly reviewed ABI migration removes their
+vptr.
 
 ## Runtime support learned from the experiment
 
@@ -317,11 +320,9 @@ The same Rust reference wrapper must accept both origins:
 Generated safe direct construction must be disabled for incomplete layouts.
 Creating a header-only Rust allocation and labeling it as a larger native type
 is unsound even if field access is done through reflection. A native virtual
-base must first be converted to reflected behavior methods, as done for
-`Layout`, `PrimExprConvertible`, and `DataProducer`. Removing the virtual
-functions is not enough by itself: the former abstract base must remain
-non-instantiable, otherwise reflection can create an empty object that has no
-behavior methods.
+base and its concrete subclasses remain opaque even when reflected behavior
+methods exist. Those methods make behavior callable; they do not make the
+compiler-owned object layout constructible in Rust.
 
 ### Consuming packed arguments
 
@@ -335,20 +336,15 @@ copy path. Generated pass wrappers should use this standard holder.
 
 The current experiment still needs explicit decisions for:
 
-- publishing C++ `_type_final` in language-independent metadata;
-- obtaining complete physical layout, including unreflected fields and
-  identifying native vptr/STL blockers and C++ base-tail-padding reuse that
-  require an ABI refactor or an opaque binding;
-- publishing the corresponding per-type layout fingerprint at runtime so a
-  generated crate cannot allocate against a different native layout;
-- constructor parameter type schemas, names, nullability/defaults, and
-  validation semantics; preparation output shape is now fixed, but stubgen
-  still needs machine-readable input recipes and the set of derived field keys;
+- extracting `__ffi_native_object_layout__` certificates and explicit opaque
+  blockers into generated Rust rather than handwritten `ObjectLayout` impls;
+- constructor parameter type schemas, nullability/defaults, and validation
+  semantics; ordered input names and derived keys are now machine-readable;
 - build-configuration values used by constructor defaults;
 - enum names and values, including their underlying C++ width; generated
   bindings represent these as open integer newtypes rather than closed Rust
   enums;
-- `RValueRef<T>` code generation.
+- `RValueRef<T>` code generation (the reusable runtime holder already exists).
 
 These gaps require metadata, reviewed recipes, or an ABI refactor. They are not
 permission for stubgen to guess or to hide allocation behind a packed global.
@@ -356,14 +352,11 @@ permission for stubgen to guess or to hide allocation behind a packed global.
 ## Layout evidence
 
 Each ABI-complete Rust object implements the hidden `ObjectLayout` contract.
-The current conformance test compares total size and every reflected direct
-field's offset, size, and alignment with native runtime metadata, and checks
-Rust alignment against the value implied by the parent and those fields. That
-is enough to catch errors in the selected handwritten slice, whose physical
-members are all registered, but it is not authoritative generation input:
-runtime metadata does not publish type-level C++ alignment or prove that no
-member is unreflected. The build-generated native-layout section must supply
-those facts and explicitly mark vptr/STL/unreflected blockers.
+The current conformance test requires `ObjectDef::def_complete_layout()` and
+compares total size, native alignment, finality, field layouts, and the runtime
+fingerprint. The opt-in certifies complete reflection coverage and rejects
+polymorphic C++ classes at compile time. Types without that certificate are
+opaque blockers; stubgen must not infer completeness from their fields.
 
 ## Structural-pass lessons
 
@@ -401,10 +394,11 @@ IR surface they consume, not generate those transformations.
 ## Recommended implementation order
 
 1. Add a reliable C++-layout input and generate the minimal complete structs.
-2. Always generate a lossless complete-field Rust allocator for ABI-complete
-   nodes.
-3. Generate semantic recipes first for `Type::Missing`, `PrimType`, `Var`,
-   `IntImm`, `Add`, `Evaluate`, `For`, buffers, tuples, and modules.
+2. Generate a lossless complete-field Rust allocator only for ABI-complete
+   nodes whose constructor classification permits Rust ownership.
+3. Generate semantic recipes first for `PrimType`, `Var`, `IntImm`, `Add`,
+   `Evaluate`, `For`, buffers, tuples, and modules; emit native-operation
+   wrappers for `Type::Missing`, `Axis`, `SourceName`, and `Source`.
 4. Run `tests/stubgen_acceptance.rs` unchanged, including the C++-getter-on-Rust
    allocation test.
 5. Generate heterogeneous fields as `Map<K, Any>` and other container fields

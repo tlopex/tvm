@@ -128,7 +128,11 @@ class BufferTypeNode : public TypeNode {
         .def_ro("offset_factor", &BufferTypeNode::offset_factor)
         .def_ro("layout", &BufferTypeNode::layout)
         .def_ro("allocated_addr", &BufferTypeNode::allocated_addr)
-        .def_static("__ffi_prepare__", &BufferTypeNode::PrepareFFI);
+        .def_static(refl::type_attr::kPrepare, &BufferTypeNode::PrepareFFI)
+        .def_constructor_recipe(
+            {"storage_scope", "shape", "elem_offset", "data_alignment", "offset_factor"},
+            {"storage_scope", "elem_offset", "data_alignment", "offset_factor"})
+        .def_complete_layout();
   }
 
   /*! \return preferred index type for this buffer node */

@@ -19,8 +19,9 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Function, Map,
-    ObjectArc, ObjectRefCast, ObjectRefCore, Result, String, TYPE_ERROR, VALUE_ERROR,
+    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, FieldGetter, Function,
+    Map, ObjectArc, ObjectCore, ObjectRefCast, ObjectRefCore, Result, String, TYPE_ERROR,
+    VALUE_ERROR,
 };
 
 /// ABI-complete Rust representation of TVM's `ExprNode` prefix.
@@ -177,18 +178,14 @@ impl std::ops::Deref for VarObj {
     }
 }
 
-/// ABI-complete Rust representation of a TVM source name.
+/// Opaque Rust representation of an interned TVM source name.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.SourceName"]
 #[type_final]
 pub struct SourceNameObj {
     base: tvm_ffi::Object,
-    pub name: String,
 }
-crate::abi::impl_object_layout!(SourceNameObj {
-    "name" => name: String,
-});
 
 /// Reference-counted handle to a source name.
 #[repr(C)]
@@ -206,41 +203,30 @@ impl std::ops::Deref for SourceName {
 }
 
 impl SourceName {
-    /// Allocate a source name directly in Rust.
-    ///
-    /// Source names compare and hash by text across language boundaries, so
-    /// correctness does not depend on allocation identity or an interning cache.
-    pub fn get(name: &str) -> Self {
-        Self::from_complete_fields(String::from(name))
+    /// Return the interned native source name for `name`.
+    pub fn get(name: &str) -> Result<Self> {
+        tvm_ffi::cached_global_func!("ir.SourceName")
+            .call_tuple((String::from(name),))?
+            .try_into()
     }
 
-    /// Allocate a source name directly from its complete physical state.
-    pub fn from_complete_fields(name: String) -> Self {
-        Self {
-            data: crate::abi::allocate_object(SourceNameObj {
-                base: tvm_ffi::Object::new(),
-                name,
-            }),
-        }
+    /// Return the source name text through native reflection.
+    pub fn name(&self) -> Result<String> {
+        FieldGetter::new(SourceNameObj::type_index(), "name")?.get(&**self)
     }
 }
 
-/// ABI-complete Rust representation of TVM's `SourceNode`.
+/// Opaque Rust representation of TVM's `SourceNode`.
+///
+/// The native node owns a `std::vector` line index, so Rust must not reproduce
+/// or directly allocate its physical layout.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "ir.Source"]
 #[type_final]
 pub struct SourceObj {
     base: tvm_ffi::Object,
-    pub source_name: SourceName,
-    pub source: String,
-    pub line_map: Array<i64>,
 }
-crate::abi::impl_object_layout!(SourceObj {
-    "source_name" => source_name: SourceName,
-    "source" => source: String,
-    "line_map" => line_map: Array<i64>,
-});
 
 /// Reference-counted handle to one program source fragment.
 #[repr(C)]
@@ -257,79 +243,22 @@ impl std::ops::Deref for Source {
     }
 }
 
-impl SourceObj {
-    /// Return the one-based source line requested by `line`.
-    pub fn get_line(&self, line: usize) -> Result<String> {
-        let pair_index = line
-            .checked_sub(1)
-            .and_then(|line| line.checked_mul(2))
-            .filter(|index| {
-                index
-                    .checked_add(1)
-                    .is_some_and(|last| last < self.line_map.len())
-            })
-            .ok_or_else(|| Error::new(VALUE_ERROR, "source line is out of range", ""))?;
-        let start = self
-            .line_map
-            .get(pair_index)
-            .map_err(|_| Error::new(VALUE_ERROR, "source line metadata is incomplete", ""))?;
-        let start = usize::try_from(start)
-            .map_err(|_| Error::new(VALUE_ERROR, "source line offset is negative", ""))?;
-        let length = self
-            .line_map
-            .get(pair_index + 1)
-            .map_err(|_| Error::new(VALUE_ERROR, "source line metadata is incomplete", ""))?;
-        let length = usize::try_from(length)
-            .map_err(|_| Error::new(VALUE_ERROR, "source line length is negative", ""))?;
-        let bytes = self.source.as_str().as_bytes();
-        let end = start
-            .checked_add(length)
-            .filter(|end| *end <= bytes.len())
-            .ok_or_else(|| Error::new(VALUE_ERROR, "source line metadata is invalid", ""))?;
-        let text = std::str::from_utf8(&bytes[start..end])
-            .map_err(|_| Error::new(VALUE_ERROR, "source line is not valid UTF-8", ""))?;
-        Ok(String::from(text))
-    }
-}
-
 impl Source {
-    /// Construct a source fragment and its line index directly in Rust.
-    pub fn new<S>(source_name: S, source: &str) -> Self
+    fn field<T>(&self, name: &str) -> Result<T>
     where
-        S: Into<SourceName>,
+        T: TryFrom<Any, Error = Error>,
     {
-        let mut line_map = Vec::new();
-        let mut start = 0usize;
-        for (index, byte) in source.as_bytes().iter().enumerate() {
-            if *byte == b'\n' {
-                line_map.push(start as i64);
-                line_map.push((index - start) as i64);
-                start = index + 1;
-            }
-        }
-        line_map.push(start as i64);
-        line_map.push((source.len() - start) as i64);
-        Self::from_complete_fields(
-            source_name.into(),
-            String::from(source),
-            Array::new(line_map),
-        )
+        FieldGetter::new(SourceObj::type_index(), name)?.get(&**self)
     }
 
-    /// Construct a source fragment from every physical field without rebuilding its line index.
-    pub fn from_complete_fields(
-        source_name: SourceName,
-        source: String,
-        line_map: Array<i64>,
-    ) -> Self {
-        Self {
-            data: crate::abi::allocate_object(SourceObj {
-                base: tvm_ffi::Object::new(),
-                source_name,
-                source,
-                line_map,
-            }),
-        }
+    /// Return the interned name associated with this native source object.
+    pub fn source_name(&self) -> Result<SourceName> {
+        self.field("source_name")
+    }
+
+    /// Return the native source text.
+    pub fn text(&self) -> Result<String> {
+        self.field("source")
     }
 }
 
@@ -382,14 +311,17 @@ impl SourceMap {
         }
     }
 
-    /// Add a Rust-allocated source fragment to this map.
-    pub fn add(&mut self, name: &str, content: &str) -> SourceName {
-        let source_name = SourceName::get(name);
-        let source = Source::new(source_name.clone(), content);
-        let mut entries = self.source_map.iter().collect::<Vec<_>>();
-        entries.push((source_name.clone(), source));
-        *self = Self::from_map(entries.into_iter().collect());
-        source_name
+    /// Ask TVM to construct and add a native source fragment to this map.
+    pub fn add(&mut self, name: &str, content: &str) -> Result<SourceName> {
+        let name = String::from(name);
+        let content = String::from(content);
+        tvm_ffi::cached_global_func!("SourceMapAdd")
+            .call_packed(&[
+                AnyView::from(&*self),
+                AnyView::from(&name),
+                AnyView::from(&content),
+            ])?
+            .try_into()
     }
 }
 
@@ -483,16 +415,6 @@ fn integer_field_overflow(field: &str, value: i64) -> Error {
 pub struct PrimExprConvertibleObj {
     base: tvm_ffi::Object,
 }
-crate::abi::impl_object_layout!(PrimExprConvertibleObj {});
-
-impl PrimExprConvertibleObj {
-    pub(crate) fn new() -> Self {
-        Self {
-            base: tvm_ffi::Object::new(),
-        }
-    }
-}
-
 /// Reference-counted handle to a primitive-expression-convertible object.
 #[repr(C)]
 #[derive(ObjectRef, Clone)]
@@ -1140,14 +1062,11 @@ impl PrimType {
 impl Type {
     /// Construct TVM's language-independent sentinel for an unavailable static type.
     pub fn missing() -> Self {
-        Self::from_complete_fields(None)
-    }
-
-    /// Construct the exact missing-type sentinel from its complete physical state.
-    pub fn from_complete_fields(span: Option<Span>) -> Self {
-        Self {
-            data: crate::abi::allocate_object(TypeObj::new(span)),
-        }
+        tvm_ffi::cached_global_func!("ir.TypeMissing")
+            .call_tuple(())
+            .expect("native missing-type constructor failed")
+            .try_into()
+            .expect("native missing-type constructor returned the wrong type")
     }
 
     /// Return whether this value is the exact `ir.Type` missing-type sentinel.
@@ -1470,13 +1389,10 @@ impl Default for SourceMap {
 crate::abi::impl_rust_allocatable!(
     GlobalVarObj,
     VarObj,
-    SourceNameObj,
-    SourceObj,
     SourceMapObj,
     SpanObj,
     RangeObj,
     CallObj,
-    TypeObj,
     PrimTypeObj,
     TupleTypeObj,
     IntImmObj,

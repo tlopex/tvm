@@ -96,7 +96,7 @@ class TupleTypeNode : public TypeNode {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<TupleTypeNode>().def_ro("fields", &TupleTypeNode::fields);
+    refl::ObjectDef<TupleTypeNode>().def_ro("fields", &TupleTypeNode::fields).def_complete_layout();
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("ir.TupleType", TupleTypeNode, TypeNode);
 };

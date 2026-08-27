@@ -22,7 +22,6 @@
  */
 #include <tvm/arith/analyzer.h>
 #include <tvm/ffi/function.h>
-#include <tvm/ffi/reflection/accessor.h>
 #include <tvm/ffi/reflection/registry.h>
 #include <tvm/runtime/device_api.h>
 #include <tvm/tirx/analysis.h>
@@ -98,29 +97,7 @@ ffi::Map<ffi::String, ffi::Any> BufferTypeNode::PrepareFFI(ffi::String storage_s
           {"offset_factor", fields.offset_factor}};
 }
 
-TVM_FFI_STATIC_INIT_BLOCK() {
-  namespace refl = tvm::ffi::reflection;
-  refl::ObjectDef<DataProducerNode>();
-  BufferTypeNode::RegisterReflection();
-}
-
-ffi::Array<PrimExpr> DataProducerNode::GetShape() const {
-  return ffi::reflection::GetMethod(GetTypeKey(), "get_shape")
-      .CallExpected<ffi::Array<PrimExpr>>(ffi::GetRef<DataProducer>(this))
-      .value();
-}
-
-PrimType DataProducerNode::GetDataType() const {
-  return ffi::reflection::GetMethod(GetTypeKey(), "get_data_type")
-      .CallExpected<PrimType>(ffi::GetRef<DataProducer>(this))
-      .value();
-}
-
-ffi::String DataProducerNode::GetNameHint() const {
-  return ffi::reflection::GetMethod(GetTypeKey(), "get_name_hint")
-      .CallExpected<ffi::String>(ffi::GetRef<DataProducer>(this))
-      .value();
-}
+TVM_FFI_STATIC_INIT_BLOCK() { BufferTypeNode::RegisterReflection(); }
 
 BufferType::BufferType(ffi::String storage_scope, PrimType dtype, ffi::Array<PrimExpr> shape,
                        ffi::Array<PrimExpr> strides, PrimExpr elem_offset, int data_alignment,

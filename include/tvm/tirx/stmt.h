@@ -51,8 +51,9 @@ class StmtNode : public ffi::Object {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<StmtNode>().def_ro("span", &StmtNode::span,
-                                       refl::AttachFieldFlag::SEqHashIgnore());
+    refl::ObjectDef<StmtNode>()
+        .def_ro("span", &StmtNode::span, refl::AttachFieldFlag::SEqHashIgnore())
+        .def_complete_layout();
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
@@ -171,7 +172,8 @@ class AssertStmtNode : public StmtNode {
     refl::ObjectDef<AssertStmtNode>()
         .def_ro("condition", &AssertStmtNode::condition)
         .def_ro("error_kind", &AssertStmtNode::error_kind)
-        .def_ro("message_parts", &AssertStmtNode::message_parts);
+        .def_ro("message_parts", &AssertStmtNode::message_parts)
+        .def_complete_layout();
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.AssertStmt", AssertStmtNode, StmtNode);
 };
@@ -216,7 +218,8 @@ class BufferStoreNode : public StmtNode {
         .def_ro("buffer", &BufferStoreNode::buffer, refl::AttachFieldFlag::SEqHashDefRecursive())
         .def_ro("value", &BufferStoreNode::value)
         .def_ro("indices", &BufferStoreNode::indices)
-        .def_ro("predicate", &BufferStoreNode::predicate);
+        .def_ro("predicate", &BufferStoreNode::predicate)
+        .def_complete_layout();
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.BufferStore", BufferStoreNode, StmtNode);
 };
@@ -328,7 +331,7 @@ class SeqStmtNode : public StmtNode {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<SeqStmtNode>().def_ro("seq", &SeqStmtNode::seq);
+    refl::ObjectDef<SeqStmtNode>().def_ro("seq", &SeqStmtNode::seq).def_complete_layout();
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.SeqStmt", SeqStmtNode, StmtNode);
 };
@@ -346,7 +349,7 @@ class EvaluateNode : public StmtNode {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<EvaluateNode>().def_ro("value", &EvaluateNode::value);
+    refl::ObjectDef<EvaluateNode>().def_ro("value", &EvaluateNode::value).def_complete_layout();
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.Evaluate", EvaluateNode, StmtNode);
 };
@@ -533,7 +536,8 @@ class IfThenElseNode : public StmtNode {
     refl::ObjectDef<IfThenElseNode>()
         .def_ro("condition", &IfThenElseNode::condition)
         .def_ro("then_case", &IfThenElseNode::then_case)
-        .def_ro("else_case", &IfThenElseNode::else_case);
+        .def_ro("else_case", &IfThenElseNode::else_case)
+        .def_complete_layout();
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.IfThenElse", IfThenElseNode, StmtNode);
 };
@@ -630,7 +634,8 @@ class ForNode : public StmtNode {
         .def_ro("body", &ForNode::body)
         .def_ro("thread_binding", &ForNode::thread_binding)
         .def_ro("annotations", &ForNode::annotations)
-        .def_ro("step", &ForNode::step);
+        .def_ro("step", &ForNode::step)
+        .def_complete_layout();
   }
 
   /*! \brief Check it is a loop without nontrivial loop step. */
@@ -788,7 +793,7 @@ class BufferRegionNode : public PrimExprConvertibleNode {
         .def("to_prim_expr", &BufferRegionNode::ToPrimExpr);
   }
 
-  TVM_DLL PrimExpr ToPrimExpr() const;
+  TVM_DLL PrimExpr ToPrimExpr() const final;
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.BufferRegion", BufferRegionNode, PrimExprConvertibleNode);
@@ -845,7 +850,9 @@ class MatchBufferRegionNode : public ffi::Object {
         .def_ro("buffer", &MatchBufferRegionNode::buffer,
                 refl::AttachFieldFlag::SEqHashDefRecursive())
         .def_ro("source", &MatchBufferRegionNode::source)
-        .def_static("__ffi_prepare__", &MatchBufferRegionNode::PrepareFFI);
+        .def_static(refl::type_attr::kPrepare, &MatchBufferRegionNode::PrepareFFI)
+        .def_constructor_recipe({"buffer", "source"}, {})
+        .def_complete_layout();
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
@@ -925,7 +932,8 @@ class SBlockNode : public StmtNode {
         .def_ro("match_buffers", &SBlockNode::match_buffers)
         .def_ro("annotations", &SBlockNode::annotations)
         .def_ro("init", &SBlockNode::init)
-        .def_ro("body", &SBlockNode::body);
+        .def_ro("body", &SBlockNode::body)
+        .def_complete_layout();
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.SBlock", SBlockNode, StmtNode);
 };
@@ -973,7 +981,8 @@ class SBlockRealizeNode : public StmtNode {
     refl::ObjectDef<SBlockRealizeNode>()
         .def_ro("iter_values", &SBlockRealizeNode::iter_values)
         .def_ro("predicate", &SBlockRealizeNode::predicate)
-        .def_ro("block", &SBlockRealizeNode::block);
+        .def_ro("block", &SBlockRealizeNode::block)
+        .def_complete_layout();
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.SBlockRealize", SBlockRealizeNode, StmtNode);
 };

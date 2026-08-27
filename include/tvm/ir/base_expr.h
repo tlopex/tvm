@@ -60,8 +60,10 @@ class TypeNode : public ffi::Object {
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     // span do not participate in structural equal and hash.
-    refl::ObjectDef<TypeNode>().def_ro("span", &TypeNode::span, refl::DefaultValue(Span()),
-                                       refl::AttachFieldFlag::SEqHashIgnore());
+    refl::ObjectDef<TypeNode>()
+        .def_ro("span", &TypeNode::span, refl::DefaultValue(Span()),
+                refl::AttachFieldFlag::SEqHashIgnore())
+        .def_complete_layout();
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
@@ -125,7 +127,7 @@ class PrimTypeNode final : public TypeNode {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<PrimTypeNode>().def_ro("dtype", &PrimTypeNode::dtype);
+    refl::ObjectDef<PrimTypeNode>().def_ro("dtype", &PrimTypeNode::dtype).def_complete_layout();
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("ir.PrimType", PrimTypeNode, TypeNode);
 };
@@ -319,7 +321,8 @@ class ExprNode : public ffi::Object {
     refl::ObjectDef<ExprNode>()
         .def_ro("span", &ExprNode::span, refl::DefaultValue(Span()),
                 refl::AttachFieldFlag::SEqHashIgnore())
-        .def_ro("ty", &ExprNode::ty, refl::DefaultValue(Type::Missing()));
+        .def_ro("ty", &ExprNode::ty, refl::DefaultValue(Type::Missing()))
+        .def_complete_layout();
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
@@ -436,10 +439,9 @@ class PrimExpr : public TypedExpr<PrimType> {
  * \sa PrimExpr
  */
 class PrimExprConvertibleNode : public ffi::Object {
- protected:
-  PrimExprConvertibleNode() = default;
-
  public:
+  virtual ~PrimExprConvertibleNode() {}
+  virtual PrimExpr ToPrimExpr() const = 0;
   TVM_FFI_DECLARE_OBJECT_INFO("ir.PrimExprConvertible", PrimExprConvertibleNode, ffi::Object);
 };
 
@@ -449,9 +451,6 @@ class PrimExprConvertibleNode : public ffi::Object {
  */
 class PrimExprConvertible : public ffi::ObjectRef {
  public:
-  /*! \brief Convert this object using its type-registered conversion hook. */
-  TVM_DLL PrimExpr ToPrimExpr() const;
-
   TVM_FFI_DEFINE_OBJECT_REF_METHODS_NULLABLE(PrimExprConvertible, ffi::ObjectRef,
                                              PrimExprConvertibleNode);
 };
@@ -552,7 +551,7 @@ struct TypeTraits<PrimExpr>
     return PrimExpr::ConvertFallbackValue(value);
   }
   TVM_FFI_INLINE static PrimExpr ConvertFallbackValue(PrimExprConvertible value) {
-    return value.ToPrimExpr();
+    return value->ToPrimExpr();
   }
 };
 

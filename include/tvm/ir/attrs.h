@@ -74,7 +74,7 @@ class DictAttrsNode : public AttrsNode {
 
   static void RegisterReflection() {
     namespace rfl = ffi::reflection;
-    rfl::ObjectDef<DictAttrsNode>().def_ro("__dict__", &DictAttrsNode::dict);
+    rfl::ObjectDef<DictAttrsNode>().def_ro("__dict__", &DictAttrsNode::dict).def_complete_layout();
   }
 
   // type info

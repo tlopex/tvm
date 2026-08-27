@@ -441,7 +441,7 @@ crate::abi::impl_object_layout!(RelaxFunctionObj: BaseFuncObj {
 });
 
 impl crate::abi::ConstructorRecipe for RelaxFunctionObj {
-    const NUM_INPUTS: usize = 4;
+    const INPUTS: &'static [&'static str] = &["params", "body", "ret_ty", "is_pure"];
     const DERIVED_FIELDS: &'static [&'static str] = &["body", "ret_ty", "ty"];
 }
 

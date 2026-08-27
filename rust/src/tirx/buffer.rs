@@ -19,8 +19,8 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Function, Map,
-    ObjectArc, ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
+    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, FieldGetter, Function,
+    Map, ObjectArc, ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
 use super::{primitive_type, Stmt, StmtObj};
@@ -29,18 +29,13 @@ use crate::ir::{
     TypeObj, Var,
 };
 
-/// ABI-complete prefix for objects that expose tensor-like producer behavior.
-///
-/// This base is intentionally not Rust-allocatable on its own. Concrete
-/// producers must register the shared reflected methods.
+/// Opaque prefix for native objects that expose tensor-like producer behavior.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.DataProducer"]
 pub struct DataProducerObj {
     base: PrimExprConvertibleObj,
 }
-crate::abi::impl_object_layout!(DataProducerObj: PrimExprConvertibleObj {});
-
 /// Reference-counted handle to any concrete data producer.
 #[repr(C)]
 #[derive(ObjectRef, Clone)]
@@ -90,23 +85,13 @@ impl DataProducer {
     }
 }
 
-/// ABI-complete Rust representation of TVM's layout base class.
+/// Opaque Rust representation of TVM's polymorphic layout base class.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.Layout"]
 pub struct LayoutObj {
     base: tvm_ffi::Object,
 }
-crate::abi::impl_object_layout!(LayoutObj {});
-
-impl LayoutObj {
-    fn new() -> Self {
-        Self {
-            base: tvm_ffi::Object::new(),
-        }
-    }
-}
-
 /// Reference-counted handle to a TIRx buffer layout.
 #[repr(C)]
 #[derive(ObjectRef, Clone)]
@@ -317,27 +302,19 @@ impl Layout {
     }
 }
 
-/// ABI-complete Rust representation of one registered TIRx layout axis.
+/// Opaque Rust representation of one registered TIRx layout axis.
+///
+/// Axis objects are native registry singletons.  Rust obtains the registered
+/// object instead of constructing a second object with a copied registry index.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.Axis"]
 #[type_final]
 pub struct AxisObj {
     base: tvm_ffi::Object,
-    pub name: String,
-    pub registry_index: u32,
-}
-crate::abi::impl_object_layout!(AxisObj {
-    "name" => name: String,
-    "registry_index" => registry_index: u32,
-});
-
-impl crate::abi::ConstructorRecipe for AxisObj {
-    const NUM_INPUTS: usize = 1;
-    const DERIVED_FIELDS: &'static [&'static str] = &["registry_index"];
 }
 
-/// Reference-counted handle identified by the shared axis registry index.
+/// Reference-counted handle to a native axis-registry entry.
 #[repr(C)]
 #[derive(ObjectRef, Clone)]
 pub struct Axis {
@@ -353,37 +330,18 @@ impl std::ops::Deref for Axis {
 }
 
 impl Axis {
-    /// Resolve registry metadata and allocate the axis handle in Rust.
+    /// Return the native registry object for `name`.
     pub fn get(name: &str) -> Result<Self> {
-        let name = String::from(name);
-        let prepared = crate::abi::prepare_constructor::<AxisObj>(&[AnyView::from(&name)])?;
-        let registry_index =
-            crate::abi::prepared_field::<i64>(&prepared, AxisObj::TYPE_KEY, "registry_index")
-                .and_then(|index| {
-                    u32::try_from(index).map_err(|_| {
-                        Error::new(VALUE_ERROR, "axis registry index does not fit u32", "")
-                    })
-                })?;
-        Ok(Self::from_prepared_fields(name, registry_index))
+        tvm_ffi::cached_global_func!("tirx.AxisGet")
+            .call_tuple((String::from(name),))?
+            .try_into()
     }
 
-    // Keep this allocator private: an arbitrary name/index pair can alias the
-    // wrong entry in C++ attribute tables.  `get` first asks the shared axis
-    // registry for the index and is the only safe public construction path.
-    fn from_prepared_fields(name: String, registry_index: u32) -> Self {
-        Self {
-            data: crate::abi::allocate_object(AxisObj {
-                base: tvm_ffi::Object::new(),
-                name,
-                registry_index,
-            }),
-        }
+    /// Return the registered axis name through native reflection.
+    pub fn name(&self) -> Result<String> {
+        FieldGetter::new(AxisObj::type_index(), "name")?.get(&**self)
     }
 }
-
-// Compile-check the generated owned allocator contract without making the raw
-// registry identity constructor part of the public API.
-const _: fn(String, u32) -> Axis = Axis::from_prepared_fields;
 
 /// ABI-complete Rust representation of one layout extent/stride/axis component.
 #[repr(C)]
@@ -445,22 +403,14 @@ impl Iter {
     }
 }
 
-/// ABI-complete Rust representation of TVM's concrete tiled layout.
+/// Opaque Rust representation of TVM's polymorphic tiled layout.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.TileLayout"]
 #[type_final]
 pub struct TileLayoutObj {
     base: LayoutObj,
-    pub shard: Array<Iter>,
-    pub replica: Array<Iter>,
-    pub offset: Map<Axis, Expr>,
 }
-crate::abi::impl_object_layout!(TileLayoutObj: LayoutObj {
-    "shard" => shard: Array<Iter>,
-    "replica" => replica: Array<Iter>,
-    "offset" => offset: Map<Axis, Expr>,
-});
 
 /// Reference-counted handle to a tiled layout.
 #[repr(C)]
@@ -486,25 +436,30 @@ impl std::ops::Deref for TileLayoutObj {
 }
 
 impl TileLayout {
-    /// Construct a tile layout directly in Rust.
-    pub fn new(shard: Vec<Iter>, replica: Vec<Iter>, offset: Map<Axis, Expr>) -> Self {
-        Self::from_complete_fields(Array::new(shard), Array::new(replica), offset)
+    fn field<T>(&self, name: &str) -> Result<T>
+    where
+        T: TryFrom<Any, Error = Error>,
+    {
+        FieldGetter::new(TileLayoutObj::type_index(), name)?.get(&**self)
     }
 
-    /// Construct a tile layout from every physical field.
-    pub fn from_complete_fields(
-        shard: Array<Iter>,
-        replica: Array<Iter>,
-        offset: Map<Axis, Expr>,
-    ) -> Self {
-        Self {
-            data: crate::abi::allocate_object(TileLayoutObj {
-                base: LayoutObj::new(),
-                shard,
-                replica,
-                offset,
-            }),
-        }
+    pub fn shard(&self) -> Result<Array<Iter>> {
+        self.field("shard")
+    }
+
+    pub fn replica(&self) -> Result<Array<Iter>> {
+        self.field("replica")
+    }
+
+    pub fn offset(&self) -> Result<Map<Axis, Expr>> {
+        self.field("offset")
+    }
+
+    /// Construct a tile layout through its native constructor.
+    pub fn new(shard: Vec<Iter>, replica: Vec<Iter>, offset: Map<Axis, Expr>) -> Result<Self> {
+        tvm_ffi::cached_global_func!("tirx.TileLayout")
+            .call_tuple((Array::new(shard), Array::new(replica), offset))?
+            .try_into()
     }
 }
 
@@ -538,7 +493,13 @@ crate::abi::impl_object_layout!(BufferTypeObj: TypeObj {
 });
 
 impl crate::abi::ConstructorRecipe for BufferTypeObj {
-    const NUM_INPUTS: usize = 5;
+    const INPUTS: &'static [&'static str] = &[
+        "storage_scope",
+        "shape",
+        "elem_offset",
+        "data_alignment",
+        "offset_factor",
+    ];
     const DERIVED_FIELDS: &'static [&'static str] = &[
         "storage_scope",
         "elem_offset",
@@ -1115,20 +1076,14 @@ fn encoded_lanes(dtype: DLDataType) -> i16 {
     dtype.lanes as i16
 }
 
-/// ABI-complete Rust representation of one declared buffer region.
+/// Opaque Rust representation of one polymorphic declared buffer region.
 #[repr(C)]
 #[derive(Object)]
 #[type_key = "tirx.BufferRegion"]
 #[type_final]
 pub struct BufferRegionObj {
     base: PrimExprConvertibleObj,
-    pub buffer: Var,
-    pub region: Array<Range>,
 }
-crate::abi::impl_object_layout!(BufferRegionObj: PrimExprConvertibleObj {
-    "buffer" => buffer: Var,
-    "region" => region: Array<Range>,
-});
 
 /// Reference-counted handle to a multidimensional buffer region.
 #[repr(C)]
@@ -1154,7 +1109,22 @@ impl std::ops::Deref for BufferRegionObj {
 }
 
 impl BufferRegion {
-    /// Validate and construct a declared region directly in Rust.
+    fn field<T>(&self, name: &str) -> Result<T>
+    where
+        T: TryFrom<Any, Error = Error>,
+    {
+        FieldGetter::new(BufferRegionObj::type_index(), name)?.get(&**self)
+    }
+
+    pub fn buffer(&self) -> Result<Var> {
+        self.field("buffer")
+    }
+
+    pub fn region(&self) -> Result<Array<Range>> {
+        self.field("region")
+    }
+
+    /// Validate and construct a declared region through its native constructor.
     pub fn new<B>(buffer: B, region: Vec<Range>) -> Result<Self>
     where
         B: Into<Var>,
@@ -1172,18 +1142,9 @@ impl BufferRegion {
                 "",
             ));
         }
-        Ok(Self::from_complete_fields(buffer, region))
-    }
-
-    /// Construct a buffer region from every physical field after external validation.
-    pub fn from_complete_fields(buffer: Var, region: Array<Range>) -> Self {
-        Self {
-            data: crate::abi::allocate_object(BufferRegionObj {
-                base: PrimExprConvertibleObj::new(),
-                buffer,
-                region,
-            }),
-        }
+        tvm_ffi::cached_global_func!("tirx.BufferRegion")
+            .call_tuple((buffer, region))?
+            .try_into()
     }
 }
 
@@ -1203,7 +1164,7 @@ crate::abi::impl_object_layout!(MatchBufferRegionObj {
 });
 
 impl crate::abi::ConstructorRecipe for MatchBufferRegionObj {
-    const NUM_INPUTS: usize = 2;
+    const INPUTS: &'static [&'static str] = &["buffer", "source"];
     const DERIVED_FIELDS: &'static [&'static str] = &[];
 }
 
@@ -1263,12 +1224,9 @@ tvm_ffi::impl_object_upcast!(
 );
 
 crate::abi::impl_rust_allocatable!(
-    AxisObj,
     IterObj,
-    TileLayoutObj,
     BufferTypeObj,
     BufferLoadObj,
     BufferStoreObj,
-    BufferRegionObj,
     MatchBufferRegionObj,
 );

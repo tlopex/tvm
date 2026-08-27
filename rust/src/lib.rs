@@ -19,11 +19,13 @@
 
 //! Minimal handwritten TVM IR bindings used to develop Rust analyses and passes.
 //!
-//! Nodes use ABI-complete `#[repr(C)]` Rust layouts and are allocated by Rust.
-//! Type-specific validation, derived fields, and formerly virtual behavior use
-//! registered tvm-ffi type methods rather than packed global constructors or
-//! the C++ object ABI. All objects share the FFI header and runtime type table for
-//! ownership, checked casts, and structural traversal.
+//! Ordinary nodes with certified complete `#[repr(C)]` layouts are allocated by
+//! Rust. Polymorphic, registry-owned, interned, and STL-backed C++ nodes remain
+//! opaque and are allocated by their existing native operations; Rust reads
+//! their reflected fields and calls additional registered type methods without
+//! changing native identity, ownership, or virtual ABI. All objects
+//! share the FFI header and runtime type table for ownership, checked casts, and
+//! structural traversal.
 
 #[doc(hidden)]
 pub mod abi;

@@ -180,7 +180,7 @@ class IterVarNode : public PrimExprConvertibleNode {
         .def("to_prim_expr", &IterVarNode::ToPrimExpr);
   }
 
-  PrimExpr ToPrimExpr() const { return var; }
+  PrimExpr ToPrimExpr() const final { return var; }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.IterVar", IterVarNode, PrimExprConvertibleNode);

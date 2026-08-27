@@ -212,8 +212,8 @@ fn direct_fields_borrow_rust_allocated_nodes() {
 #[test]
 fn source_and_module_metadata_round_trip_cpp_objects() {
     load_tvm_compiler();
-    let source_name = SourceName::get("contract-test.tvm");
-    let same_source_name = SourceName::get("contract-test.tvm");
+    let source_name = SourceName::get("contract-test.tvm").unwrap();
+    let same_source_name = SourceName::get("contract-test.tvm").unwrap();
     let cpp_source_name: SourceName = Function::get_global("ir.SourceName")
         .unwrap()
         .call_packed(&[AnyView::from(&tvm::tvm_ffi::String::from(
@@ -224,13 +224,13 @@ fn source_and_module_metadata_round_trip_cpp_objects() {
         .unwrap();
     let span = Span::new(&source_name, 2, 4, 3, 5).unwrap();
 
-    assert_eq!(source_name.name.as_str(), "contract-test.tvm");
-    assert_ne!(
+    assert_eq!(source_name.name().unwrap().as_str(), "contract-test.tvm");
+    assert_eq!(
         object_pointer(&source_name),
         object_pointer(&same_source_name)
     );
     assert_structural_equal(&source_name, &same_source_name);
-    assert_ne!(
+    assert_eq!(
         object_pointer(&source_name),
         object_pointer(&cpp_source_name)
     );
@@ -258,7 +258,9 @@ fn source_and_module_metadata_round_trip_cpp_objects() {
     assert_eq!(module.source_map.source_map.len(), 0);
 
     let mut source_map = SourceMap::new();
-    let source_name = source_map.add("module.tvm", "first line\nsecond line");
+    let source_name = source_map
+        .add("module.tvm", "first line\nsecond line")
+        .unwrap();
     let sources = source_map.source_map.clone();
     let source = sources.get(&source_name).unwrap().unwrap();
     let cpp_lookup_name: SourceName = Function::get_global("ir.SourceName")
@@ -271,14 +273,11 @@ fn source_and_module_metadata_round_trip_cpp_objects() {
         object_pointer(&sources.get(&cpp_lookup_name).unwrap().unwrap()),
         object_pointer(&source)
     );
-    assert_eq!(source.source_name.name.as_str(), "module.tvm");
-    assert_eq!(source.source.as_str(), "first line\nsecond line");
     assert_eq!(
-        source.line_map.iter().collect::<Vec<_>>(),
-        vec![0, 10, 11, 11]
+        source.source_name().unwrap().name().unwrap().as_str(),
+        "module.tvm"
     );
-    assert_eq!(source.get_line(1).unwrap().as_str(), "first line");
-    assert_eq!(source.get_line(2).unwrap().as_str(), "second line");
+    assert_eq!(source.text().unwrap().as_str(), "first line\nsecond line");
 
     let dictionary: Map<tvm::tvm_ffi::String, Any> = [
         (tvm::tvm_ffi::String::from("number"), Any::from(7i64)),
@@ -334,14 +333,16 @@ fn source_and_module_metadata_round_trip_cpp_objects() {
 #[test]
 fn full_direct_constructors_preserve_source_spans() {
     load_tvm_compiler();
-    let source_name = SourceName::get("constructors.tvm");
+    let source_name = SourceName::get("constructors.tvm").unwrap();
     let span = Span::new(&source_name, 1, 3, 2, 4).unwrap();
     let int_type: Type = PrimType::new("int32").unwrap().into();
-    let missing_with_span = Type::from_complete_fields(Some(span.clone()));
-    assert!(missing_with_span.is_missing());
+    let missing = Type::missing();
+    let same_missing = Type::missing();
+    assert!(missing.is_missing());
     assert_eq!(
-        object_pointer(missing_with_span.span.as_ref().unwrap()),
-        object_pointer(&span)
+        object_pointer(&missing),
+        object_pointer(&same_missing),
+        "the missing type is a native singleton"
     );
 
     let variable = Var::with_type_and_span("x", &int_type, Some(&span));
@@ -564,7 +565,8 @@ fn every_layout_reflected_method_is_callable() {
         vec![Iter::new(&eight, &one, &axis).unwrap()],
         Vec::new(),
         Map::new(),
-    );
+    )
+    .unwrap();
     let layout: Layout = tile.clone().into();
     let shape = Array::new(vec![eight.clone()]);
     let coordinate = Array::new(vec![three.clone()]);
@@ -659,7 +661,8 @@ fn every_layout_reflected_method_is_callable() {
         ],
         Vec::new(),
         Map::new(),
-    );
+    )
+    .unwrap();
     let right = TileLayout::new(
         vec![
             Iter::new(int_expression(2), int_expression(4), &axis).unwrap(),
@@ -667,7 +670,8 @@ fn every_layout_reflected_method_is_callable() {
         ],
         Vec::new(),
         Map::new(),
-    );
+    )
+    .unwrap();
     let left_shape = Array::new(vec![int_expression(2), int_expression(2)]);
     let right_shape = left_shape.clone();
     let right_layout: Layout = right.clone().into();
@@ -1233,7 +1237,7 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
     let stride = Expr::int("int64", 1).unwrap();
     let axis_name = Axis::get("m").unwrap();
     let layout_iter = Iter::new(&extent, &stride, &axis_name).unwrap();
-    let tile_layout = TileLayout::new(vec![layout_iter.clone()], Vec::new(), Map::new());
+    let tile_layout = TileLayout::new(vec![layout_iter.clone()], Vec::new(), Map::new()).unwrap();
     let layout = Layout::from(tile_layout.clone());
     let buffer_type = BufferType::with_metadata(
         "global",
@@ -1258,10 +1262,10 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
     let layout: tvm::tirx::Layout = reflected_layout.clone().into();
     let layout_is_valid = layout.verify_well_formed().unwrap();
     assert!(layout_is_valid);
-    assert_eq!(reflected_layout.shard.len(), 1);
-    assert!(reflected_layout.replica.is_empty());
-    assert!(reflected_layout.offset.is_empty());
-    let reflected_iter = reflected_layout.shard.get(0).unwrap();
+    assert_eq!(reflected_layout.shard().unwrap().len(), 1);
+    assert!(reflected_layout.replica().unwrap().is_empty());
+    assert!(reflected_layout.offset().unwrap().is_empty());
+    let reflected_iter = reflected_layout.shard().unwrap().get(0).unwrap();
     assert_eq!(
         reflected_iter
             .extent
@@ -1280,7 +1284,7 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
             .value,
         1
     );
-    assert_eq!(reflected_iter.axis.name.as_str(), "m");
+    assert_eq!(reflected_iter.axis.name().unwrap().as_str(), "m");
     let buffer = buffer_type.new_var("A");
     let axis = Var::new("vi", "int64").unwrap();
     let axis_domain = Range::from_min_extent(
@@ -1312,7 +1316,7 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
         None,
     )
     .unwrap();
-    assert!(domainless_iter.dom.is_none());
+    assert!(domainless_iter.dom().unwrap().is_none());
     let converted_domainless = PrimExprConvertible::from(domainless_iter)
         .to_prim_expr()
         .unwrap();
@@ -1446,11 +1450,18 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
     assert_eq!(block.name_hint.as_str(), "copy");
     assert_eq!(block.iter_vars.len(), 1);
     let reflected_axis = block.iter_vars.get(0).unwrap();
-    assert_eq!(reflected_axis.iter_type, IterVarType::DataParallel);
-    assert_eq!(object_pointer(&reflected_axis.var), object_pointer(&axis));
+    assert_eq!(
+        reflected_axis.iter_type().unwrap(),
+        IterVarType::DataParallel
+    );
+    assert_eq!(
+        object_pointer(&reflected_axis.var().unwrap()),
+        object_pointer(&axis)
+    );
     assert_eq!(
         reflected_axis
-            .dom
+            .dom()
+            .unwrap()
             .as_ref()
             .unwrap()
             .extent

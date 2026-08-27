@@ -19,7 +19,7 @@
 
 //! Runtime conformance checks for the complete handwritten IR surface.
 
-use tvm::abi::ObjectLayout;
+use tvm::abi::{validate_loaded_layout, ObjectLayout};
 use tvm::ir::{
     Attrs, AttrsObj, BaseFunc, BaseFuncObj, Call, CallObj, DictAttrs, DictAttrsObj,
     DummyGlobalInfo, DummyGlobalInfoObj, Expr, ExprObj, GlobalInfo, GlobalInfoObj, GlobalVar,
@@ -38,10 +38,12 @@ use tvm::tirx::{
     Evaluate, EvaluateObj, For, ForKind, ForObj, IfThenElse, IfThenElseObj, Iter, IterObj, IterVar,
     IterVarObj, IterVarType, Layout, LayoutObj, MatchBufferRegion, MatchBufferRegionObj, Mul,
     MulObj, PrimFunc, PrimFuncObj, SBlock, SBlockObj, SBlockRealize, SBlockRealizeObj, SeqStmt,
-    SeqStmtObj, Stmt, StmtObj, StringImm, StringImmObj, Sub, SubObj, TileLayout, TileLayoutObj,
+    SeqStmtObj, Stmt, StmtObj, StringImm, StringImmObj, Sub, SubObj, TileLayoutObj,
 };
 use tvm::tvm_ffi::tvm_ffi_sys::{TVMFFIFieldFlagBitMask, TVMFFISEqHashKind};
-use tvm::tvm_ffi::{Any, Array, DLDataType, Map, Object, ObjectCore, String};
+use tvm::tvm_ffi::{
+    get_native_object_layout, Any, Array, DLDataType, Map, Object, ObjectCore, String,
+};
 
 mod common;
 use common::{direct_fields, load_tvm_compiler, runtime_type_info};
@@ -59,7 +61,6 @@ const SCHEMA_ARRAY_BUFFER_REGION: &str =
     r#"{"type":"ffi.Array","args":[{"type":"tirx.BufferRegion"}]}"#;
 const SCHEMA_ARRAY_EXPR: &str = r#"{"type":"ffi.Array","args":[{"type":"ir.Expr"}]}"#;
 const SCHEMA_ARRAY_GLOBAL_INFO_MAP: &str = r#"{"type":"ffi.Map","args":[{"type":"ffi.String"},{"type":"ffi.Array","args":[{"type":"ir.GlobalInfo"}]}]}"#;
-const SCHEMA_ARRAY_INT: &str = r#"{"type":"ffi.Array","args":[{"type":"int"}]}"#;
 const SCHEMA_ARRAY_ITER: &str = r#"{"type":"ffi.Array","args":[{"type":"tirx.Iter"}]}"#;
 const SCHEMA_ARRAY_ITER_VAR: &str = r#"{"type":"ffi.Array","args":[{"type":"tirx.IterVar"}]}"#;
 const SCHEMA_ARRAY_MATCH_BUFFER: &str =
@@ -216,6 +217,7 @@ fn assert_contract<N: ObjectCore, P: ObjectCore>(
 }
 
 fn assert_layout<N: ObjectCore + ObjectLayout, P>() {
+    validate_loaded_layout::<N>().unwrap_or_else(|error| panic!("{}: {error}", N::TYPE_KEY));
     let info = runtime_type_info::<N>();
     assert!(
         !info.metadata.is_null(),
@@ -281,14 +283,19 @@ fn assert_layout<N: ObjectCore + ObjectLayout, P>() {
 
 fn assert_no_reflection_creator<N: ObjectCore>() {
     let info = runtime_type_info::<N>();
+    if !info.metadata.is_null() {
+        assert!(
+            unsafe { (*info.metadata).creator }.is_none(),
+            "behavior-only base {} must not be reflection-constructible",
+            N::TYPE_KEY
+        );
+    }
+}
+
+fn assert_opaque_binding<N: ObjectCore>() {
     assert!(
-        !info.metadata.is_null(),
-        "missing metadata for {}",
-        N::TYPE_KEY
-    );
-    assert!(
-        unsafe { (*info.metadata).creator }.is_none(),
-        "behavior-only base {} must not be reflection-constructible",
+        get_native_object_layout(N::type_index()).unwrap().is_none(),
+        "{} must remain opaque or use native construction semantics",
         N::TYPE_KEY
     );
 }
@@ -323,7 +330,6 @@ fn all_handwritten_objects_match_runtime_metadata() {
         &[
             ("source_name", 0, SCHEMA_SOURCE_NAME),
             ("source", 0, SCHEMA_STRING),
-            ("line_map", 0, SCHEMA_ARRAY_INT),
         ],
     );
     assert_contract::<SourceMapObj, Object>(
@@ -342,8 +348,8 @@ fn all_handwritten_objects_match_runtime_metadata() {
             ("end_column", 0, SCHEMA_INT),
         ],
     );
-    assert_contract::<PrimExprConvertibleObj, Object>(false, Some(Unsupported), &[]);
-    assert_contract::<DataProducerObj, PrimExprConvertibleObj>(false, Some(Unsupported), &[]);
+    assert_contract::<PrimExprConvertibleObj, Object>(false, None, &[]);
+    assert_contract::<DataProducerObj, PrimExprConvertibleObj>(false, None, &[]);
     assert_contract::<RangeObj, Object>(
         true,
         Some(Tree),
@@ -447,15 +453,8 @@ fn all_handwritten_objects_match_runtime_metadata() {
             ("body", 0, SCHEMA_STMT),
         ],
     );
-    assert_contract::<LayoutObj, Object>(false, Some(Tree), &[]);
-    assert_contract::<AxisObj, Object>(
-        true,
-        Some(Tree),
-        &[
-            ("name", 0, SCHEMA_STRING),
-            ("registry_index", IGNORE, SCHEMA_INT),
-        ],
-    );
+    assert_contract::<LayoutObj, Object>(false, None, &[]);
+    assert_contract::<AxisObj, Object>(true, Some(Tree), &[("name", 0, SCHEMA_STRING)]);
     assert_contract::<IterObj, Object>(
         true,
         Some(Tree),
@@ -614,18 +613,23 @@ fn abi_complete_object_layout_evidence_matches_cpp() {
     assert_no_reflection_creator::<PrimExprConvertibleObj>();
     assert_no_reflection_creator::<DataProducerObj>();
     assert_no_reflection_creator::<LayoutObj>();
+    assert_opaque_binding::<PrimExprConvertibleObj>();
+    assert_opaque_binding::<DataProducerObj>();
+    assert_opaque_binding::<LayoutObj>();
+    assert_opaque_binding::<TileLayoutObj>();
+    assert_opaque_binding::<BufferRegionObj>();
+    assert_opaque_binding::<IterVarObj>();
+    assert_opaque_binding::<SourceNameObj>();
+    assert_opaque_binding::<SourceObj>();
+    assert_opaque_binding::<AxisObj>();
 
     assert_layout::<ExprObj, Object>();
     assert_layout::<BaseFuncObj, ExprObj>();
     assert_layout::<GlobalVarObj, ExprObj>();
     assert_layout::<VarObj, ExprObj>();
-    assert_layout::<SourceNameObj, Object>();
-    assert_layout::<SourceObj, Object>();
     assert_layout::<SourceMapObj, Object>();
     assert_layout::<SpanObj, Object>();
     assert_layout::<RangeObj, Object>();
-    assert_layout::<PrimExprConvertibleObj, Object>();
-    assert_layout::<DataProducerObj, PrimExprConvertibleObj>();
     assert_layout::<CallObj, ExprObj>();
     assert_layout::<TypeObj, Object>();
     assert_layout::<PrimTypeObj, TypeObj>();
@@ -648,16 +652,11 @@ fn abi_complete_object_layout_evidence_matches_cpp() {
     assert_layout::<IfThenElseObj, StmtObj>();
     assert_layout::<ForObj, StmtObj>();
     assert_layout::<PrimFuncObj, BaseFuncObj>();
-    assert_layout::<AxisObj, Object>();
     assert_layout::<IterObj, Object>();
-    assert_layout::<LayoutObj, Object>();
-    assert_layout::<TileLayoutObj, LayoutObj>();
     assert_layout::<BufferTypeObj, TypeObj>();
     assert_layout::<BufferLoadObj, ExprObj>();
     assert_layout::<BufferStoreObj, StmtObj>();
-    assert_layout::<BufferRegionObj, PrimExprConvertibleObj>();
     assert_layout::<MatchBufferRegionObj, Object>();
-    assert_layout::<IterVarObj, PrimExprConvertibleObj>();
     assert_layout::<SBlockObj, StmtObj>();
     assert_layout::<SBlockRealizeObj, StmtObj>();
 
@@ -690,12 +689,9 @@ fn complete_field_allocators_follow_owned_native_field_order() {
     assert!(ForKind::try_from(i64::from(i32::MAX) + 1).is_err());
     assert!(IterVarType::try_from(i64::from(i32::MIN) - 1).is_err());
 
-    assert_complete_allocator!(SourceName::from_complete_fields: fn(String) -> SourceName);
-    assert_complete_allocator!(Source::from_complete_fields: fn(SourceName, String, Array<i64>) -> Source);
     assert_complete_allocator!(SourceMap::from_complete_fields: fn(Map<SourceName, Source>) -> SourceMap);
     assert_complete_allocator!(Span::from_complete_fields: fn(SourceName, i32, i32, i32, i32) -> Span);
     assert_complete_allocator!(Range::from_complete_fields: fn(Expr, Expr, Option<Span>) -> Range);
-    assert_complete_allocator!(Type::from_complete_fields: fn(Option<Span>) -> Type);
     assert_complete_allocator!(TupleType::from_complete_fields: fn(Option<Span>, Array<Type>) -> TupleType);
     assert_complete_allocator!(DummyGlobalInfo::from_complete_fields: fn() -> DummyGlobalInfo);
     assert_complete_allocator!(IntImm::from_complete_fields: fn(Option<Span>, Type, i64) -> IntImm);
@@ -718,13 +714,10 @@ fn complete_field_allocators_follow_owned_native_field_order() {
     assert_complete_allocator!(PrimFunc::from_complete_fields: fn(Option<Span>, Type, DictAttrs, Array<Var>, Type, Stmt) -> PrimFunc);
 
     assert_complete_allocator!(Iter::from_complete_fields: fn(Expr, Expr, Axis) -> Iter);
-    assert_complete_allocator!(TileLayout::from_complete_fields: fn(Array<Iter>, Array<Iter>, Map<Axis, Expr>) -> TileLayout);
     assert_complete_allocator!(BufferType::from_complete_fields: fn(Option<Span>, PrimType, String, Array<Expr>, Array<Expr>, Expr, i32, i32, Option<Layout>, Array<Expr>) -> BufferType);
     assert_complete_allocator!(BufferLoad::from_complete_fields: fn(Option<Span>, Type, Var, Array<Expr>, Option<Expr>) -> BufferLoad);
     assert_complete_allocator!(BufferStore::from_complete_fields: fn(Option<Span>, Var, Expr, Array<Expr>, Option<Expr>) -> BufferStore);
-    assert_complete_allocator!(BufferRegion::from_complete_fields: fn(Var, Array<Range>) -> BufferRegion);
     assert_complete_allocator!(MatchBufferRegion::from_complete_fields: fn(Var, BufferRegion) -> MatchBufferRegion);
-    assert_complete_allocator!(IterVar::from_complete_fields: fn(Option<Range>, Var, IterVarType, String, Option<Span>) -> IterVar);
     assert_complete_allocator!(SBlock::from_complete_fields: fn(Option<Span>, Array<IterVar>, Array<BufferRegion>, Array<BufferRegion>, String, Array<Var>, Array<MatchBufferRegion>, Map<String, Any>, Option<Stmt>, Stmt) -> SBlock);
     assert_complete_allocator!(SBlockRealize::from_complete_fields: fn(Option<Span>, Array<Expr>, Expr, SBlock) -> SBlockRealize);
 

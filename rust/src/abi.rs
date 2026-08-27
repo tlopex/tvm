@@ -23,20 +23,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tvm_ffi::tvm_ffi_sys::{TVMFFIGetTypeInfo, TVMFFITypeInfo};
 use tvm_ffi::{
-    Any, AnyView, Error, Function, Map, ObjectArc, ObjectCore, Result, String, TYPE_ERROR,
-    VALUE_ERROR,
+    get_constructor_recipe, get_native_object_layout, Any, AnyView, Error, Function, Map,
+    ObjectArc, ObjectCore, Result, String, CONSTRUCTOR_PREPARE_METHOD, TYPE_ERROR, VALUE_ERROR,
 };
-
-const CONSTRUCTOR_PREPARE_METHOD: &str = "__ffi_prepare__";
 
 /// Generated shape of one semantic constructor-preparation recipe.
 ///
 /// The native reflected method validates and derives values, while this Rust-side
-/// contract makes the expected input arity and complete output-key set part of
+/// contract makes the ordered inputs and complete output-key set part of
 /// the generated binding. A returned-map mismatch therefore fails explicitly
 /// instead of silently ignoring a newly derived physical field.
 pub(crate) trait ConstructorRecipe: ObjectCore {
-    const NUM_INPUTS: usize;
+    const INPUTS: &'static [&'static str];
     const DERIVED_FIELDS: &'static [&'static str];
 }
 
@@ -48,14 +46,54 @@ pub(crate) trait ConstructorRecipe: ObjectCore {
 pub(crate) fn prepare_constructor<N: ConstructorRecipe>(
     args: &[AnyView<'_>],
 ) -> Result<Map<String, Any>> {
-    if args.len() != N::NUM_INPUTS {
+    if args.len() != N::INPUTS.len() {
         return Err(Error::new(
             TYPE_ERROR,
             &format!(
                 "generated recipe for `{}` expects {} arguments, but received {}",
                 N::TYPE_KEY,
-                N::NUM_INPUTS,
+                N::INPUTS.len(),
                 args.len()
+            ),
+            "",
+        ));
+    }
+    let native_recipe = get_constructor_recipe(N::type_index())?.ok_or_else(|| {
+        Error::new(
+            TYPE_ERROR,
+            &format!(
+                "native type `{}` does not publish a semantic constructor recipe",
+                N::TYPE_KEY
+            ),
+            "",
+        )
+    })?;
+    if native_recipe.version != 1 || native_recipe.method.as_str() != CONSTRUCTOR_PREPARE_METHOD {
+        return Err(Error::new(
+            TYPE_ERROR,
+            &format!(
+                "native constructor recipe for `{}` is unsupported",
+                N::TYPE_KEY
+            ),
+            "",
+        ));
+    }
+    let native_inputs = native_recipe
+        .inputs
+        .iter()
+        .map(|name| name.as_str().to_owned())
+        .collect::<Vec<_>>();
+    let native_derived = native_recipe
+        .derived_fields
+        .iter()
+        .map(|name| name.as_str().to_owned())
+        .collect::<Vec<_>>();
+    if native_inputs != N::INPUTS || native_derived != N::DERIVED_FIELDS {
+        return Err(Error::new(
+            TYPE_ERROR,
+            &format!(
+                "generated constructor recipe for `{}` does not match the loaded native recipe",
+                N::TYPE_KEY
             ),
             "",
         ));
@@ -196,7 +234,8 @@ fn runtime_type_info<N: ObjectCore>(
 /// This runs once per Rust object type before its first direct allocation.  A
 /// mismatch is fatal because writing a Rust value with a different native
 /// layout would make subsequent C++ field access memory-unsafe.
-pub(crate) fn validate_loaded_layout<N>() -> std::result::Result<(), std::string::String>
+#[doc(hidden)]
+pub fn validate_loaded_layout<N>() -> std::result::Result<(), std::string::String>
 where
     N: ObjectCore + ObjectLayout,
 {
@@ -248,6 +287,37 @@ where
     }
     if info.metadata.is_null() {
         return Err("the runtime did not publish object metadata".to_owned());
+    }
+
+    let certificate = get_native_object_layout(N::type_index())
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "the runtime did not certify a complete native object layout".to_owned())?;
+    if certificate.version != 1 {
+        return Err(format!(
+            "native layout certificate version {} is unsupported",
+            certificate.version
+        ));
+    }
+    if certificate.alignment != N::ALIGNMENT {
+        return Err(format!(
+            "total alignment differs (Rust {}, native {})",
+            N::ALIGNMENT,
+            certificate.alignment
+        ));
+    }
+    if certificate.is_final != N::TYPE_FINAL {
+        return Err(format!(
+            "finality differs (Rust {}, native {})",
+            N::TYPE_FINAL,
+            certificate.is_final
+        ));
+    }
+    if certificate.field_count != N::FIELDS.len() {
+        return Err(format!(
+            "certified field count differs (Rust {}, native {})",
+            N::FIELDS.len(),
+            certificate.field_count
+        ));
     }
 
     let native_size = unsafe { (*info.metadata).total_size };
@@ -328,8 +398,54 @@ where
         }
     }
 
+    let expected_fingerprint = layout_fingerprint::<N>();
+    if certificate.fingerprint.as_str() != expected_fingerprint {
+        return Err(format!(
+            "layout fingerprint differs (Rust {expected_fingerprint}, native {})",
+            certificate.fingerprint.as_str()
+        ));
+    }
+
     N::loaded_layout_was_validated().store(true, Ordering::Release);
     Ok(())
+}
+
+fn layout_fingerprint<N: ObjectCore + ObjectLayout>() -> std::string::String {
+    fn add_bytes(state: &mut u64, bytes: &[u8]) {
+        for byte in bytes {
+            *state ^= u64::from(*byte);
+            *state = state.wrapping_mul(1_099_511_628_211);
+        }
+    }
+    fn add_integer(state: &mut u64, value: u64) {
+        add_bytes(state, &value.to_le_bytes());
+    }
+    fn add_string(state: &mut u64, value: &str) {
+        add_integer(state, value.len() as u64);
+        add_bytes(state, value.as_bytes());
+    }
+
+    let mut state = 14_695_981_039_346_656_037_u64;
+    add_integer(&mut state, 1);
+    add_string(&mut state, N::TYPE_KEY);
+    add_string(&mut state, N::TYPE_PARENT_KEY.unwrap_or(""));
+    add_integer(&mut state, N::SIZE as u64);
+    add_integer(&mut state, N::ALIGNMENT as u64);
+    add_integer(&mut state, u64::from(N::TYPE_FINAL));
+    add_integer(&mut state, N::FIELDS.len() as u64);
+    let mut fields = N::FIELDS.to_vec();
+    fields.sort_by(|lhs, rhs| {
+        lhs.offset
+            .cmp(&rhs.offset)
+            .then_with(|| lhs.name.cmp(rhs.name))
+    });
+    for field in fields {
+        add_string(&mut state, field.name);
+        add_integer(&mut state, field.offset as u64);
+        add_integer(&mut state, field.size as u64);
+        add_integer(&mut state, field.alignment as u64);
+    }
+    format!("{state:016x}")
 }
 
 macro_rules! impl_object_layout {

@@ -57,7 +57,7 @@ class StringImmNode : public ExprNode {
   ffi::String value;
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<StringImmNode>().def_ro("value", &StringImmNode::value);
+    refl::ObjectDef<StringImmNode>().def_ro("value", &StringImmNode::value).def_complete_layout();
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.StringImm", StringImmNode, ExprNode);
 };
@@ -114,7 +114,7 @@ class BinaryOpNode : public ExprNode {
   PrimExpr b;
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<T>().def_ro("a", &T::a).def_ro("b", &T::b);
+    refl::ObjectDef<T>().def_ro("a", &T::a).def_ro("b", &T::b).def_complete_layout();
   }
   static const constexpr int _type_child_slots [[maybe_unused]] = 0;
   static const constexpr bool _type_final [[maybe_unused]] = true;
@@ -555,7 +555,8 @@ class BufferLoadNode : public ExprNode {
     refl::ObjectDef<BufferLoadNode>()
         .def_ro("buffer", &BufferLoadNode::buffer, refl::AttachFieldFlag::SEqHashDefRecursive())
         .def_ro("indices", &BufferLoadNode::indices)
-        .def_ro("predicate", &BufferLoadNode::predicate);
+        .def_ro("predicate", &BufferLoadNode::predicate)
+        .def_complete_layout();
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.BufferLoad", BufferLoadNode, ExprNode);
 

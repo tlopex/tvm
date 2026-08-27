@@ -64,7 +64,9 @@ class PrimFuncNode : public BaseFuncNode {
         .def_ro("params", &PrimFuncNode::params, refl::AttachFieldFlag::SEqHashDefRecursive())
         .def_ro("ret_type", &PrimFuncNode::ret_type)
         .def_ro("body", &PrimFuncNode::body)
-        .def_static("__ffi_prepare__", &PrimFuncNode::PrepareFFI);
+        .def_static(refl::type_attr::kPrepare, &PrimFuncNode::PrepareFFI)
+        .def_constructor_recipe({"params", "body", "ret_type"}, {"ret_type", "ty"})
+        .def_complete_layout();
     refl::TypeAttrDef<PrimFuncNode>()
         .def("__s_equal__", &PrimFuncNode::SEqual)
         .def("__s_hash__", &PrimFuncNode::SHash);
