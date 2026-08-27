@@ -52,7 +52,7 @@ pub fn from_complete_fields(
     b: Expr,
 ) -> Add {
     Add {
-        data: crate::abi::allocate_object(AddObj {
+        data: ObjectArc::new(AddObj {
             base: ExprObj::new(span, ty),
             a,
             b,
@@ -72,9 +72,11 @@ pub fn new(a: &Expr, b: &Expr) -> Result<Add> {
 }
 ```
 
-The guarded allocator requires generated `ObjectLayout` evidence plus an
-explicit `RustAllocatable` marker and then uses `ObjectArc::new` to install a
-common `TVMFFIObject` header and a Rust deleter.
+Stubgen emits this allocator only after the native-layout manifest certifies
+the complete type and the generator verifies its parent, size, alignment,
+finality, and fields. The generated target code then uses `ObjectArc::new` to
+install a common `TVMFFIObject` header and a Rust deleter without repeating the
+generator's validation as a per-type Rust macro.
 C++ sees the normal runtime type index and field offsets, while destruction
 returns through the deleter stored in the header. This was verified by invoking
 a C++ reflection getter on a Rust-created `Add`, running C++ structural
@@ -134,9 +136,9 @@ For a directly constructible node, generate:
   Rust-only constructors; use `Result<Self>` only when generated code performs
   parsing, checked conversion, validation, casting, or a fallible ABI call;
 - finality and structural metadata used by typed walk/map dispatch.
-- allocation through a helper bounded by `ObjectLayout` and
-  `RustAllocatable`, so neither an opaque wrapper nor a layout-only base prefix
-  can accidentally be constructed merely because it has an object header;
+- direct `ObjectArc::new` allocation only for concrete types that stubgen has
+  classified as complete and constructible; opaque wrappers and layout-only
+  base prefixes receive no generated allocator;
 - a generated `ConstructorRecipe` contract for each preparation-backed
   constructor. It records ordered input names and the complete returned
   field-key set, and the runtime helper compares it with the native type
@@ -165,7 +167,8 @@ that the parent layout and every reflected field agree, and chooses exactly one
 outcome:
 
 1. **complete:** emit the `#[repr(C)]` object, reference wrapper, read-only
-   `Deref`, layout evidence, casts, and one owned complete-field constructor;
+   `Deref`, casts, and one owned complete-field constructor after validating
+   the layout inside stubgen;
 2. **complete plus semantic:** additionally emit reviewed convenience
    constructors that validate/prepare and delegate to the owned allocator; or
 3. **blocked:** emit only a safe opaque reference wrapper and a diagnostic that
@@ -193,12 +196,11 @@ coverage manifest records the source and status of every field, constructor,
 enum, behavior method, and blocker. An omitted type or silently generated
 packed-constructor fallback is a generation error.
 
-The generated crate is valid only for a library that publishes the same
-per-type layout fingerprints.  Runtime support must check each fingerprint
-before the first Rust allocation of that type and return an error on a missing
-or mismatched value.  Matching only type keys is insufficient: the same key may
-survive a field, alignment, base-layout, or finality change that would make
-Rust allocation unsafe.
+The generated crate is tied to the native-layout manifest consumed by its
+stubgen invocation and is built and tested against that TVM build. If a future
+distribution supports loading arbitrary TVM shared-library versions, it should
+add one centralized ABI version/fingerprint gate rather than emit a validator
+beside every generated object.
 
 ## Integration with the existing stubgen
 
@@ -336,8 +338,8 @@ copy path. Generated pass wrappers should use this standard holder.
 
 The current experiment still needs explicit decisions for:
 
-- extracting `__ffi_native_object_layout__` certificates and explicit opaque
-  blockers into generated Rust rather than handwritten `ObjectLayout` impls;
+- consuming `__ffi_native_object_layout__` certificates and explicit opaque
+  blockers while deciding what Rust code to emit;
 - constructor parameter type schemas, nullability/defaults, and validation
   semantics; ordered input names and derived keys are now machine-readable;
 - build-configuration values used by constructor defaults;
@@ -351,12 +353,14 @@ permission for stubgen to guess or to hide allocation behind a packed global.
 
 ## Layout evidence
 
-Each ABI-complete Rust object implements the hidden `ObjectLayout` contract.
-The current conformance test requires `ObjectDef::def_complete_layout()` and
-compares total size, native alignment, finality, field layouts, and the runtime
-fingerprint. The opt-in certifies complete reflection coverage and rejects
-polymorphic C++ classes at compile time. Types without that certificate are
-opaque blockers; stubgen must not infer completeness from their fields.
+`ObjectDef::def_complete_layout()` publishes the certificate that stubgen uses
+to validate total size, native alignment, finality, fields, and the layout
+fingerprint before generating a complete Rust object. The opt-in certifies
+complete reflection coverage and rejects polymorphic C++ classes at compile
+time. Types without that certificate are opaque blockers; stubgen must not
+infer completeness from their fields. The accepted target code contains only
+the resulting `#[repr(C)]` object and allocator, not a second copy of the
+generator's layout validator.
 
 ## Structural-pass lessons
 

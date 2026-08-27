@@ -32,10 +32,6 @@ pub struct ExprObj {
     pub span: Option<Span>,
     pub ty: Type,
 }
-crate::abi::impl_object_layout!(ExprObj {
-    "span" => span: Option<Span>,
-    "ty" => ty: Type,
-});
 
 /// Reference-counted handle to any TVM expression.
 #[repr(C)]
@@ -70,9 +66,6 @@ pub struct BaseFuncObj {
     base: ExprObj,
     pub attrs: DictAttrs,
 }
-crate::abi::impl_object_layout!(BaseFuncObj: ExprObj {
-    "attrs" => attrs: DictAttrs,
-});
 
 /// Reference-counted handle to any TVM base function.
 #[repr(C)]
@@ -115,9 +108,6 @@ pub struct GlobalVarObj {
     base: ExprObj,
     pub name_hint: String,
 }
-crate::abi::impl_object_layout!(GlobalVarObj: ExprObj {
-    "name_hint" => name_hint: String,
-});
 
 /// Reference-counted handle to a global function name.
 #[repr(C)]
@@ -150,9 +140,6 @@ pub struct VarObj {
     base: ExprObj,
     pub name: String,
 }
-crate::abi::impl_object_layout!(VarObj: ExprObj {
-    "name" => name: String,
-});
 
 /// Reference-counted handle to a TVM variable.
 #[repr(C)]
@@ -270,9 +257,6 @@ pub struct SourceMapObj {
     base: tvm_ffi::Object,
     pub source_map: Map<SourceName, Source>,
 }
-crate::abi::impl_object_layout!(SourceMapObj {
-    "source_map" => source_map: Map<SourceName, Source>,
-});
 
 /// Reference-counted handle to TVM's source-name-to-source mapping.
 #[repr(C)]
@@ -303,7 +287,7 @@ impl SourceMap {
     /// Construct a source map from its complete physical state.
     pub fn from_complete_fields(source_map: Map<SourceName, Source>) -> Self {
         Self {
-            data: crate::abi::allocate_object(SourceMapObj {
+            data: ObjectArc::new(SourceMapObj {
                 base: tvm_ffi::Object::new(),
                 source_map,
             }),
@@ -336,13 +320,6 @@ pub struct SpanObj {
     pub end_line: i32,
     pub end_column: i32,
 }
-crate::abi::impl_object_layout!(SpanObj {
-    "source_name" => source_name: SourceName,
-    "line" => line: i32,
-    "column" => column: i32,
-    "end_line" => end_line: i32,
-    "end_column" => end_column: i32,
-});
 
 /// Reference-counted handle to source-span metadata.
 #[repr(C)]
@@ -387,7 +364,7 @@ impl Span {
         end_column: i32,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(SpanObj {
+            data: ObjectArc::new(SpanObj {
                 base: tvm_ffi::Object::new(),
                 source_name,
                 line,
@@ -449,11 +426,6 @@ pub struct RangeObj {
     pub extent: Expr,
     pub span: Option<Span>,
 }
-crate::abi::impl_object_layout!(RangeObj {
-    "min" => min: Expr,
-    "extent" => extent: Expr,
-    "span" => span: Option<Span>,
-});
 
 /// Reference-counted handle to `min .. min + extent`.
 #[repr(C)]
@@ -500,7 +472,7 @@ impl Range {
     /// Construct a range from every physical field after external validation.
     pub fn from_complete_fields(min: Expr, extent: Expr, span: Option<Span>) -> Self {
         Self {
-            data: crate::abi::allocate_object(RangeObj {
+            data: ObjectArc::new(RangeObj {
                 base: tvm_ffi::Object::new(),
                 min,
                 extent,
@@ -545,12 +517,6 @@ pub struct CallObj {
     pub attrs: Option<Attrs>,
     pub ty_args: Array<Type>,
 }
-crate::abi::impl_object_layout!(CallObj: ExprObj {
-    "op" => op: Expr,
-    "args" => args: Array<Expr>,
-    "attrs" => attrs: Option<Attrs>,
-    "ty_args" => ty_args: Array<Type>,
-});
 
 /// Reference-counted handle to a call expression shared by TIR and Relax.
 #[repr(C)]
@@ -583,9 +549,6 @@ pub struct TypeObj {
     base: tvm_ffi::Object,
     pub span: Option<Span>,
 }
-crate::abi::impl_object_layout!(TypeObj {
-    "span" => span: Option<Span>,
-});
 
 /// Reference-counted handle to any TVM type.
 #[repr(C)]
@@ -620,9 +583,6 @@ pub struct PrimTypeObj {
     base: TypeObj,
     pub dtype: DLDataType,
 }
-crate::abi::impl_object_layout!(PrimTypeObj: TypeObj {
-    "dtype" => dtype: DLDataType,
-});
 
 /// Reference-counted handle to a primitive TVM type.
 #[repr(C)]
@@ -656,9 +616,6 @@ pub struct TupleTypeObj {
     base: TypeObj,
     pub fields: Array<Type>,
 }
-crate::abi::impl_object_layout!(TupleTypeObj: TypeObj {
-    "fields" => fields: Array<Type>,
-});
 
 /// Reference-counted handle to a tuple type.
 #[repr(C)]
@@ -697,7 +654,7 @@ impl TupleType {
     /// Construct a tuple type from every physical field.
     pub fn from_complete_fields(span: Option<Span>, fields: Array<Type>) -> Self {
         Self {
-            data: crate::abi::allocate_object(TupleTypeObj {
+            data: ObjectArc::new(TupleTypeObj {
                 base: TypeObj::new(span),
                 fields,
             }),
@@ -719,9 +676,6 @@ pub struct IntImmObj {
     base: ExprObj,
     pub value: i64,
 }
-crate::abi::impl_object_layout!(IntImmObj: ExprObj {
-    "value" => value: i64,
-});
 
 /// Reference-counted handle to an integer literal.
 #[repr(C)]
@@ -753,7 +707,6 @@ impl std::ops::Deref for IntImmObj {
 pub struct AttrsObj {
     base: tvm_ffi::Object,
 }
-crate::abi::impl_object_layout!(AttrsObj {});
 
 /// Reference-counted handle to any TVM attributes object.
 #[repr(C)]
@@ -779,9 +732,6 @@ pub struct DictAttrsObj {
     base: AttrsObj,
     pub dict: Map<String, Any>,
 }
-crate::abi::impl_object_layout!(DictAttrsObj: AttrsObj {
-    "__dict__" => dict: Map<String, Any>,
-});
 
 /// Reference-counted handle to dictionary-backed TVM attributes.
 #[repr(C)]
@@ -813,7 +763,6 @@ impl std::ops::Deref for DictAttrsObj {
 pub struct GlobalInfoObj {
     base: tvm_ffi::Object,
 }
-crate::abi::impl_object_layout!(GlobalInfoObj {});
 
 /// Reference-counted handle to module-level global metadata.
 #[repr(C)]
@@ -838,7 +787,6 @@ impl std::ops::Deref for GlobalInfo {
 pub struct DummyGlobalInfoObj {
     base: GlobalInfoObj,
 }
-crate::abi::impl_object_layout!(DummyGlobalInfoObj: GlobalInfoObj {});
 
 /// Reference-counted handle to a dummy global-info value.
 #[repr(C)]
@@ -872,7 +820,7 @@ impl DummyGlobalInfo {
     /// Construct the fieldless value from its complete physical state.
     pub fn from_complete_fields() -> Self {
         Self {
-            data: crate::abi::allocate_object(DummyGlobalInfoObj {
+            data: ObjectArc::new(DummyGlobalInfoObj {
                 base: GlobalInfoObj {
                     base: tvm_ffi::Object::new(),
                 },
@@ -902,13 +850,6 @@ pub struct IRModuleObj {
     pub global_infos: Map<String, Array<GlobalInfo>>,
     pub global_var_map: Map<String, GlobalVar>,
 }
-crate::abi::impl_object_layout!(IRModuleObj {
-    "functions" => functions: Map<GlobalVar, BaseFunc>,
-    "source_map" => source_map: SourceMap,
-    "attrs" => attrs: DictAttrs,
-    "global_infos" => global_infos: Map<String, Array<GlobalInfo>>,
-    "global_var_map_" => global_var_map: Map<String, GlobalVar>,
-});
 
 /// Reference-counted handle to a TVM IRModule.
 #[repr(C)]
@@ -954,7 +895,7 @@ impl IntImm {
     /// Construct an integer literal from every physical field after external validation.
     pub fn from_complete_fields(span: Option<Span>, ty: Type, value: i64) -> Self {
         Self {
-            data: crate::abi::allocate_object(IntImmObj {
+            data: ObjectArc::new(IntImmObj {
                 base: ExprObj::new(span, ty),
                 value,
             }),
@@ -1038,7 +979,7 @@ impl PrimType {
     /// Construct a primitive type from every physical field after external validation.
     pub fn from_complete_fields(span: Option<Span>, dtype: DLDataType) -> Self {
         Self {
-            data: crate::abi::allocate_object(PrimTypeObj {
+            data: ObjectArc::new(PrimTypeObj {
                 base: TypeObj::new(span),
                 dtype,
             }),
@@ -1108,7 +1049,7 @@ impl Var {
     /// Construct a variable from every physical field.
     pub fn from_complete_fields(span: Option<Span>, ty: Type, name: String) -> Self {
         Self {
-            data: crate::abi::allocate_object(VarObj {
+            data: ObjectArc::new(VarObj {
                 base: ExprObj::new(span, ty),
                 name,
             }),
@@ -1130,7 +1071,7 @@ impl GlobalVar {
     /// Construct a module-level symbol from all physical fields without re-deriving its type.
     pub fn from_complete_fields(span: Option<Span>, ty: Type, name_hint: String) -> Self {
         Self {
-            data: crate::abi::allocate_object(GlobalVarObj {
+            data: ObjectArc::new(GlobalVarObj {
                 base: ExprObj::new(span, ty),
                 name_hint,
             }),
@@ -1181,7 +1122,7 @@ impl Call {
         ty_args: Array<Type>,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(CallObj {
+            data: ObjectArc::new(CallObj {
                 base: ExprObj::new(span, ty),
                 op,
                 args,
@@ -1270,7 +1211,7 @@ impl IRModule {
         global_var_map: Map<String, GlobalVar>,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(IRModuleObj {
+            data: ObjectArc::new(IRModuleObj {
                 base: tvm_ffi::Object::new(),
                 functions,
                 source_map,
@@ -1369,7 +1310,7 @@ impl DictAttrs {
     /// Construct dictionary attributes from their complete physical state.
     pub fn from_complete_fields(dict: Map<String, Any>) -> Self {
         Self {
-            data: crate::abi::allocate_object(DictAttrsObj {
+            data: ObjectArc::new(DictAttrsObj {
                 base: AttrsObj {
                     base: tvm_ffi::Object::new(),
                 },
@@ -1384,18 +1325,3 @@ impl Default for SourceMap {
         Self::new()
     }
 }
-
-crate::abi::impl_rust_allocatable!(
-    GlobalVarObj,
-    VarObj,
-    SourceMapObj,
-    SpanObj,
-    RangeObj,
-    CallObj,
-    PrimTypeObj,
-    TupleTypeObj,
-    IntImmObj,
-    DictAttrsObj,
-    DummyGlobalInfoObj,
-    IRModuleObj,
-);

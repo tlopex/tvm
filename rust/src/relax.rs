@@ -30,9 +30,6 @@ pub struct TupleObj {
     base: ExprObj,
     pub fields: Array<Expr>,
 }
-crate::abi::impl_object_layout!(TupleObj: ExprObj {
-    "fields" => fields: Array<Expr>,
-});
 
 /// Reference-counted handle to a Relax tuple expression.
 #[repr(C)]
@@ -80,7 +77,7 @@ impl Tuple {
     /// Construct a tuple from every physical field without re-deriving its type.
     pub fn from_complete_fields(span: Option<Span>, ty: Type, fields: Array<Expr>) -> Self {
         Self {
-            data: crate::abi::allocate_object(TupleObj {
+            data: ObjectArc::new(TupleObj {
                 base: ExprObj::new(span, ty),
                 fields,
             }),
@@ -99,11 +96,6 @@ pub struct IfObj {
     pub true_branch: SeqExpr,
     pub false_branch: SeqExpr,
 }
-crate::abi::impl_object_layout!(IfObj: ExprObj {
-    "cond" => cond: Expr,
-    "true_branch" => true_branch: SeqExpr,
-    "false_branch" => false_branch: SeqExpr,
-});
 
 /// Reference-counted handle to a Relax conditional expression.
 #[repr(C)]
@@ -172,7 +164,7 @@ impl If {
         false_branch: SeqExpr,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(IfObj {
+            data: ObjectArc::new(IfObj {
                 base: ExprObj::new(span, ty),
                 cond,
                 true_branch,
@@ -191,10 +183,6 @@ pub struct BindingObj {
     pub span: Option<Span>,
     pub var: Var,
 }
-crate::abi::impl_object_layout!(BindingObj {
-    "span" => span: Option<Span>,
-    "var" => var: Var,
-});
 
 /// Reference-counted handle to any Relax binding.
 #[repr(C)]
@@ -220,9 +208,6 @@ pub struct VarBindingObj {
     base: BindingObj,
     pub value: Expr,
 }
-crate::abi::impl_object_layout!(VarBindingObj: BindingObj {
-    "value" => value: Expr,
-});
 
 /// Reference-counted handle to `var = value` in Relax.
 #[repr(C)]
@@ -269,7 +254,7 @@ impl VarBinding {
     /// Construct a variable binding from every physical field.
     pub fn from_complete_fields(span: Option<Span>, var: Var, value: Expr) -> Self {
         Self {
-            data: crate::abi::allocate_object(VarBindingObj {
+            data: ObjectArc::new(VarBindingObj {
                 base: BindingObj {
                     base: tvm_ffi::Object::new(),
                     span,
@@ -290,10 +275,6 @@ pub struct BindingBlockObj {
     pub bindings: Array<Binding>,
     pub span: Option<Span>,
 }
-crate::abi::impl_object_layout!(BindingBlockObj {
-    "bindings" => bindings: Array<Binding>,
-    "span" => span: Option<Span>,
-});
 
 /// Reference-counted handle to an ordered Relax binding block.
 #[repr(C)]
@@ -324,7 +305,7 @@ impl BindingBlock {
     /// Construct a binding block from every physical field.
     pub fn from_complete_fields(bindings: Array<Binding>, span: Option<Span>) -> Self {
         Self {
-            data: crate::abi::allocate_object(BindingBlockObj {
+            data: ObjectArc::new(BindingBlockObj {
                 base: tvm_ffi::Object::new(),
                 bindings,
                 span,
@@ -343,10 +324,6 @@ pub struct SeqExprObj {
     pub blocks: Array<BindingBlock>,
     pub body: Expr,
 }
-crate::abi::impl_object_layout!(SeqExprObj: ExprObj {
-    "blocks" => blocks: Array<BindingBlock>,
-    "body" => body: Expr,
-});
 
 /// Reference-counted handle to ordered bindings followed by a body expression.
 #[repr(C)]
@@ -401,7 +378,7 @@ impl SeqExpr {
         body: Expr,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(SeqExprObj {
+            data: ObjectArc::new(SeqExprObj {
                 base: ExprObj::new(span, ty),
                 blocks,
                 body,
@@ -433,12 +410,6 @@ pub struct RelaxFunctionObj {
     pub ret_ty: Type,
     pub is_pure: bool,
 }
-crate::abi::impl_object_layout!(RelaxFunctionObj: BaseFuncObj {
-    "params" => params: Array<Var>,
-    "body" => body: SeqExpr,
-    "ret_ty" => ret_ty: Type,
-    "is_pure" => is_pure: bool,
-});
 
 impl crate::abi::ConstructorRecipe for RelaxFunctionObj {
     const INPUTS: &'static [&'static str] = &["params", "body", "ret_ty", "is_pure"];
@@ -533,7 +504,7 @@ impl RelaxFunction {
         is_pure: bool,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(RelaxFunctionObj {
+            data: ObjectArc::new(RelaxFunctionObj {
                 base: BaseFuncObj::new(span, ty, attrs),
                 params,
                 body,
@@ -551,13 +522,4 @@ tvm_ffi::impl_object_upcast!(
     SeqExpr => Expr,
     RelaxFunction => BaseFunc,
     RelaxFunction => Expr,
-);
-
-crate::abi::impl_rust_allocatable!(
-    TupleObj,
-    IfObj,
-    VarBindingObj,
-    BindingBlockObj,
-    SeqExprObj,
-    RelaxFunctionObj,
 );

@@ -28,10 +28,10 @@ supplied by `tvm-ffi`, or recorded as an explicit ABI blocker.
 
 The prototype now exercises the object ABI in both directions.  For ordinary
 data nodes, Rust declares the complete `#[repr(C)]` layout, reads fields
-directly, and allocates through an `ObjectLayout`- and
-`RustAllocatable`-checked wrapper around `ObjectArc::new`; before allocation,
-the wrapper checks the native completeness certificate, alignment, finality,
-and exact layout fingerprint. C++ can consume those allocations
+directly, and allocates them with `ObjectArc::new`. Stubgen is responsible for
+checking the native completeness certificate, alignment, finality, field
+offsets, and layout fingerprint before it emits that code; those checks are not
+repeated as per-object boilerplate in the generated Rust surface. C++ can consume those allocations
 because the object header, field layout, reference counting, and deleter all
 follow the shared TVM FFI ABI. Complete-field Rust allocation is separate from
 a convenience `new()`: the latter additionally needs generated validation,
@@ -110,13 +110,11 @@ handwritten definitions, and run the same tests without modifying them.  The
 test surface becomes immutable only after the golden-reference freeze gate in
 [`BINDING_CONTRACT.md`](BINDING_CONTRACT.md) passes.
 [`tests/binding_contract.rs`](tests/binding_contract.rs) separately checks the
-runtime metadata contract of every object wrapper currently handwritten by the
-prototype. For every ABI-complete object it requires an explicit native
-completeness certificate and compares total size, alignment, finality,
-fingerprint, and each reflected direct field's offset, size, and alignment,
-plus the exact field schema, flags, and registered defaults. Polymorphic,
-registry-owned, interned, and STL-backed types are checked to remain opaque and
-uncertified for direct Rust allocation.
+reflection contract of every object wrapper currently handwritten by the
+prototype, including exact field schemas, flags, registered defaults, type
+identity, inheritance, and structural metadata. Native layout certificates are
+stubgen input and belong to stubgen's generation tests rather than the generated
+target code.
 
 See [BINDING_CONTRACT.md](BINDING_CONTRACT.md) for the correctness standard and
 [STUBGEN_FEEDBACK.md](STUBGEN_FEEDBACK.md) for the concrete generator, runtime,
@@ -135,7 +133,7 @@ This repository is not yet the one-command generator itself.  Reaching that
 state still requires `RustGenerator` in `tvm-ffi-stubgen`, extraction of the
 new native layout and constructor-recipe attributes into generated Rust, enum
 metadata, and reviewed semantic recipe templates. Reusable `RValueRef<T>`
-support and runtime fingerprint validation are already implemented and tested.
+support is already implemented and tested.
 
 Build TVM first, ensure `tvm-ffi-config` resolves that build, and run:
 

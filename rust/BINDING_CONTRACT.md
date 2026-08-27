@@ -31,13 +31,9 @@ semantics. For an ordinary data node, generated Rust should therefore:
 
 1. emit the complete inheritance prefix and every physical field in C++ order;
 2. use ABI-equivalent Rust field types under `#[repr(C)]`;
-3. allocate through the generated crate's `allocate_object` guard, which
-   requires both `ObjectLayout` evidence and an explicit `RustAllocatable`
-   marker and, once per type, compares the generated type key, inheritance
-   depth, total size, total alignment, finality, reflected-field layouts, and
-   native fingerprint with the loaded
-   runtime before using `ObjectArc::new` to install the runtime type index,
-   reference counts, and Rust deleter;
+3. let stubgen require a complete native-layout certificate and verify the
+   generated inheritance, size, alignment, finality, and field offsets before
+   emitting direct `ObjectArc::new` allocation;
 4. initialize the same defaults and validate the same invariants as C++; and
 5. expose physical fields directly through the reference wrapper's `Deref`, so
    reading borrows and callers explicitly `clone()` only when they need an
@@ -109,7 +105,7 @@ A binding is accepted only when every applicable check passes:
 | --- | --- |
 | Runtime identity | exact type key, parent, depth, and finality |
 | Physical layout | complete base prefix, field order, size, alignment, and exact scalar widths |
-| Loaded-library compatibility | an explicit native completeness certificate exists and its size, alignment, finality, field count, and fingerprint all match before direct allocation |
+| Generation-time layout compatibility | stubgen accepts the type only when an explicit native completeness certificate and its size, alignment, finality, field count, and fingerprint match the generated representation |
 | Reflected surface | exact reflected names, schemas, defaults, and structural flags |
 | Complete allocator API | exact stored types by value, direct `Self` return, no hidden clone/conversion work, and visibility that preserves external invariants |
 | Constructor parity | matching defaults, rejection cases, normalization, and derived state |
@@ -123,17 +119,12 @@ A binding is accepted only when every applicable check passes:
 The focused checks live in `tests/stubgen_acceptance.rs`. It explicitly invokes
 a C++ field getter on a Rust-created `Add` and compares that node with a
 C++-created `Add` using C++ structural equality. For every ABI-complete object,
-`tests/binding_contract.rs` compares Rust's total size and every reflected
-direct field's offset, size, and alignment with C++ runtime metadata. It checks
-Rust's object alignment against the alignment implied by the native parent and
-registered fields, the exact reflected schema, flags, and registered default
-values, and compile-checks every public owned `from_complete_fields` signature.
-`ObjectDef::def_complete_layout()` is the
-explicit native proof that no physical field is unreflected and publishes the
-authoritative alignment, finality, and fingerprint. The production allocator recursively
-validates every generated parent prefix and repeats the reflection-exposed
-subset once per type before its first allocation, so a different loaded library
-fails before C++ can read a mismatched Rust object.
+`tests/binding_contract.rs` checks the exact reflected schema, flags, registered
+default values, and every public owned `from_complete_fields` signature.
+`ObjectDef::def_complete_layout()` is the explicit native proof that no
+physical field is unreflected and publishes the authoritative alignment,
+finality, and fingerprint for stubgen to consume. Layout comparison belongs to
+stubgen and its generation tests, not to each generated Rust object.
 Broader pass behavior is in
 `tests/structural_passes.rs`.
 
@@ -190,7 +181,7 @@ a separately reviewed C++ ABI migration removes that blocker.
   in native declaration order within each class. Its parameter names match the
   generated Rust fields after deterministic identifier sanitization (for
   example, native `global_var_map_` becomes Rust `global_var_map`). It moves
-  those values into the guarded allocator without cloning handles, converting
+  those values into `ObjectArc::new` without cloning handles, converting
   strings, or rebuilding containers. Convenience constructors may expose a
   semantic argument order, accept borrowed inputs, validate or derive state,
   and explicitly clone while delegating to this owned path.
@@ -215,22 +206,17 @@ a separately reviewed C++ ABI migration removes that blocker.
 - A polymorphic behavior base remains opaque. Additional reflected methods let
   Rust call behavior without changing the native virtual interface, but do not
   authorize Rust to manufacture a vptr or allocate a concrete subclass.
-- `ObjectLayout` and `RustAllocatable` answer different questions: the former
-  says Rust knows the bytes of a prefix, while the latter says the complete
-  native type may be allocated in Rust. A layout-only base such as `TypeObj`
-  implements only the former. Polymorphic, registry-owned, interned, and
-  STL-backed objects expose opaque wrappers and implement neither.
+- Stubgen may emit `ObjectArc::new` only for a concrete type that passed its
+  complete-layout and constructor-semantics classification. Layout-only bases,
+  polymorphic objects, registry-owned identities, interned objects, and
+  STL-backed objects receive no generated allocator.
 - A Rust-created node carries a Rust deleter. C++ must release it through the
   header rather than assuming a C++ `delete` expression.
-- A generated crate must not assume that a dynamically loaded TVM library has
-  the layout used during generation. Before the first direct allocation of a
-  type, the current runtime guard recursively validates every generated parent
-  prefix, then checks the concrete type's identity, inheritance depth,
-  registered total size, every reflected field's offset, size, and alignment,
-  and the `__ffi_native_object_layout__` certificate. The certificate supplies
-  native alignment, finality, completeness, and a fingerprint over the parent,
-  size, alignment, finality, and ordered direct fields. A missing or mismatched
-  value stops allocation because continuing would be memory-unsafe.
+- This target-code demo is generated for the same TVM build that supplies its
+  native-layout manifest. If generated crates later support loading arbitrary
+  TVM shared-library versions, compatibility should be checked once through a
+  centralized ABI version/fingerprint gate rather than by emitting a layout
+  macro beside every generated class.
 - A C++-created node keeps its C++ deleter; the same Rust wrapper can reference
   either origin.
 - Reflection describes structural fields, not necessarily all physical fields.
@@ -272,8 +258,8 @@ a separately reviewed C++ ABI migration removes that blocker.
 The handwritten output is ready to freeze as stubgen's replacement target only
 when all of the following are true:
 
-1. every handwritten `Object` definition passes the runtime identity,
-   reflection, size, alignment, and field-offset checks;
+1. stubgen's layout-input tests verify runtime identity, reflection, size,
+   alignment, and field offsets before emitting every complete `Object`;
 2. every ABI-complete allocatable node has a direct complete-field allocator
    whose signature follows flattened native field order and whose body performs
    only Rust allocation, takes exact field types by value without hidden
@@ -290,8 +276,8 @@ when all of the following are true:
    slice;
 7. behavior-only bases expose no reflection creator and cannot produce a
    method-less standalone object; and
-8. the generated/layout-input fingerprint is checked against the loaded
-   library before direct allocation; and
+8. the generated output is built and tested against the exact native-layout
+   manifest consumed by stubgen; and
 9. the complete C++, Rust, and Python suites pass against one build.
 
 This freezes the expected generated Rust surface, not the handwritten files.

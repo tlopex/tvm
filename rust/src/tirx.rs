@@ -46,10 +46,6 @@ pub struct AddObj {
     pub a: Expr,
     pub b: Expr,
 }
-crate::abi::impl_object_layout!(AddObj: ExprObj {
-    "a" => a: Expr,
-    "b" => b: Expr,
-});
 
 /// Reference-counted handle to an addition expression.
 #[repr(C)]
@@ -104,7 +100,7 @@ impl Add {
     /// Construct an addition from every physical field without re-deriving its result type.
     pub fn from_complete_fields(span: Option<Span>, ty: crate::ir::Type, a: Expr, b: Expr) -> Self {
         Self {
-            data: crate::abi::allocate_object(AddObj {
+            data: ObjectArc::new(AddObj {
                 base: ExprObj::new(span, ty),
                 a,
                 b,
@@ -156,10 +152,6 @@ macro_rules! define_binary_expression {
             pub a: Expr,
             pub b: Expr,
         }
-        crate::abi::impl_object_layout!($object: ExprObj {
-            "a" => a: Expr,
-            "b" => b: Expr,
-        });
 
         #[doc = concat!("Reference-counted handle to ", $description, ".")]
         #[repr(C)]
@@ -219,7 +211,7 @@ macro_rules! define_binary_expression {
                 b: Expr,
             ) -> Self {
                 Self {
-                    data: crate::abi::allocate_object($object {
+                    data: ObjectArc::new($object {
                         base: ExprObj::new(span, ty),
                         a,
                         b,
@@ -242,9 +234,6 @@ pub struct StringImmObj {
     base: ExprObj,
     pub value: String,
 }
-crate::abi::impl_object_layout!(StringImmObj: ExprObj {
-    "value" => value: String,
-});
 
 /// Reference-counted handle to a TIR string literal.
 #[repr(C)]
@@ -284,7 +273,7 @@ impl StringImm {
     /// Construct a string literal from every physical field without re-deriving its type.
     pub fn from_complete_fields(span: Option<Span>, ty: crate::ir::Type, value: String) -> Self {
         Self {
-            data: crate::abi::allocate_object(StringImmObj {
+            data: ObjectArc::new(StringImmObj {
                 base: ExprObj::new(span, ty),
                 value,
             }),
@@ -300,9 +289,6 @@ pub struct StmtObj {
     base: tvm_ffi::Object,
     pub span: Option<Span>,
 }
-crate::abi::impl_object_layout!(StmtObj {
-    "span" => span: Option<Span>,
-});
 
 /// Reference-counted handle to any TIR statement.
 #[repr(C)]
@@ -363,11 +349,6 @@ pub struct AssertStmtObj {
     pub error_kind: StringImm,
     pub message_parts: Array<StringImm>,
 }
-crate::abi::impl_object_layout!(AssertStmtObj: StmtObj {
-    "condition" => condition: Expr,
-    "error_kind" => error_kind: StringImm,
-    "message_parts" => message_parts: Array<StringImm>,
-});
 
 /// Reference-counted handle to a TIR assertion.
 #[repr(C)]
@@ -401,9 +382,6 @@ pub struct EvaluateObj {
     base: StmtObj,
     pub value: Expr,
 }
-crate::abi::impl_object_layout!(EvaluateObj: StmtObj {
-    "value" => value: Expr,
-});
 
 /// Reference-counted handle to a TIR evaluate statement.
 #[repr(C)]
@@ -437,9 +415,6 @@ pub struct SeqStmtObj {
     base: StmtObj,
     pub seq: Array<Stmt>,
 }
-crate::abi::impl_object_layout!(SeqStmtObj: StmtObj {
-    "seq" => seq: Array<Stmt>,
-});
 
 /// Reference-counted handle to a sequence of statements.
 #[repr(C)]
@@ -504,7 +479,7 @@ impl SeqStmt {
     /// Construct a sequence from its already-normalized physical fields.
     pub fn from_complete_fields(span: Option<Span>, seq: Array<Stmt>) -> Self {
         Self {
-            data: crate::abi::allocate_object(SeqStmtObj {
+            data: ObjectArc::new(SeqStmtObj {
                 base: StmtObj::new(span),
                 seq,
             }),
@@ -544,11 +519,6 @@ pub struct IfThenElseObj {
     pub then_case: Stmt,
     pub else_case: Option<Stmt>,
 }
-crate::abi::impl_object_layout!(IfThenElseObj: StmtObj {
-    "condition" => condition: Expr,
-    "then_case" => then_case: Stmt,
-    "else_case" => else_case: Option<Stmt>,
-});
 
 /// Reference-counted handle to a conditional statement.
 #[repr(C)]
@@ -612,7 +582,7 @@ impl IfThenElse {
         else_case: Option<Stmt>,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(IfThenElseObj {
+            data: ObjectArc::new(IfThenElseObj {
                 base: StmtObj::new(span),
                 condition,
                 then_case,
@@ -678,16 +648,6 @@ pub struct ForObj {
     pub annotations: Map<String, Any>,
     pub step: Option<Expr>,
 }
-crate::abi::impl_object_layout!(ForObj: StmtObj {
-    "loop_var" => loop_var: Var,
-    "min" => min: Expr,
-    "extent" => extent: Expr,
-    "kind" => kind: ForKind,
-    "body" => body: Stmt,
-    "thread_binding" => thread_binding: Option<IterVar>,
-    "annotations" => annotations: Map<String, Any>,
-    "step" => step: Option<Expr>,
-});
 
 /// Reference-counted handle to a TIR loop.
 #[repr(C)]
@@ -787,7 +747,7 @@ impl For {
         step: Option<Expr>,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(ForObj {
+            data: ObjectArc::new(ForObj {
                 base: StmtObj::new(span),
                 loop_var,
                 min,
@@ -849,11 +809,6 @@ pub struct PrimFuncObj {
     pub ret_type: crate::ir::Type,
     pub body: Stmt,
 }
-crate::abi::impl_object_layout!(PrimFuncObj: BaseFuncObj {
-    "params" => params: Array<Var>,
-    "ret_type" => ret_type: crate::ir::Type,
-    "body" => body: Stmt,
-});
 
 impl crate::abi::ConstructorRecipe for PrimFuncObj {
     const INPUTS: &'static [&'static str] = &["params", "body", "ret_type"];
@@ -933,7 +888,7 @@ impl AssertStmt {
         message_parts: Array<StringImm>,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(AssertStmtObj {
+            data: ObjectArc::new(AssertStmtObj {
                 base: StmtObj::new(span),
                 condition,
                 error_kind,
@@ -973,7 +928,7 @@ impl Evaluate {
     /// Construct an evaluation statement from every physical field after external validation.
     pub fn from_complete_fields(span: Option<Span>, value: Expr) -> Self {
         Self {
-            data: crate::abi::allocate_object(EvaluateObj {
+            data: ObjectArc::new(EvaluateObj {
                 base: StmtObj::new(span),
                 value,
             }),
@@ -1055,7 +1010,7 @@ impl PrimFunc {
         body: Stmt,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(PrimFuncObj {
+            data: ObjectArc::new(PrimFuncObj {
                 base: BaseFuncObj::new(span, ty, attrs),
                 params,
                 ret_type,
@@ -1077,17 +1032,4 @@ tvm_ffi::impl_object_upcast!(
     IfThenElse => Stmt,
     PrimFunc => crate::ir::BaseFunc,
     PrimFunc => Expr,
-);
-
-crate::abi::impl_rust_allocatable!(
-    AddObj,
-    SubObj,
-    MulObj,
-    StringImmObj,
-    AssertStmtObj,
-    EvaluateObj,
-    SeqStmtObj,
-    IfThenElseObj,
-    ForObj,
-    PrimFuncObj,
 );

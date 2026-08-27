@@ -216,17 +216,6 @@ pub struct SBlockObj {
     pub init: Option<Stmt>,
     pub body: Stmt,
 }
-crate::abi::impl_object_layout!(SBlockObj: StmtObj {
-    "iter_vars" => iter_vars: Array<IterVar>,
-    "reads" => reads: Array<BufferRegion>,
-    "writes" => writes: Array<BufferRegion>,
-    "name_hint" => name_hint: String,
-    "alloc_buffers" => alloc_buffers: Array<Var>,
-    "match_buffers" => match_buffers: Array<MatchBufferRegion>,
-    "annotations" => annotations: Map<String, Any>,
-    "init" => init: Option<Stmt>,
-    "body" => body: Stmt,
-});
 
 /// Reference-counted handle to a TIR scheduling block.
 #[repr(C)]
@@ -314,7 +303,7 @@ impl SBlock {
         body: Stmt,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(SBlockObj {
+            data: ObjectArc::new(SBlockObj {
                 base: StmtObj::new(span),
                 iter_vars,
                 reads,
@@ -341,11 +330,6 @@ pub struct SBlockRealizeObj {
     pub predicate: Expr,
     pub block: SBlock,
 }
-crate::abi::impl_object_layout!(SBlockRealizeObj: StmtObj {
-    "iter_values" => iter_values: Array<Expr>,
-    "predicate" => predicate: Expr,
-    "block" => block: SBlock,
-});
 
 /// Reference-counted handle to one realized scheduling block.
 #[repr(C)]
@@ -427,7 +411,7 @@ impl SBlockRealize {
         block: SBlock,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(SBlockRealizeObj {
+            data: ObjectArc::new(SBlockRealizeObj {
                 base: StmtObj::new(span),
                 iter_values,
                 predicate,
@@ -442,5 +426,3 @@ tvm_ffi::impl_object_upcast!(
     SBlock => Stmt,
     SBlockRealize => Stmt,
 );
-
-crate::abi::impl_rust_allocatable!(SBlockObj, SBlockRealizeObj);

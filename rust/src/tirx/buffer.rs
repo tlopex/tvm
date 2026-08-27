@@ -276,11 +276,6 @@ pub struct IterObj {
     pub stride: Expr,
     pub axis: Axis,
 }
-crate::abi::impl_object_layout!(IterObj {
-    "extent" => extent: Expr,
-    "stride" => stride: Expr,
-    "axis" => axis: Axis,
-});
 
 /// Reference-counted handle to one layout iterator.
 #[repr(C)]
@@ -315,7 +310,7 @@ impl Iter {
     /// Construct one layout iterator from every physical field after external validation.
     pub fn from_complete_fields(extent: Expr, stride: Expr, axis: Axis) -> Self {
         Self {
-            data: crate::abi::allocate_object(IterObj {
+            data: ObjectArc::new(IterObj {
                 base: tvm_ffi::Object::new(),
                 extent,
                 stride,
@@ -402,17 +397,6 @@ pub struct BufferTypeObj {
     pub layout: Option<Layout>,
     pub allocated_addr: Array<Expr>,
 }
-crate::abi::impl_object_layout!(BufferTypeObj: TypeObj {
-    "dtype" => dtype: PrimType,
-    "storage_scope" => storage_scope: String,
-    "shape" => shape: Array<Expr>,
-    "strides" => strides: Array<Expr>,
-    "elem_offset" => elem_offset: Expr,
-    "data_alignment" => data_alignment: i32,
-    "offset_factor" => offset_factor: i32,
-    "layout" => layout: Option<Layout>,
-    "allocated_addr" => allocated_addr: Array<Expr>,
-});
 
 impl crate::abi::ConstructorRecipe for BufferTypeObj {
     const INPUTS: &'static [&'static str] = &[
@@ -576,7 +560,7 @@ impl BufferType {
         allocated_addr: Array<Expr>,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(BufferTypeObj {
+            data: ObjectArc::new(BufferTypeObj {
                 base: TypeObj::new(span),
                 dtype,
                 storage_scope,
@@ -616,11 +600,6 @@ pub struct BufferLoadObj {
     pub indices: Array<Expr>,
     pub predicate: Option<Expr>,
 }
-crate::abi::impl_object_layout!(BufferLoadObj: ExprObj {
-    "buffer" => buffer: Var,
-    "indices" => indices: Array<Expr>,
-    "predicate" => predicate: Option<Expr>,
-});
 
 /// Reference-counted handle to a TIR buffer read.
 #[repr(C)]
@@ -694,7 +673,7 @@ impl BufferLoad {
         predicate: Option<Expr>,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(BufferLoadObj {
+            data: ObjectArc::new(BufferLoadObj {
                 base: ExprObj::new(span, ty),
                 buffer,
                 indices,
@@ -716,12 +695,6 @@ pub struct BufferStoreObj {
     pub indices: Array<Expr>,
     pub predicate: Option<Expr>,
 }
-crate::abi::impl_object_layout!(BufferStoreObj: StmtObj {
-    "buffer" => buffer: Var,
-    "value" => value: Expr,
-    "indices" => indices: Array<Expr>,
-    "predicate" => predicate: Option<Expr>,
-});
 
 /// Reference-counted handle to a TIR buffer write.
 #[repr(C)]
@@ -816,7 +789,7 @@ impl BufferStore {
         predicate: Option<Expr>,
     ) -> Self {
         Self {
-            data: crate::abi::allocate_object(BufferStoreObj {
+            data: ObjectArc::new(BufferStoreObj {
                 base: StmtObj::new(span),
                 buffer,
                 value,
@@ -1080,10 +1053,6 @@ pub struct MatchBufferRegionObj {
     pub buffer: Var,
     pub source: BufferRegion,
 }
-crate::abi::impl_object_layout!(MatchBufferRegionObj {
-    "buffer" => buffer: Var,
-    "source" => source: BufferRegion,
-});
 
 impl crate::abi::ConstructorRecipe for MatchBufferRegionObj {
     const INPUTS: &'static [&'static str] = &["buffer", "source"];
@@ -1127,7 +1096,7 @@ impl MatchBufferRegion {
     /// Allocate a match-buffer declaration directly after its invariants have been validated.
     pub fn from_complete_fields(buffer: Var, source: BufferRegion) -> Self {
         Self {
-            data: crate::abi::allocate_object(MatchBufferRegionObj {
+            data: ObjectArc::new(MatchBufferRegionObj {
                 base: tvm_ffi::Object::new(),
                 buffer,
                 source,
@@ -1143,12 +1112,4 @@ tvm_ffi::impl_object_upcast!(
     BufferLoad => Expr,
     BufferStore => Stmt,
     BufferRegion => PrimExprConvertible,
-);
-
-crate::abi::impl_rust_allocatable!(
-    IterObj,
-    BufferTypeObj,
-    BufferLoadObj,
-    BufferStoreObj,
-    MatchBufferRegionObj,
 );

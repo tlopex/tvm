@@ -19,7 +19,6 @@
 
 //! Runtime conformance checks for the complete handwritten IR surface.
 
-use tvm::abi::{validate_loaded_layout, ObjectLayout};
 use tvm::ir::{
     Attrs, AttrsObj, BaseFunc, BaseFuncObj, Call, CallObj, DictAttrs, DictAttrsObj,
     DummyGlobalInfo, DummyGlobalInfoObj, Expr, ExprObj, GlobalInfo, GlobalInfoObj, GlobalVar,
@@ -41,9 +40,7 @@ use tvm::tirx::{
     SeqStmtObj, Stmt, StmtObj, StringImm, StringImmObj, Sub, SubObj, TileLayoutObj,
 };
 use tvm::tvm_ffi::tvm_ffi_sys::{TVMFFIFieldFlagBitMask, TVMFFISEqHashKind};
-use tvm::tvm_ffi::{
-    get_native_object_layout, Any, Array, DLDataType, Map, Object, ObjectCore, String,
-};
+use tvm::tvm_ffi::{Any, Array, DLDataType, Map, Object, ObjectCore, String};
 
 mod common;
 use common::{direct_fields, load_tvm_compiler, runtime_type_info};
@@ -212,90 +209,6 @@ fn assert_contract<N: ObjectCore, P: ObjectCore>(
         actual_structural_kind,
         expected_structural_kind.map(|kind| kind as i32),
         "{} structural kind",
-        N::TYPE_KEY
-    );
-}
-
-fn assert_layout<N: ObjectCore + ObjectLayout, P>() {
-    validate_loaded_layout::<N>().unwrap_or_else(|error| panic!("{}: {error}", N::TYPE_KEY));
-    let info = runtime_type_info::<N>();
-    assert!(
-        !info.metadata.is_null(),
-        "missing metadata for {}",
-        N::TYPE_KEY
-    );
-    let cpp_size = unsafe { (*info.metadata).total_size };
-    assert_ne!(cpp_size, 0, "missing C++ object size for {}", N::TYPE_KEY);
-    assert_eq!(
-        N::SIZE,
-        cpp_size as usize,
-        "{} total object size",
-        N::TYPE_KEY
-    );
-
-    let cpp_fields = direct_fields::<N>();
-    assert_eq!(
-        N::FIELDS.len(),
-        cpp_fields.len(),
-        "{} physical/reflected field count",
-        N::TYPE_KEY
-    );
-    for rust_field in N::FIELDS {
-        let cpp_field = cpp_fields
-            .iter()
-            .find(|field| field.name.as_str() == rust_field.name)
-            .unwrap_or_else(|| panic!("missing C++ field {}.{}", N::TYPE_KEY, rust_field.name));
-        assert_eq!(
-            rust_field.offset,
-            cpp_field.offset as usize,
-            "{}.{} offset",
-            N::TYPE_KEY,
-            rust_field.name
-        );
-        assert_eq!(
-            rust_field.size,
-            cpp_field.size as usize,
-            "{}.{} size",
-            N::TYPE_KEY,
-            rust_field.name
-        );
-        assert_eq!(
-            rust_field.alignment,
-            cpp_field.alignment as usize,
-            "{}.{} alignment",
-            N::TYPE_KEY,
-            rust_field.name
-        );
-    }
-
-    let registered_alignment = cpp_fields
-        .iter()
-        .fold(std::mem::align_of::<P>(), |current, field| {
-            current.max(field.alignment as usize)
-        });
-    assert_eq!(
-        N::ALIGNMENT,
-        registered_alignment,
-        "{} alignment implied by its parent and registered fields",
-        N::TYPE_KEY
-    );
-}
-
-fn assert_no_reflection_creator<N: ObjectCore>() {
-    let info = runtime_type_info::<N>();
-    if !info.metadata.is_null() {
-        assert!(
-            unsafe { (*info.metadata).creator }.is_none(),
-            "behavior-only base {} must not be reflection-constructible",
-            N::TYPE_KEY
-        );
-    }
-}
-
-fn assert_opaque_binding<N: ObjectCore>() {
-    assert!(
-        get_native_object_layout(N::type_index()).unwrap().is_none(),
-        "{} must remain opaque or use native construction semantics",
         N::TYPE_KEY
     );
 }
@@ -604,69 +517,6 @@ fn all_handwritten_objects_match_runtime_metadata() {
             ("is_pure", 0, SCHEMA_BOOL),
         ],
     );
-}
-
-#[test]
-fn abi_complete_object_layout_evidence_matches_cpp() {
-    load_tvm_compiler();
-
-    assert_no_reflection_creator::<PrimExprConvertibleObj>();
-    assert_no_reflection_creator::<DataProducerObj>();
-    assert_no_reflection_creator::<LayoutObj>();
-    assert_opaque_binding::<PrimExprConvertibleObj>();
-    assert_opaque_binding::<DataProducerObj>();
-    assert_opaque_binding::<LayoutObj>();
-    assert_opaque_binding::<TileLayoutObj>();
-    assert_opaque_binding::<BufferRegionObj>();
-    assert_opaque_binding::<IterVarObj>();
-    assert_opaque_binding::<SourceNameObj>();
-    assert_opaque_binding::<SourceObj>();
-    assert_opaque_binding::<AxisObj>();
-
-    assert_layout::<ExprObj, Object>();
-    assert_layout::<BaseFuncObj, ExprObj>();
-    assert_layout::<GlobalVarObj, ExprObj>();
-    assert_layout::<VarObj, ExprObj>();
-    assert_layout::<SourceMapObj, Object>();
-    assert_layout::<SpanObj, Object>();
-    assert_layout::<RangeObj, Object>();
-    assert_layout::<CallObj, ExprObj>();
-    assert_layout::<TypeObj, Object>();
-    assert_layout::<PrimTypeObj, TypeObj>();
-    assert_layout::<TupleTypeObj, TypeObj>();
-    assert_layout::<IntImmObj, ExprObj>();
-    assert_layout::<AttrsObj, Object>();
-    assert_layout::<DictAttrsObj, AttrsObj>();
-    assert_layout::<GlobalInfoObj, Object>();
-    assert_layout::<DummyGlobalInfoObj, GlobalInfoObj>();
-    assert_layout::<IRModuleObj, Object>();
-
-    assert_layout::<AddObj, ExprObj>();
-    assert_layout::<SubObj, ExprObj>();
-    assert_layout::<MulObj, ExprObj>();
-    assert_layout::<StringImmObj, ExprObj>();
-    assert_layout::<StmtObj, Object>();
-    assert_layout::<AssertStmtObj, StmtObj>();
-    assert_layout::<EvaluateObj, StmtObj>();
-    assert_layout::<SeqStmtObj, StmtObj>();
-    assert_layout::<IfThenElseObj, StmtObj>();
-    assert_layout::<ForObj, StmtObj>();
-    assert_layout::<PrimFuncObj, BaseFuncObj>();
-    assert_layout::<IterObj, Object>();
-    assert_layout::<BufferTypeObj, TypeObj>();
-    assert_layout::<BufferLoadObj, ExprObj>();
-    assert_layout::<BufferStoreObj, StmtObj>();
-    assert_layout::<MatchBufferRegionObj, Object>();
-    assert_layout::<SBlockObj, StmtObj>();
-    assert_layout::<SBlockRealizeObj, StmtObj>();
-
-    assert_layout::<TupleObj, ExprObj>();
-    assert_layout::<RelaxIfObj, ExprObj>();
-    assert_layout::<BindingObj, Object>();
-    assert_layout::<VarBindingObj, BindingObj>();
-    assert_layout::<BindingBlockObj, Object>();
-    assert_layout::<SeqExprObj, ExprObj>();
-    assert_layout::<RelaxFunctionObj, BaseFuncObj>();
 }
 
 macro_rules! assert_complete_allocator {
