@@ -21,10 +21,6 @@
 #include <tvm/runtime/logging.h>
 #include <tvm/te/operation.h>
 
-#include <type_traits>
-
-static_assert(!std::is_default_constructible_v<tvm::tirx::DataProducerNode>);
-
 TEST(Tensor, Basic) {
   using namespace tvm;
   using namespace tvm::te;
@@ -34,22 +30,7 @@ TEST(Tensor, Basic) {
   Tensor A = placeholder({m, l}, PrimType::Float(32), "A");
   Tensor B = placeholder({n, l}, PrimType::Float(32), "B");
 
-  const auto* producer_info =
-      TVMFFIGetTypeInfo(tirx::DataProducerNode::_GetOrAllocRuntimeTypeIndex());
-  ASSERT_NE(producer_info, nullptr);
-  ASSERT_NE(producer_info->metadata, nullptr);
-  EXPECT_EQ(producer_info->metadata->creator, nullptr);
-
-  // Exercise the language-neutral DataProducer table through the base type,
-  // rather than resolving TensorNode's concrete methods statically.
-  tirx::DataProducer producer = A;
-  ASSERT_EQ(producer->GetShape().size(), 2);
-  EXPECT_TRUE(producer->GetShape()[0].same_as(m));
-  EXPECT_EQ(producer->GetDataType()->dtype, PrimType::Float(32)->dtype);
-  EXPECT_EQ(producer->GetNameHint(), "A");
-
-  auto C = compute(
-      {m, n}, [&](PrimVar i, PrimVar j) { return A[i][j]; }, "C");
+  auto C = compute({m, n}, [&](PrimVar i, PrimVar j) { return A[i][j]; }, "C");
 
   Tensor::Slice x = A[n];
 }

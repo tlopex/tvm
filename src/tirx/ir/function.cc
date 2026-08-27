@@ -38,10 +38,9 @@ TVM_FFI_STATIC_INIT_BLOCK() {
 }
 
 namespace {
-tvm::Type InferType(const ffi::Array<tirx::Var>& function_params, const Type& function_ret_type,
-                    const Stmt& function_body) {
+tvm::Type InferType(const PrimFunc& prim_func) {
   ffi::Array<tvm::Type> params;
-  for (const auto& param : function_params) {
+  for (const auto& param : prim_func->params) {
     tvm::Type param_ty = [&]() -> tvm::Type {
       if (param->ty.as<BufferTypeNode>()) {
         BufferVar buf(param);
@@ -64,57 +63,38 @@ tvm::Type InferType(const ffi::Array<tirx::Var>& function_params, const Type& fu
   }
 
   tvm::Type ret = [&]() -> tvm::Type {
-    if (const auto* prim = function_ret_type.as<PrimTypeNode>()) {
+    if (const auto* prim = prim_func->ret_type.as<PrimTypeNode>()) {
       return tvm::PrimType(prim->dtype);
-    } else if (IsVoidType(function_ret_type)) {
+    } else if (IsVoidType(prim_func->ret_type)) {
       return relax::TupleType(ffi::Array<tvm::Type>{});
     } else {
       return relax::AnyType();
     }
   }();
 
-  bool purity =
-      function_body.defined() ? s_tir::IsPureFunctionFields(function_params, function_body) : false;
+  bool purity = prim_func->body.defined() ? s_tir::IsPureFunction(prim_func) : false;
 
   return relax::FuncType(params, ret, purity);
 }
-
-struct PrimFuncDerivedFields {
-  Type ret_type;
-  Type function_type;
-};
-
-PrimFuncDerivedFields DerivePrimFuncTypes(const ffi::Array<tirx::Var>& params, const Stmt& body,
-                                          Type ret_type) {
-  if (ret_type.IsMissing()) {
-    ret_type = VoidType();
-  }
-  return {ret_type, InferType(params, ret_type, body)};
-}
-
 }  // namespace
-
-ffi::Map<ffi::String, ffi::Any> PrimFuncNode::PrepareFFI(ffi::Array<tirx::Var> params, Stmt body,
-                                                         Type ret_type) {
-  PrimFuncDerivedFields derived = DerivePrimFuncTypes(params, body, std::move(ret_type));
-  return {{"ret_type", derived.ret_type}, {"ty", derived.function_type}};
-}
 
 // Get the function type of a PrimFunc
 PrimFunc::PrimFunc(ffi::Array<tirx::Var> params, Stmt body, Type ret_type, DictAttrs attrs,
                    Span span) {
-  PrimFuncDerivedFields derived = DerivePrimFuncTypes(params, body, std::move(ret_type));
-  ret_type = std::move(derived.ret_type);
-  Type function_type = std::move(derived.function_type);
+  if (ret_type.IsMissing()) {
+    ret_type = VoidType();
+  }
 
   auto n = ffi::make_object<PrimFuncNode>();
   n->params = std::move(params);
   n->body = std::move(body);
   n->ret_type = std::move(ret_type);
   n->attrs = std::move(attrs);
-  n->ty = std::move(function_type);
+  n->ty = relax::FuncType::OpaqueFunc();
   n->span = std::move(span);
   data_ = std::move(n);
+
+  (*this)->ty = InferType(*this);
 }
 
 FuncType PrimFuncNode::func_type_annotation() const {

@@ -25,22 +25,6 @@
 namespace tvm {
 namespace tirx {
 
-namespace {
-
-int64_t AxisAnyHash(const ffi::Any& src) {
-  return static_cast<int64_t>(src.cast<Axis>()->registry_index());
-}
-
-bool AxisAnyEqual(const ffi::Any& lhs, const ffi::Any& rhs) {
-  return lhs.cast<Axis>()->registry_index() == rhs.cast<Axis>()->registry_index();
-}
-
-}  // namespace
-
-ffi::Map<ffi::String, ffi::Any> AxisNode::PrepareFFI(ffi::String name) {
-  return {{"registry_index", static_cast<int64_t>(Axis::Get(name)->registry_index())}};
-}
-
 /**************** Axis ****************/
 // AxisNode
 ffi::ObjectPtr<ffi::Object> CreateAxis(const std::string& name) {
@@ -104,9 +88,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
   refl::TypeAttrDef<AxisNode>()
       .def("__data_to_json__", [](const AxisNode* node) -> ffi::String { return node->name; })
-      .def("__data_from_json__", [](const ffi::String& name) -> Axis { return Axis::Get(name); })
-      .attr(refl::type_attr::kAnyHash, reinterpret_cast<void*>(&AxisAnyHash))
-      .attr(refl::type_attr::kAnyEqual, reinterpret_cast<void*>(&AxisAnyEqual));
+      .def("__data_from_json__", [](const ffi::String& name) -> Axis { return Axis::Get(name); });
 }
 
 // Axis

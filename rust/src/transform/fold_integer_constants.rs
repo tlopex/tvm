@@ -19,20 +19,19 @@
 
 use tvm_ffi::{structural_map, Any, DLDataType, DLDataTypeCode, ObjectRefCast, Result, WalkOrder};
 
-use super::utils::LazyAnalyzer;
 use super::{create_prim_func_pass, Pass};
 use crate::ir::{Expr, IntImm, PrimType, Span};
 use crate::tirx::{Add, Mul, PrimFunc, Sub};
 
-/// Fold binary integer expressions with checked Rust arithmetic and TVM's analyzer.
+/// Fold binary integer expressions with checked Rust arithmetic.
 pub fn fold_integer_constants_expr(expr: Expr) -> Result<Expr> {
-    let mut mapper = IntegerConstantFolder::default();
+    let mut mapper = IntegerConstantFolder;
     structural_map(expr, &mut mapper, WalkOrder::PostOrder)?.try_into()
 }
 
 /// Fold binary integer constants throughout a TIR PrimFunc.
 pub fn fold_integer_constants_prim_func(function: PrimFunc) -> Result<PrimFunc> {
-    let mut mapper = IntegerConstantFolder::default();
+    let mut mapper = IntegerConstantFolder;
     structural_map(function, &mut mapper, WalkOrder::PostOrder)?.try_into()
 }
 
@@ -47,13 +46,10 @@ pub fn fold_integer_constants() -> Result<Pass> {
     )
 }
 
-#[derive(Default)]
-struct IntegerConstantFolder {
-    analyzer: LazyAnalyzer,
-}
+struct IntegerConstantFolder;
 
 impl IntegerConstantFolder {
-    fn fold_or_analyze(
+    fn fold_or_keep(
         &mut self,
         original: Expr,
         lhs: &Expr,
@@ -61,76 +57,77 @@ impl IntegerConstantFolder {
         span: Option<&Span>,
         operation: fn(i64, i64) -> Option<i64>,
     ) -> Result<Any> {
-        if let Some(folded) = try_fold_binary(lhs, rhs, span, operation) {
-            return Ok(Any::from(folded));
-        }
-        if is_matching_integer_pair(lhs, rhs) {
-            return Ok(Any::from(self.analyzer.get()?.simplify(&original)?));
-        }
-        Ok(Any::from(original))
+        let Some((lhs, rhs, dtype)) = matching_integer_literals(lhs, rhs)? else {
+            return Ok(Any::from(original));
+        };
+        let Some(value) = operation(lhs.value()?, rhs.value()?) else {
+            // Keep the native expression when the operation does not fit the
+            // storage used by IntImm; silently wrapping here would change IR.
+            return Ok(Any::from(original));
+        };
+        Ok(Any::from(IntImm::from_dtype_with_span(dtype, value, span)?))
     }
 }
 
 #[tvm_ffi::dispatch(map)]
 impl IntegerConstantFolder {
     fn map_add(&mut self, value: Add) -> Result<Any> {
-        self.fold_or_analyze(
+        let lhs = value.a()?;
+        let rhs = value.b()?;
+        let span = value.span()?;
+        self.fold_or_keep(
             value.clone().into(),
-            &value.a,
-            &value.b,
-            value.span.as_ref(),
+            &lhs,
+            &rhs,
+            span.as_ref(),
             i64::checked_add,
         )
     }
 
     fn map_subtract(&mut self, value: Sub) -> Result<Any> {
-        self.fold_or_analyze(
+        let lhs = value.a()?;
+        let rhs = value.b()?;
+        let span = value.span()?;
+        self.fold_or_keep(
             value.clone().into(),
-            &value.a,
-            &value.b,
-            value.span.as_ref(),
+            &lhs,
+            &rhs,
+            span.as_ref(),
             i64::checked_sub,
         )
     }
 
     fn map_multiply(&mut self, value: Mul) -> Result<Any> {
-        self.fold_or_analyze(
+        let lhs = value.a()?;
+        let rhs = value.b()?;
+        let span = value.span()?;
+        self.fold_or_keep(
             value.clone().into(),
-            &value.a,
-            &value.b,
-            value.span.as_ref(),
+            &lhs,
+            &rhs,
+            span.as_ref(),
             i64::checked_mul,
         )
     }
 }
 
-fn try_fold_binary(
+fn matching_integer_literals(
     lhs: &Expr,
     rhs: &Expr,
-    span: Option<&Span>,
-    operation: fn(i64, i64) -> Option<i64>,
-) -> Option<Expr> {
-    let (lhs, rhs, dtype) = matching_integer_literals(lhs, rhs)?;
-    let value = operation(lhs.value, rhs.value)?;
-    IntImm::from_dtype_with_span(dtype, value, span)
-        .ok()
-        .map(Expr::from)
-}
-
-fn is_matching_integer_pair(lhs: &Expr, rhs: &Expr) -> bool {
-    matching_integer_literals(lhs, rhs).is_some()
-}
-
-fn matching_integer_literals(lhs: &Expr, rhs: &Expr) -> Option<(IntImm, IntImm, DLDataType)> {
-    let lhs = lhs.clone().try_cast::<IntImm>().ok()?;
-    let rhs = rhs.clone().try_cast::<IntImm>().ok()?;
-    let lhs_dtype = lhs.ty.clone().try_cast::<PrimType>().ok()?.dtype;
-    let rhs_dtype = rhs.ty.clone().try_cast::<PrimType>().ok()?.dtype;
+) -> Result<Option<(IntImm, IntImm, DLDataType)>> {
+    let Ok(lhs) = lhs.clone().try_cast::<IntImm>() else {
+        return Ok(None);
+    };
+    let Ok(rhs) = rhs.clone().try_cast::<IntImm>() else {
+        return Ok(None);
+    };
+    let lhs_dtype = lhs.ty()?.try_cast::<PrimType>()?.dtype()?;
+    let rhs_dtype = rhs.ty()?.try_cast::<PrimType>()?.dtype()?;
     if lhs_dtype != rhs_dtype
         || (lhs_dtype.code != DLDataTypeCode::kDLInt as u8
             && lhs_dtype.code != DLDataTypeCode::kDLUInt as u8)
     {
-        return None;
+        return Ok(None);
     }
-    Some((lhs, rhs, lhs_dtype))
+    Ok(Some((lhs, rhs, lhs_dtype)))
 }

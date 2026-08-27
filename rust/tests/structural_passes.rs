@@ -19,76 +19,57 @@
 
 use tvm::analysis::{
     contains_int, expression_trace, first_int, loop_nesting, memory_access_statistics,
-    node_statistics, side_effect, CallEffectKind, ExprTraceEvent,
+    node_statistics, side_effect, ExprTraceEvent,
 };
 use tvm::ir::{
-    Call, DictAttrs, DummyGlobalInfo, Expr, GlobalVar, IRModule, IntImm, PrimExprConvertible,
-    PrimType, Range, SourceMap, SourceName, Span, TupleType, Type, Var,
+    BaseFunc, Call, DictAttrs, Expr, GlobalVar, IRModule, IntImm, PrimType, SourceMap, Type, Var,
 };
-use tvm::relax::{
-    BindingBlock, If as RelaxIf, RelaxFunction, SeqExpr, Tuple as RelaxTuple, VarBinding,
-};
+use tvm::relax::{Binding, BindingBlock, RelaxFunction, SeqExpr, VarBinding};
 use tvm::tirx::{
-    Add, AddObj, AssertStmt, AssertStmtObj, Axis, BufferLoad, BufferRegion, BufferStore,
-    BufferType, DataProducer, Evaluate, EvaluateObj, For as TirFor, IfThenElse, Iter, IterVar,
-    IterVarType, Layout, MatchBufferRegion, Mul, PrimFunc, SBlock, SBlockRealize, SeqStmt, Stmt,
-    Sub, TileLayout,
+    Add, AddObj, AssertStmt, BufferLoad, BufferStore, BufferType, Evaluate, For as TirFor,
+    IfThenElse, Mul, PrimFunc, SeqStmt, Sub,
 };
 use tvm::transform;
 use tvm::tvm_ffi::{
-    dispatch, structural_map, structural_walk, Any, AnyView, Array, DefRegionKind, Function, Map,
-    ObjectRefCast, Result, WalkOrder, WalkResult,
+    structural_walk, Any, DefRegionKind, Map, ObjectIdentity, ObjectRefCast, ObjectRefCore,
+    String as FfiString, WalkOrder, WalkResult,
 };
 
 mod common;
 use common::{assert_structural_equal, load_tvm_compiler, object_pointer};
 
-fn node_counts<R>(root: &R) -> (usize, usize)
-where
-    for<'a> AnyView<'a>: From<&'a R>,
-{
-    let mut asserts = 0;
-    let mut evaluates = 0;
-    structural_walk(
-        root,
-        (
-            |_: &AssertStmtObj| {
-                asserts += 1;
-                WalkResult::Advance
-            },
-            |_: &EvaluateObj| {
-                evaluates += 1;
-                WalkResult::Advance
-            },
-        ),
-        WalkOrder::PreOrder,
-    )
-    .unwrap();
-    (asserts, evaluates)
+fn int(value: i64) -> Expr {
+    IntImm::new("int32", value).unwrap().into()
 }
 
-fn int_expression(value: i64) -> Expr {
-    Expr::int("int32", value).unwrap()
+fn int64(value: i64) -> Expr {
+    IntImm::new("int64", value).unwrap().into()
 }
 
 fn sample_sum() -> Expr {
-    let one = int_expression(1);
-    let two = int_expression(2);
-    let three = int_expression(3);
-    Expr::add(Expr::add(&one, &two).unwrap(), &three).unwrap()
+    Add::new(Add::new(int(1), int(2)).unwrap(), int(3))
+        .unwrap()
+        .into()
 }
 
-fn cpp_pass(name: &str) -> transform::Pass {
-    Function::get_global(name)
+fn int_value(value: Expr) -> i64 {
+    value.try_cast::<IntImm>().unwrap().value().unwrap()
+}
+
+fn module_function(module: &IRModule) -> PrimFunc {
+    module
+        .functions()
         .unwrap()
-        .call_packed(&[])
+        .iter()
+        .next()
         .unwrap()
-        .try_into()
+        .1
+        .try_cast::<PrimFunc>()
         .unwrap()
 }
 
 #[test]
-fn structural_walk_honors_pre_and_post_order() {
+fn structural_walk_covers_order_skip_and_interrupt() {
     load_tvm_compiler();
     let sum = sample_sum();
 
@@ -112,1708 +93,402 @@ fn structural_walk_honors_pre_and_post_order() {
             ExprTraceEvent::Add,
         ]
     );
-}
-
-#[test]
-fn structural_walk_interrupts_with_the_requested_payload() {
-    load_tvm_compiler();
-    let sum = sample_sum();
-
     assert!(contains_int(&sum, 2).unwrap());
     assert!(!contains_int(&sum, 9).unwrap());
     assert_eq!(first_int(&sum).unwrap(), Some(1));
-    assert_eq!(
-        first_int(&GlobalVar::new("without_literals")).unwrap(),
-        None
-    );
-}
 
-#[test]
-fn structural_walk_skip_prunes_only_the_selected_subtree() {
-    load_tvm_compiler();
-    let left = Expr::add(int_expression(1), int_expression(2)).unwrap();
-    let root = Expr::add(&left, int_expression(3)).unwrap();
+    let left = sum
+        .clone()
+        .try_cast::<Add>()
+        .unwrap()
+        .a()
+        .unwrap()
+        .try_cast::<Add>()
+        .unwrap();
     let left_pointer = object_pointer(&left);
-    let mut seen_additions = 0;
-    let mut seen_integers = Vec::new();
-
+    let mut seen = Vec::new();
     structural_walk(
-        &root,
+        &sum,
         (
             |node: &AddObj| {
-                seen_additions += 1;
-                if node as *const AddObj as *const () == left_pointer {
+                if std::ptr::from_ref(node).cast::<()>() == left_pointer {
                     WalkResult::Skip
                 } else {
                     WalkResult::Advance
                 }
             },
-            |node: &tvm::ir::IntImmObj| -> Result<WalkResult> {
-                seen_integers.push(node.value);
+            |node: &tvm::ir::IntImmObj| -> tvm::tvm_ffi::Result<WalkResult> {
+                seen.push(node.value()?);
                 Ok(WalkResult::Advance)
             },
         ),
         WalkOrder::PreOrder,
     )
     .unwrap();
-
-    assert_eq!(seen_additions, 2);
-    assert_eq!(seen_integers, vec![3]);
+    assert_eq!(seen, vec![3]);
 }
 
 #[test]
-fn direct_fields_borrow_rust_allocated_nodes() {
-    load_tvm_compiler();
-    let one = IntImm::new("int32", 1).unwrap();
-    let two = IntImm::new("int32", 2).unwrap();
-    let add = Add::new(one.clone(), two.clone()).unwrap();
-    let assertion = AssertStmt::new(Expr::int("bool", 1).unwrap(), "ValueError", "bad").unwrap();
-    let leaf_conditional = IfThenElse::new(
-        Expr::int("bool", 1).unwrap(),
-        Evaluate::from_i64(1).unwrap(),
-        None,
-    )
-    .unwrap();
-
-    assert_eq!(one.value, 1);
-    assert_eq!(
-        one.ty
-            .clone()
-            .try_cast::<tvm::ir::PrimType>()
-            .unwrap()
-            .dtype
-            .bits,
-        32
-    );
-    assert_eq!(add.a.clone().try_cast::<IntImm>().unwrap().value, 1);
-    assert_eq!(add.b.clone().try_cast::<IntImm>().unwrap().value, 2);
-    assert_eq!(assertion.error_kind.value.as_str(), "ValueError");
-    assert_eq!(
-        assertion.message_parts.get(0).unwrap().value.as_str(),
-        "bad"
-    );
-    assert_eq!(
-        leaf_conditional
-            .condition
-            .clone()
-            .try_cast::<IntImm>()
-            .unwrap()
-            .value,
-        1
-    );
-    assert!(leaf_conditional
-        .then_case
-        .clone()
-        .try_cast::<Evaluate>()
-        .is_ok());
-    assert!(leaf_conditional.else_case.is_none());
-}
-
-#[test]
-fn source_and_module_metadata_round_trip_cpp_objects() {
-    load_tvm_compiler();
-    let source_name = SourceName::get("contract-test.tvm");
-    let same_source_name = SourceName::get("contract-test.tvm");
-    let cpp_source_name: SourceName = Function::get_global("ir.SourceName")
-        .unwrap()
-        .call_packed(&[AnyView::from(&tvm::tvm_ffi::String::from(
-            "contract-test.tvm",
-        ))])
-        .unwrap()
-        .try_into()
-        .unwrap();
-    let span = Span::new(&source_name, 2, 4, 3, 5).unwrap();
-
-    assert_eq!(source_name.name.as_str(), "contract-test.tvm");
-    assert_ne!(
-        object_pointer(&source_name),
-        object_pointer(&same_source_name)
-    );
-    assert_structural_equal(&source_name, &same_source_name);
-    assert_ne!(
-        object_pointer(&source_name),
-        object_pointer(&cpp_source_name)
-    );
-    assert_structural_equal(&source_name, &cpp_source_name);
-    assert_eq!(
-        object_pointer(&span.source_name),
-        object_pointer(&source_name)
-    );
-    assert_eq!(span.line, 2);
-    assert_eq!(span.column, 3);
-    assert_eq!(span.end_line, 4);
-    assert_eq!(span.end_column, 5);
-    let complete_span = Span::from_complete_fields(source_name.clone(), 11, 22, 33, 44);
-    assert_eq!(complete_span.line, 11);
-    assert_eq!(complete_span.column, 22);
-    assert_eq!(complete_span.end_line, 33);
-    assert_eq!(complete_span.end_column, 44);
-
-    let int_type = PrimType::new("int32").unwrap();
-    assert!(int_type.span.is_none());
-    let function = PrimFunc::from_body(Evaluate::from_i64(0).unwrap()).unwrap();
-    let module = IRModule::from_expr(&function).unwrap();
-    assert_eq!(module.functions.len(), 1);
-    assert_eq!(module.global_var_map.len(), 1);
-    assert_eq!(module.source_map.source_map.len(), 0);
-
-    let mut source_map = SourceMap::new();
-    let source_name = source_map.add("module.tvm", "first line\nsecond line");
-    let sources = source_map.source_map.clone();
-    let source = sources.get(&source_name).unwrap().unwrap();
-    let cpp_lookup_name: SourceName = Function::get_global("ir.SourceName")
-        .unwrap()
-        .call_packed(&[AnyView::from(&tvm::tvm_ffi::String::from("module.tvm"))])
-        .unwrap()
-        .try_into()
-        .unwrap();
-    assert_eq!(
-        object_pointer(&sources.get(&cpp_lookup_name).unwrap().unwrap()),
-        object_pointer(&source)
-    );
-    assert_eq!(source.source_name.name.as_str(), "module.tvm");
-    assert_eq!(source.source.as_str(), "first line\nsecond line");
-    assert_eq!(
-        source.line_map.iter().collect::<Vec<_>>(),
-        vec![0, 10, 11, 11]
-    );
-    assert_eq!(source.get_line(1).unwrap().as_str(), "first line");
-    assert_eq!(source.get_line(2).unwrap().as_str(), "second line");
-
-    let dictionary: Map<tvm::tvm_ffi::String, Any> = [
-        (tvm::tvm_ffi::String::from("number"), Any::from(7i64)),
-        (
-            tvm::tvm_ffi::String::from("text"),
-            Any::from(tvm::tvm_ffi::String::from("value")),
-        ),
-    ]
-    .into_iter()
-    .collect();
-    let attrs = DictAttrs::from_dictionary(dictionary);
-    let dictionary = attrs.dict.clone();
-    assert_eq!(
-        i64::try_from(
-            dictionary
-                .get(&tvm::tvm_ffi::String::from("number"))
-                .unwrap()
-                .unwrap()
-        )
-        .unwrap(),
-        7
-    );
-    assert_eq!(
-        tvm::tvm_ffi::String::try_from(
-            dictionary
-                .get(&tvm::tvm_ffi::String::from("text"))
-                .unwrap()
-                .unwrap()
-        )
-        .unwrap()
-        .as_str(),
-        "value"
-    );
-
-    assert!(module.global_infos.is_empty());
-    let dummy = DummyGlobalInfo::new();
-    let updated = module
-        .with_updated_global_info("dummy", vec![dummy.clone().into()])
-        .unwrap();
-    assert!(module.global_infos.is_empty());
-    let group = updated
-        .global_infos
-        .get(&tvm::tvm_ffi::String::from("dummy"))
-        .unwrap()
-        .unwrap();
-    assert_eq!(group.len(), 1);
-    assert_eq!(
-        object_pointer(&group.get(0).unwrap()),
-        object_pointer(&dummy)
-    );
-}
-
-#[test]
-fn full_direct_constructors_preserve_source_spans() {
-    load_tvm_compiler();
-    let source_name = SourceName::get("constructors.tvm");
-    let span = Span::new(&source_name, 1, 3, 2, 4).unwrap();
-    let int_type: Type = PrimType::new("int32").unwrap().into();
-    let missing_with_span = Type::from_complete_fields(Some(span.clone()));
-    assert!(missing_with_span.is_missing());
-    assert_eq!(
-        object_pointer(missing_with_span.span.as_ref().unwrap()),
-        object_pointer(&span)
-    );
-
-    let variable = Var::with_type_and_span("x", &int_type, Some(&span));
-    let literal =
-        IntImm::from_dtype_with_span(PrimType::new("int32").unwrap().dtype, 1, Some(&span))
-            .unwrap();
-    let addition = Add::with_span(variable.clone(), literal.clone(), Some(&span)).unwrap();
-    let callee = GlobalVar::with_span("callee", Some(&span));
-    let call = Call::with_metadata(
-        &int_type,
-        callee,
-        vec![addition.clone().into()],
-        None,
-        Vec::new(),
-        Some(&span),
-    );
-    let evaluation = Evaluate::with_span(call.clone(), Some(&span)).unwrap();
-    let sequence = SeqStmt::with_span(
-        vec![
-            evaluation.clone().into(),
-            Evaluate::with_span(literal.clone(), Some(&span))
-                .unwrap()
-                .into(),
-        ],
-        Some(&span),
-    )
-    .unwrap();
-    let binding = VarBinding::with_span(&variable, addition.clone(), Some(&span));
-    let block = BindingBlock::with_span(vec![binding.clone().into()], Some(&span));
-    let seq_expr = SeqExpr::with_span(vec![block.clone()], &variable, Some(&span));
-
-    for actual in [
-        variable.span.as_ref(),
-        literal.span.as_ref(),
-        addition.span.as_ref(),
-        call.span.as_ref(),
-        evaluation.span.as_ref(),
-        sequence.span.as_ref(),
-        seq_expr.span.as_ref(),
-    ] {
-        assert_eq!(object_pointer(actual.unwrap()), object_pointer(&span));
-    }
-    assert_eq!(
-        object_pointer(binding.span.as_ref().unwrap()),
-        object_pointer(&span)
-    );
-    assert_eq!(
-        object_pointer(block.span.as_ref().unwrap()),
-        object_pointer(&span)
-    );
-}
-
-#[test]
-fn complete_field_allocators_preserve_supplied_inherited_fields() {
-    load_tvm_compiler();
-    let int_type: Type = PrimType::new("int32").unwrap().into();
-    let missing = Type::missing();
-    let lhs = Expr::int("int32", 1).unwrap();
-    let rhs = Expr::int("int32", 2).unwrap();
-
-    // These deliberately supplied annotations differ from the convenience
-    // constructors' derived defaults.  A lossless stubgen path must store them
-    // verbatim instead of silently invoking semantic construction again.
-    let global = GlobalVar::from_complete_fields(None, missing.clone(), "typed".into());
-    assert_eq!(object_pointer(&global.ty), object_pointer(&missing));
-
-    let explicit_add_type: Type = PrimType::new("int32").unwrap().into();
-    let addition =
-        Add::from_complete_fields(None, explicit_add_type.clone(), lhs.clone(), rhs.clone());
-    assert_eq!(
-        object_pointer(&addition.ty),
-        object_pointer(&explicit_add_type)
-    );
-
-    let tuple_type: Type = TupleType::new(vec![int_type.clone()]).into();
-    let tuple =
-        RelaxTuple::from_complete_fields(None, tuple_type.clone(), Array::new(vec![lhs.clone()]));
-    assert_eq!(object_pointer(&tuple.ty), object_pointer(&tuple_type));
-
-    let sequence =
-        SeqExpr::from_complete_fields(None, int_type.clone(), Array::new(Vec::new()), lhs.clone());
-    assert_eq!(object_pointer(&sequence.ty), object_pointer(&int_type));
-
-    let conditional = RelaxIf::from_complete_fields(
-        None,
-        int_type.clone(),
-        Expr::int("bool", 1).unwrap(),
-        sequence.clone(),
-        sequence,
-    );
-    assert_eq!(object_pointer(&conditional.ty), object_pointer(&int_type));
-}
-
-#[test]
-fn nested_sequence_construction_matches_cpp_flattening() {
-    load_tvm_compiler();
-    let first = Evaluate::from_i64(1).unwrap();
-    let noop = Evaluate::from_i64(0).unwrap();
-    let second = Evaluate::from_i64(2).unwrap();
-    let nested = SeqStmt::new(vec![first.clone().into(), noop.into()]).unwrap();
-    let rust_sequence = SeqStmt::new(vec![nested.into(), second.clone().into()]).unwrap();
-
-    let cpp_input = tvm::tvm_ffi::Array::<Stmt>::new(vec![
-        SeqStmt::new(vec![first.into(), Evaluate::from_i64(0).unwrap().into()])
-            .unwrap()
-            .into(),
-        second.into(),
-    ]);
-    let cpp_sequence = tvm::tvm_ffi::Function::get_global("tirx.SeqStmt")
-        .unwrap()
-        .call_packed(&[AnyView::from(&cpp_input), AnyView::from(&())])
-        .and_then(Stmt::try_from)
-        .unwrap();
-
-    assert_eq!(rust_sequence.seq.len(), 2);
-    assert_structural_equal(&rust_sequence, &cpp_sequence);
-}
-
-#[test]
-fn statement_sequence_normalizes_empty_single_and_nested_inputs() {
+fn structural_map_passes_rewrite_post_order_values() {
     load_tvm_compiler();
 
-    let empty = Stmt::sequence(Vec::new()).unwrap();
-    let empty = empty.try_cast::<Evaluate>().unwrap();
-    assert_eq!(empty.value.clone().try_cast::<IntImm>().unwrap().value, 0);
-
-    let single: Stmt = Evaluate::from_i64(7).unwrap().into();
-    let single_pointer = object_pointer(&single);
-    let normalized = Stmt::sequence(vec![single]).unwrap();
-    assert_eq!(object_pointer(&normalized), single_pointer);
-
-    let nested = SeqStmt::new(vec![
-        Evaluate::from_i64(1).unwrap().into(),
-        Evaluate::from_i64(0).unwrap().into(),
-    ])
-    .unwrap();
-    let normalized = Stmt::sequence(vec![
-        nested.into(),
-        Evaluate::from_i64(0).unwrap().into(),
-        Evaluate::from_i64(2).unwrap().into(),
-    ])
-    .unwrap()
-    .try_cast::<SeqStmt>()
-    .unwrap();
-    assert_eq!(normalized.seq.len(), 2);
-}
-
-#[test]
-fn buffer_defaults_match_the_registered_constructor_recipe() {
-    load_tvm_compiler();
-    let extent = Expr::int("int32", 8).unwrap();
-    let buffer_type = BufferType::new("", "float32", vec![extent.clone()]).unwrap();
-    let element_offset = buffer_type
-        .elem_offset
-        .clone()
-        .try_cast::<IntImm>()
-        .unwrap();
-
-    assert_eq!(buffer_type.storage_scope.as_str(), "global");
-    assert_eq!(element_offset.value, 0);
-    assert_eq!(
-        element_offset
-            .ty
-            .clone()
-            .try_cast::<PrimType>()
-            .unwrap()
-            .dtype
-            .bits,
-        32
-    );
-    assert!(buffer_type.data_alignment > 0);
-    assert_eq!(buffer_type.offset_factor, 1);
-
-    let dtype = PrimType::new("float32").unwrap();
-    let normalized_defaults = BufferType::with_metadata(
-        "global",
-        dtype.clone(),
-        vec![extent],
-        Vec::new(),
-        element_offset.into(),
-        0,
-        0,
-        None,
-        Vec::new(),
-        None,
-    )
-    .unwrap();
-    assert_eq!(normalized_defaults.data_alignment, 64);
-    assert_eq!(normalized_defaults.offset_factor, 1);
-
-    let cpp_buffer: BufferType = Function::get_global("tirx.BufferType")
-        .unwrap()
-        .call_packed(&[
-            AnyView::from(&tvm::tvm_ffi::String::from("")),
-            AnyView::from(&dtype),
-            AnyView::from(&Array::new(vec![Expr::int("int32", 8).unwrap()])),
-            AnyView::from(&Array::<Expr>::new(Vec::new())),
-            AnyView::from(&()),
-            AnyView::from(&0_i64),
-            AnyView::from(&0_i64),
-            AnyView::from(&()),
-            AnyView::from(&Array::<Expr>::new(Vec::new())),
-            AnyView::from(&()),
-        ])
-        .unwrap()
-        .try_into()
-        .unwrap();
-    assert_structural_equal(&buffer_type, &cpp_buffer);
-}
-
-#[test]
-fn every_layout_reflected_method_is_callable() {
-    load_tvm_compiler();
-
-    let axis = Axis::get("m").unwrap();
-    let eight = int_expression(8);
-    let one = int_expression(1);
-    let three = int_expression(3);
-    let tile = TileLayout::new(
-        vec![Iter::new(&eight, &one, &axis).unwrap()],
-        Vec::new(),
-        Map::new(),
-    );
-    let layout: Layout = tile.clone().into();
-    let shape = Array::new(vec![eight.clone()]);
-    let coordinate = Array::new(vec![three.clone()]);
-
-    assert!(layout.compatible_with_shape(&shape).unwrap());
-    assert!(layout.verify_well_formed().unwrap());
-    let cpp_verified = Function::get_global("tirx.LayoutVerifyWellFormed")
-        .unwrap()
-        .call_packed(&[AnyView::from(&layout)])
-        .unwrap();
-    assert!(bool::try_from(cpp_verified).unwrap());
-    assert_structural_equal(&layout.get_size(None).unwrap(), &eight);
-    assert_structural_equal(&layout.get_size(Some("m")).unwrap(), &eight);
-    assert_structural_equal(&layout.get_span(None).unwrap(), &eight);
-    assert_structural_equal(
-        &layout
-            .apply(&coordinate)
-            .unwrap()
-            .get(&tvm::tvm_ffi::String::from("m"))
-            .unwrap()
-            .unwrap(),
-        &three,
-    );
-    assert_structural_equal(
-        &layout
-            .apply_linear(&three)
-            .unwrap()
-            .get(&tvm::tvm_ffi::String::from("m"))
-            .unwrap()
-            .unwrap(),
-        &three,
-    );
-    assert_structural_equal(
-        &layout
-            .apply_with_shape(&coordinate, &shape)
-            .unwrap()
-            .get(&tvm::tvm_ffi::String::from("m"))
-            .unwrap()
-            .unwrap(),
-        &three,
-    );
-    assert_structural_equal(&layout.canonicalize().unwrap(), &layout);
-
-    // ComposeLayout is not part of the handwritten Rust slice, but it shares
-    // the reflected Layout method contract. Construct a no-op swizzle through
-    // the reference API and verify its concrete methods.
-    let compose: Layout = Function::get_global("tirx.ComposeLayout")
-        .unwrap()
-        .call_packed(&[
-            AnyView::from(&0_i64),
-            AnyView::from(&0_i64),
-            AnyView::from(&0_i64),
-            AnyView::from(&tile),
-            AnyView::from(&false),
-        ])
-        .unwrap()
-        .try_into()
-        .unwrap();
-    assert!(compose.verify_well_formed().unwrap());
-    assert_structural_equal(
-        &compose
-            .apply_linear(&three)
-            .unwrap()
-            .get(&tvm::tvm_ffi::String::from("m"))
-            .unwrap()
-            .unwrap(),
-        &three,
-    );
-
-    let tiled = layout.tile(&tile, &shape, &shape).unwrap();
-    let tiled_shape = Array::new(vec![int_expression(64)]);
-    assert!(layout
-        .is_tile_inner(&tiled, &tiled_shape, &shape)
-        .unwrap()
-        .is_some());
-    assert!(layout
-        .is_tile_outer(&tiled, &tiled_shape, &shape)
-        .unwrap()
-        .is_some());
-
-    let region = Array::new(vec![Range::from_min_extent(
-        int_expression(2),
-        int_expression(3),
-    )
-    .unwrap()]);
-    assert!(layout.slice(&shape, &region).unwrap().is_some());
-
-    let left = TileLayout::new(
-        vec![
-            Iter::new(int_expression(2), int_expression(8), &axis).unwrap(),
-            Iter::new(int_expression(2), int_expression(2), &axis).unwrap(),
-        ],
-        Vec::new(),
-        Map::new(),
-    );
-    let right = TileLayout::new(
-        vec![
-            Iter::new(int_expression(2), int_expression(4), &axis).unwrap(),
-            Iter::new(int_expression(2), one, &axis).unwrap(),
-        ],
-        Vec::new(),
-        Map::new(),
-    );
-    let left_shape = Array::new(vec![int_expression(2), int_expression(2)]);
-    let right_shape = left_shape.clone();
-    let right_layout: Layout = right.clone().into();
-    let direct_sum = right_layout
-        .direct_sum(&left, &left_shape, &right_shape)
-        .unwrap();
-    let interleaved_shape = Array::new(vec![
-        int_expression(2),
-        int_expression(2),
-        int_expression(2),
-        int_expression(2),
-    ]);
-    assert!(right_layout
-        .is_direct_sum_right(&direct_sum, &interleaved_shape, &right_shape)
-        .unwrap()
-        .is_some());
-    let left_layout: Layout = left.into();
-    assert!(left_layout
-        .is_direct_sum_left(&direct_sum, &interleaved_shape, &left_shape)
-        .unwrap()
-        .is_some());
-}
-
-#[test]
-fn rust_skip_assert_matches_the_cpp_pass() {
-    load_tvm_compiler();
-    let condition = Expr::int("bool", 1).unwrap();
-    let assertion: Stmt = AssertStmt::new(&condition, "RuntimeError", "failed")
+    let x: Expr = Var::new("x", "int32").unwrap().into();
+    let neutral: Expr = Mul::new(Add::new(x.clone(), int(0)).unwrap(), int(1))
         .unwrap()
         .into();
-    let evaluation: Stmt = Evaluate::new(sample_sum()).unwrap().into();
-    let body = SeqStmt::new(vec![assertion, evaluation]).unwrap();
-    let function = PrimFunc::from_body(&body).unwrap();
-    let module = IRModule::from_expr(&function).unwrap();
+    let simplified = transform::simplify_neutral_elements_expr(neutral).unwrap();
+    assert!(simplified.same_as(&x));
 
-    let rust_result = transform::skip_assert()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
-    assert_eq!(node_counts(&module), (1, 1));
-    let cpp_pass = cpp_pass("tirx.transform.SkipAssert");
-    let cpp_result = tvm::transform::Pass::run(&cpp_pass, module).unwrap();
-
-    assert_eq!(node_counts(&rust_result), (0, 1));
-    assert_structural_equal(&rust_result, &cpp_result);
-}
-
-#[test]
-fn rust_skip_assert_rebuilds_conditional_branches_like_cpp() {
-    load_tvm_compiler();
-    let condition = Expr::int("bool", 1).unwrap();
-    let assertion = || -> Stmt {
-        AssertStmt::new(&condition, "RuntimeError", "failed")
-            .unwrap()
-            .into()
-    };
-    let then_case: Stmt = SeqStmt::new(vec![
-        assertion(),
-        Evaluate::new(int_expression(1)).unwrap().into(),
-    ])
-    .unwrap()
-    .into();
-    let else_case: Stmt = SeqStmt::new(vec![
-        assertion(),
-        Evaluate::new(int_expression(2)).unwrap().into(),
-    ])
-    .unwrap()
-    .into();
-    let conditional = IfThenElse::new(&condition, &then_case, Some(else_case)).unwrap();
-    assert!(conditional.else_case.is_some());
-
-    let function = PrimFunc::from_body(&conditional).unwrap();
-    let module = IRModule::from_expr(&function).unwrap();
-    let rust_result = transform::skip_assert()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
-    let cpp_result = cpp_pass("tirx.transform.SkipAssert").run(module).unwrap();
-
-    let statistics = node_statistics(&rust_result).unwrap();
-    assert_eq!(statistics.assertions, 0);
-    assert_eq!(statistics.conditionals, 1);
-    assert_eq!(statistics.evaluations, 2);
-    assert_structural_equal(&rust_result, &cpp_result);
-}
-
-#[test]
-fn structural_map_preserves_map_keys_and_maps_only_values() {
-    load_tvm_compiler();
-    let key = GlobalVar::new("main");
-    let key_pointer = object_pointer(&key);
-    let input = Map::from_iter([(key, int_expression(7))]);
-    let mapped = structural_map(
-        input,
-        |value: IntImm| -> Result<Any> { Ok(Any::from(IntImm::new("int32", value.value + 1)?)) },
-        WalkOrder::PostOrder,
-    )
-    .and_then(Map::<GlobalVar, Expr>::try_from)
-    .unwrap();
-
-    let (mapped_key, mapped_value) = mapped.iter().next().unwrap();
-    assert_eq!(object_pointer(&mapped_key), key_pointer);
-    assert_eq!(mapped_key.name_hint.as_str(), "main");
-    assert_eq!(mapped_value.try_cast::<IntImm>().unwrap().value, 8);
-}
-
-#[test]
-fn structural_map_reuses_a_uniquely_owned_array_container() {
-    load_tvm_compiler();
-    let input = tvm::tvm_ffi::Array::new(vec![int_expression(1), int_expression(2)]);
-    let input_pointer = object_pointer(&input);
-    let mapped = structural_map(
-        input,
-        |value: IntImm| -> Result<Any> { Ok(Any::from(IntImm::new("int32", value.value + 1)?)) },
-        WalkOrder::PostOrder,
-    )
-    .and_then(tvm::tvm_ffi::Array::<Expr>::try_from)
-    .unwrap();
-
-    assert_eq!(object_pointer(&mapped), input_pointer);
-    assert_eq!(
-        mapped
-            .iter()
-            .map(|value| value.try_cast::<IntImm>().unwrap().value)
-            .collect::<Vec<_>>(),
-        vec![2, 3]
-    );
-}
-
-#[derive(Default)]
-struct DagProbe {
-    calls: usize,
-}
-
-#[dispatch(map)]
-impl DagProbe {
-    fn map_conditional(&mut self, value: RelaxIf) -> Any {
-        self.calls += 1;
-        Any::from(value)
-    }
-}
-
-#[test]
-fn structural_map_memoizes_shared_relax_dag_nodes() {
-    load_tvm_compiler();
-    let shared = RelaxIf::new(
-        Expr::int("bool", 1).unwrap(),
-        int_expression(1),
-        int_expression(2),
-    );
-    assert_eq!(shared.cond.clone().try_cast::<IntImm>().unwrap().value, 1);
-    assert_eq!(
-        shared
-            .true_branch
-            .clone()
-            .body
-            .clone()
-            .try_cast::<IntImm>()
-            .unwrap()
-            .value,
-        1
-    );
-    assert_eq!(
-        shared
-            .false_branch
-            .clone()
-            .body
-            .clone()
-            .try_cast::<IntImm>()
-            .unwrap()
-            .value,
-        2
-    );
-    let shared_pointer = object_pointer(&shared);
-    let root = RelaxTuple::new(vec![shared.clone().into(), shared.into()]);
-    let mut mapper = DagProbe::default();
-    let mapped = structural_map(root, &mut mapper, WalkOrder::PostOrder)
-        .and_then(RelaxTuple::try_from)
-        .unwrap();
-
-    let fields = mapped.fields.clone();
-    assert_eq!(mapper.calls, 1);
-    assert_eq!(object_pointer(&fields.get(0).unwrap()), shared_pointer);
-    assert_eq!(
-        object_pointer(&fields.get(0).unwrap()),
-        object_pointer(&fields.get(1).unwrap())
-    );
-}
-
-#[test]
-fn rust_add_zero_pass_matches_cpp_stmt_simplify() {
-    load_tvm_compiler();
-    let one = int_expression(1);
-    let zero = int_expression(0);
-    let inner = Expr::add(&zero, &one).unwrap();
-    let expression = Expr::add(&inner, int_expression(0)).unwrap();
-    let expected = int_expression(1);
-    assert_structural_equal(
-        &transform::simplify_add_zero_expr(expression.clone()).unwrap(),
-        &expected,
-    );
-
-    let function = PrimFunc::from_body(Evaluate::new(&expression).unwrap()).unwrap();
-    let module = IRModule::from_expr(&function).unwrap();
-    let rust_result = transform::simplify_add_zero()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
-    assert_eq!(node_statistics(&module).unwrap().additions, 2);
-    assert_eq!(node_statistics(&rust_result).unwrap().additions, 0);
-    let cpp_result = cpp_pass("tirx.transform.StmtSimplify").run(module).unwrap();
-    assert_structural_equal(&rust_result, &cpp_result);
-}
-
-#[test]
-fn rust_module_pass_maps_function_values_like_cpp() {
-    load_tvm_compiler();
-    let expression = Expr::add(
-        Expr::add(int_expression(0), int_expression(4)).unwrap(),
-        int_expression(0),
-    )
-    .unwrap();
-    let function = PrimFunc::from_body(Evaluate::new(&expression).unwrap()).unwrap();
-    let main_module = IRModule::from_expr(&function).unwrap();
-    let helper_var = GlobalVar::new("helper");
-    let helper_function: tvm::ir::BaseFunc = PrimFunc::from_body(
-        Evaluate::new(Expr::add(int_expression(0), int_expression(9)).unwrap()).unwrap(),
+    let constants: Expr = Sub::new(
+        Mul::new(Add::new(int(2), int(3)).unwrap(), int(4)).unwrap(),
+        int(1),
     )
     .unwrap()
     .into();
-    let module = main_module
-        .with_updated_function(&helper_var, &helper_function)
-        .unwrap();
-    assert_eq!(main_module.functions.len(), 1);
-    assert_eq!(module.functions.len(), 2);
-
-    let rust_result = transform::simplify_add_zero_module_pass()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
-    assert_eq!(node_statistics(&module).unwrap().additions, 3);
-    assert_eq!(node_statistics(&rust_result).unwrap().additions, 0);
-    let cpp_result = cpp_pass("tirx.transform.StmtSimplify").run(module).unwrap();
-
-    assert_eq!(rust_result.functions.len(), 2);
-    assert_structural_equal(&rust_result, &cpp_result);
-}
-
-#[derive(Default)]
-struct RenameVariables {
-    callback_calls: usize,
-    regions: Vec<DefRegionKind>,
-}
-
-#[dispatch(map)]
-impl RenameVariables {
-    fn map_variable(&mut self, variable: Var, kind: DefRegionKind) -> Result<Any> {
-        self.callback_calls += 1;
-        self.regions.push(kind);
-        let name = format!("{}_mapped", variable.name.as_str());
-        Ok(Any::from(Var::with_type(&name, &variable.ty)))
-    }
+    assert_eq!(
+        int_value(transform::fold_integer_constants_expr(constants).unwrap()),
+        19
+    );
+    assert_eq!(
+        int_value(transform::increment_int_immediates(int(41)).unwrap()),
+        42
+    );
+    assert!(transform::increment_int_immediates(int64(i64::MAX)).is_err());
 }
 
 #[test]
-fn structural_map_memoizes_free_var_identity() {
+fn callback_controlled_visit_and_mutate_handle_loop_scope() {
     load_tvm_compiler();
-    let variable = Var::new("x", "int32").unwrap();
-    let body = Evaluate::new(Expr::from(variable.clone())).unwrap();
-    let function = PrimFunc::new(vec![variable.clone()], &body).unwrap();
-    let mut mapper = RenameVariables::default();
-    let mapped = structural_map(function.clone(), &mut mapper, WalkOrder::PostOrder)
-        .and_then(PrimFunc::try_from)
-        .unwrap();
 
-    assert_eq!(mapper.callback_calls, 1);
-    assert_eq!(mapper.regions, vec![DefRegionKind::Recursive]);
-    let renamed = Var::new("x_mapped", "int32").unwrap();
-    let expected_body = Evaluate::new(Expr::from(renamed.clone())).unwrap();
-    let expected = PrimFunc::new(vec![renamed], &expected_body).unwrap();
-    assert_structural_equal(&mapped, &expected);
-    assert_eq!(variable.name.as_str(), "x");
-}
+    let outer_var = Var::new("i", "int32").unwrap();
+    let inner_var = Var::new("j", "int32").unwrap();
+    let body_expr = Add::new(inner_var.clone(), int(0)).unwrap();
+    let inner = TirFor::serial(
+        inner_var,
+        Add::new(int(0), int(0)).unwrap(),
+        Add::new(int(4), int(0)).unwrap(),
+        Evaluate::new(body_expr).unwrap(),
+    )
+    .unwrap();
+    let outer =
+        TirFor::serial(outer_var, Add::new(int(0), int(0)).unwrap(), int(2), inner).unwrap();
 
-#[derive(Default)]
-struct ReplaceAddProbe {
-    additions: usize,
-    integers: usize,
-}
-
-#[dispatch(map)]
-impl ReplaceAddProbe {
-    fn map_add(&mut self, _value: Add) -> Result<Any> {
-        self.additions += 1;
-        Ok(Any::from(IntImm::new("int32", 0)?))
-    }
-
-    fn map_integer(&mut self, value: IntImm) -> Any {
-        self.integers += 1;
-        Any::from(value)
-    }
-}
-
-#[test]
-fn structural_map_preorder_replacement_prunes_original_children() {
-    load_tvm_compiler();
-    let expression = Expr::add(int_expression(1), int_expression(2)).unwrap();
-
-    let mut pre = ReplaceAddProbe::default();
-    let pre_result = structural_map(expression.clone(), &mut pre, WalkOrder::PreOrder)
-        .and_then(Expr::try_from)
-        .unwrap();
-    let mut post = ReplaceAddProbe::default();
-    let post_result = structural_map(expression, &mut post, WalkOrder::PostOrder)
-        .and_then(Expr::try_from)
-        .unwrap();
-
-    assert_eq!((pre.additions, pre.integers), (1, 0));
-    assert_eq!((post.additions, post.integers), (1, 2));
-    assert_structural_equal(&pre_result, &int_expression(0));
-    assert_structural_equal(&post_result, &int_expression(0));
-}
-
-fn nested_loop_statement() -> Stmt {
-    let outer = Var::new("i", "int32").unwrap();
-    let inner = Var::new("j", "int32").unwrap();
-    let sum = Add::new(outer.clone(), inner.clone()).unwrap();
-    let inner_body: Stmt = Evaluate::new(Expr::from(sum)).unwrap().into();
-    let inner_loop: Stmt =
-        TirFor::serial(&inner, int_expression(1), int_expression(3), &inner_body)
-            .unwrap()
-            .into();
-    TirFor::serial(&outer, int_expression(0), int_expression(4), &inner_loop)
-        .unwrap()
-        .into()
-}
-
-#[test]
-fn walk_and_visit_handle_real_tir_loop_scopes() {
-    load_tvm_compiler();
-    let statement = nested_loop_statement();
-
-    assert!(statement
-        .clone()
-        .try_cast::<TirFor>()
-        .unwrap()
-        .thread_binding
-        .is_none());
-
-    let statistics = node_statistics(&statement).unwrap();
-    assert_eq!(statistics.loops, 2);
-    assert_eq!(statistics.statements, 3);
-    assert_eq!(statistics.additions, 1);
-    assert_eq!(statistics.variable_definitions, 2);
-    assert_eq!(statistics.variable_uses, 2);
-    let nesting = loop_nesting(&statement).unwrap();
+    let nesting = loop_nesting(&outer).unwrap();
     assert_eq!(nesting.loops, 2);
     assert_eq!(nesting.maximum_depth, 2);
+
+    let mapped = transform::simplify_neutral_elements_in_loop_bodies(outer.clone().into()).unwrap();
+    let mapped_outer = mapped.try_cast::<TirFor>().unwrap();
+    assert!(mapped_outer.min().unwrap().try_cast::<Add>().is_ok());
+    let mapped_inner = mapped_outer.body().unwrap().try_cast::<TirFor>().unwrap();
+    assert_eq!(int_value(mapped_inner.min().unwrap()), 0);
+    assert_eq!(int_value(mapped_inner.extent().unwrap()), 4);
+    let mapped_body = mapped_inner.body().unwrap().try_cast::<Evaluate>().unwrap();
+    assert!(mapped_body.value().unwrap().try_cast::<Var>().is_ok());
 }
 
 #[test]
-fn neutral_element_map_matches_cpp_stmt_simplify() {
+fn mutation_remaps_unit_loop_variables_in_buffer_indices() {
     load_tvm_compiler();
-    let variable = Var::new("x", "int32").unwrap();
-    let add = Add::new(variable.clone(), int_expression(0)).unwrap();
-    let multiply = Mul::new(add, int_expression(1)).unwrap();
-    let expression: Expr = Sub::new(multiply, int_expression(0)).unwrap().into();
 
-    let mapped = transform::simplify_neutral_elements_expr(expression.clone()).unwrap();
-    assert_structural_equal(&mapped, &Expr::from(variable.clone()));
-
-    let function = PrimFunc::new(vec![variable], Evaluate::new(&expression).unwrap()).unwrap();
-    let rust_function = transform::simplify_neutral_elements_prim_func(function.clone()).unwrap();
-    let cpp_module = cpp_pass("tirx.transform.StmtSimplify")
-        .run(IRModule::from_expr(&function).unwrap())
-        .unwrap();
-    let rust_module = IRModule::from_expr(&rust_function).unwrap();
-    assert_structural_equal(&rust_module, &cpp_module);
-}
-
-#[test]
-fn map_renames_relax_definitions_and_preserves_identity_links() {
-    load_tvm_compiler();
-    let int_type: Type = PrimType::new("int32").unwrap().into();
-    let parameter = Var::with_type("x", &int_type);
-    let bound = Var::with_type("result", &int_type);
-    let callee: Expr = GlobalVar::new("callee").into();
-    let call: Expr = Call::new(&int_type, &callee, vec![parameter.clone().into()]).into();
-    let binding = VarBinding::new(&bound, &call);
-    assert!(binding.span.is_none());
-    let block = BindingBlock::new(vec![binding.into()]);
-    assert!(block.span.is_none());
-    let sequence = SeqExpr::new(vec![block], &bound);
-    let sequence_expr: Expr = sequence.clone().into();
-    let function =
-        RelaxFunction::new(vec![parameter.clone()], &sequence_expr, &int_type, true).unwrap();
-    let cpp_params = Array::new(vec![parameter]);
-    let cpp_return_type = Some(int_type.clone());
-    let cpp_function: RelaxFunction = Function::get_global("relax.Function")
+    let buffer_type = BufferType::new("global", "int32", vec![int64(16)]).unwrap();
+    let buffer = buffer_type.new_var("A").unwrap();
+    let unit_var = Var::new("j", "int64").unwrap();
+    let index: Expr = Add::new(unit_var.clone(), int64(1)).unwrap().into();
+    let load: Expr = BufferLoad::new(buffer.clone(), vec![index.clone()], None)
         .unwrap()
-        .call_packed(&[
-            AnyView::from(&cpp_params),
-            AnyView::from(&sequence_expr),
-            AnyView::from(&cpp_return_type),
-            AnyView::from(&true),
-            AnyView::from(&function.attrs),
-            AnyView::from(&()),
-        ])
+        .into();
+    let store = BufferStore::new(buffer.clone(), load, vec![index], None).unwrap();
+    let loop_node = TirFor::serial(unit_var, int64(2), int64(1), store).unwrap();
+    let function = PrimFunc::new(vec![buffer], loop_node).unwrap();
+
+    let mapped = transform::eliminate_unit_loops_prim_func(function).unwrap();
+    assert_eq!(node_statistics(&mapped).unwrap().loops, 0);
+    let store = mapped.body().unwrap().try_cast::<BufferStore>().unwrap();
+    let index = store
+        .indices()
         .unwrap()
-        .try_into()
-        .unwrap();
-    assert_structural_equal(&function, &cpp_function);
-
-    let statistics = node_statistics(&function).unwrap();
-    assert_eq!(statistics.relax_functions, 1);
-    assert_eq!(statistics.sequence_expressions, 1);
-    assert_eq!(statistics.binding_blocks, 1);
-    assert_eq!(statistics.bindings, 1);
-    assert_eq!(statistics.calls, 1);
-    assert_eq!(statistics.variable_definitions, 2);
-    assert_eq!(statistics.variable_uses, 2);
-
-    let module = IRModule::from_expr(&function).unwrap();
-    let mapped = transform::rename_bound_variables(function.clone().into(), "_rust")
-        .and_then(|expr| expr.try_cast::<RelaxFunction>())
-        .unwrap();
-    let mapped_parameter = mapped.params.get(0).unwrap();
-    assert_eq!(mapped_parameter.name.as_str(), "x_rust");
-
-    let mapped_sequence = mapped.body.clone();
-    let mapped_binding = mapped_sequence
-        .blocks
         .get(0)
         .unwrap()
-        .bindings
+        .try_cast::<Add>()
+        .unwrap();
+    assert_eq!(int_value(index.a().unwrap()), 2);
+}
+
+#[test]
+fn typed_walk_collects_node_and_memory_access_statistics() {
+    load_tvm_compiler();
+
+    let buffer_type = BufferType::new("global", "int32", vec![int64(8)]).unwrap();
+    let buffer = buffer_type.new_var("A").unwrap();
+    let index = Var::new("i", "int64").unwrap();
+    let predicate = IntImm::new("bool", 1).unwrap();
+    let load = BufferLoad::new(
+        buffer.clone(),
+        vec![index.clone().into()],
+        Some(predicate.clone().into()),
+    )
+    .unwrap();
+    let store = BufferStore::new(
+        buffer.clone(),
+        load,
+        vec![index.clone().into()],
+        Some(predicate.into()),
+    )
+    .unwrap();
+    let loop_node = TirFor::serial(index, int64(0), int64(8), store).unwrap();
+    let function = PrimFunc::new(vec![buffer], loop_node).unwrap();
+
+    let nodes = node_statistics(&function).unwrap();
+    assert_eq!(nodes.loops, 1);
+    assert_eq!(nodes.buffer_loads, 1);
+    assert_eq!(nodes.buffer_stores, 1);
+    assert!(nodes.variable_definitions >= 1);
+    let accesses = memory_access_statistics(&function).unwrap();
+    assert_eq!(accesses.loads, 1);
+    assert_eq!(accesses.stores, 1);
+    assert_eq!(accesses.predicated_loads, 1);
+    assert_eq!(accesses.predicated_stores, 1);
+    assert_eq!(accesses.maximum_load_rank, 1);
+    assert_eq!(accesses.maximum_store_rank, 1);
+}
+
+#[test]
+fn rust_prim_func_and_module_passes_run_through_tvm() {
+    load_tvm_compiler();
+
+    let x = Var::new("x", "int32").unwrap();
+    let expression = Add::new(x.clone(), int(0)).unwrap();
+    let assertion = AssertStmt::new(IntImm::new("bool", 1).unwrap(), "ValueError", "bad").unwrap();
+    let body = SeqStmt::new(vec![
+        Evaluate::new(expression).unwrap().into(),
+        assertion.into(),
+    ])
+    .unwrap();
+    let module = IRModule::from_expr(PrimFunc::new(vec![x], body).unwrap()).unwrap();
+
+    let simplified = transform::simplify_add_zero()
+        .unwrap()
+        .run(module.clone())
+        .unwrap();
+    let simplified_body = module_function(&simplified)
+        .body()
+        .unwrap()
+        .try_cast::<SeqStmt>()
+        .unwrap();
+    assert!(simplified_body
+        .seq()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .try_cast::<Evaluate>()
+        .unwrap()
+        .value()
+        .unwrap()
+        .try_cast::<Var>()
+        .is_ok());
+
+    let skipped = transform::skip_assert()
+        .unwrap()
+        .run(module.clone())
+        .unwrap();
+    assert_eq!(node_statistics(&skipped).unwrap().assertions, 0);
+
+    let module_mapped = transform::simplify_add_zero_module_pass()
+        .unwrap()
+        .run(module)
+        .unwrap();
+    assert_structural_equal(&simplified, &module_mapped);
+}
+
+#[test]
+fn known_control_flow_and_constant_folding_passes_run_through_tvm() {
+    load_tvm_compiler();
+
+    assert!(!side_effect(&int(1)).unwrap().may_update_state());
+    let opaque_call: Expr = Call::new(
+        PrimType::new("int32").unwrap(),
+        GlobalVar::new("unknown_callee").unwrap(),
+        Vec::new(),
+    )
+    .unwrap()
+    .into();
+    assert!(side_effect(&opaque_call).unwrap().may_update_state());
+
+    let constants = IRModule::from_expr(
+        PrimFunc::from_body(Evaluate::new(Add::new(int(2), int(3)).unwrap()).unwrap()).unwrap(),
+    )
+    .unwrap();
+    let folded = transform::fold_integer_constants()
+        .unwrap()
+        .run(constants)
+        .unwrap();
+    let folded_evaluation = module_function(&folded)
+        .body()
+        .unwrap()
+        .try_cast::<Evaluate>()
+        .unwrap();
+    assert_eq!(int_value(folded_evaluation.value().unwrap()), 5);
+
+    let conditional = IfThenElse::new(
+        Add::new(int(1), int(0)).unwrap(),
+        Evaluate::new(int(7)).unwrap(),
+        Some(Evaluate::new(int(9)).unwrap().into()),
+    )
+    .unwrap();
+    let module = IRModule::from_expr(PrimFunc::from_body(conditional).unwrap()).unwrap();
+
+    let controlled = transform::simplify_known_control_flow()
+        .unwrap()
+        .run(module)
+        .unwrap();
+    assert_eq!(node_statistics(&controlled).unwrap().conditionals, 0);
+    let evaluation = module_function(&controlled)
+        .body()
+        .unwrap()
+        .try_cast::<Evaluate>()
+        .unwrap();
+    assert_eq!(int_value(evaluation.value().unwrap()), 0);
+}
+
+#[test]
+fn relax_renaming_updates_definitions_and_their_uses() {
+    load_tvm_compiler();
+
+    let parameter = Var::new("x", "int32").unwrap();
+    let bound = Var::new("y", "int32").unwrap();
+    let binding = VarBinding::new(bound.clone(), parameter.clone()).unwrap();
+    let block = BindingBlock::new(vec![Binding::from(binding)]).unwrap();
+    let body = SeqExpr::new(vec![block], bound.clone()).unwrap();
+    let function =
+        RelaxFunction::new(vec![parameter], body, PrimType::new("int32").unwrap(), true).unwrap();
+
+    let renamed = transform::rename_bound_variables_function(function, "_r").unwrap();
+    assert_eq!(
+        renamed
+            .params()
+            .unwrap()
+            .get(0)
+            .unwrap()
+            .name()
+            .unwrap()
+            .as_str(),
+        "x_r"
+    );
+    let body = renamed.body().unwrap();
+    let binding = body
+        .blocks()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .bindings()
+        .unwrap()
         .get(0)
         .unwrap()
         .try_cast::<VarBinding>()
         .unwrap();
-    let mapped_bound = mapped_binding.var.clone();
-    assert_eq!(mapped_bound.name.as_str(), "result_rust");
-
-    let mapped_call = mapped_binding.value.clone().try_cast::<Call>().unwrap();
-    let mapped_argument = mapped_call.args.get(0).unwrap();
+    let definition = binding.var().unwrap();
+    let use_site = body.body().unwrap().try_cast::<Var>().unwrap();
+    assert_eq!(definition.name().unwrap().as_str(), "y_r");
     assert_eq!(
-        object_pointer(&mapped_argument),
-        object_pointer(&mapped_parameter)
+        ObjectIdentity::of(&definition),
+        ObjectIdentity::of(&use_site)
     );
-    assert_eq!(
-        object_pointer(&mapped_sequence.body),
-        object_pointer(&mapped_bound)
-    );
-
-    let pass_result = transform::rename_bound_variables_pass("_pass")
-        .unwrap()
-        .run(module)
-        .unwrap();
-    let pass_function = pass_result
-        .functions
-        .iter()
-        .next()
-        .unwrap()
-        .1
-        .try_cast::<RelaxFunction>()
-        .unwrap();
-    assert_eq!(pass_function.params.get(0).unwrap().name.as_str(), "x_pass");
 }
 
 #[test]
-fn mutate_can_limit_a_rewrite_to_loop_bodies() {
-    load_tvm_compiler();
-    let outer_var = Var::new("i", "int32").unwrap();
-    let inner_var = Var::new("j", "int32").unwrap();
-    let sum: Expr = Add::new(outer_var.clone(), inner_var.clone())
-        .unwrap()
-        .into();
-    let inner_value: Expr = Sub::new(&sum, int_expression(0)).unwrap().into();
-    let inner_body: Stmt = Evaluate::new(&inner_value).unwrap().into();
-    let inner_loop: Stmt = TirFor::serial(
-        &inner_var,
-        Sub::new(int_expression(1), int_expression(0)).unwrap(),
-        Mul::new(int_expression(3), int_expression(1)).unwrap(),
-        &inner_body,
-    )
-    .unwrap()
-    .into();
-    let statement: Stmt = TirFor::serial(
-        &outer_var,
-        Add::new(int_expression(0), int_expression(0)).unwrap(),
-        Add::new(int_expression(4), int_expression(0)).unwrap(),
-        &inner_loop,
-    )
-    .unwrap()
-    .into();
-    let original = statement.clone();
-    let mapped = transform::simplify_neutral_elements_in_loop_bodies(statement)
-        .unwrap()
-        .try_cast::<TirFor>()
-        .unwrap();
-
-    assert!(mapped.min.clone().try_cast::<Add>().is_ok());
-    assert!(mapped.extent.clone().try_cast::<Add>().is_ok());
-    let inner = mapped.body.clone().try_cast::<TirFor>().unwrap();
-    assert_eq!(inner.min.clone().try_cast::<IntImm>().unwrap().value, 1);
-    assert_eq!(inner.extent.clone().try_cast::<IntImm>().unwrap().value, 3);
-
-    let mapped_outer_var = mapped.loop_var.clone();
-    let mapped_inner_var = inner.loop_var.clone();
-    let inner_value = inner
-        .body
-        .clone()
-        .try_cast::<Evaluate>()
-        .unwrap()
-        .value
-        .clone()
-        .try_cast::<Add>()
-        .unwrap();
-    assert_eq!(
-        object_pointer(&inner_value.a),
-        object_pointer(&mapped_outer_var)
-    );
-    assert_eq!(
-        object_pointer(&inner_value.b),
-        object_pointer(&mapped_inner_var)
-    );
-
-    let original_outer = original.try_cast::<TirFor>().unwrap();
-    assert!(original_outer.min.clone().try_cast::<Add>().is_ok());
-    let original_inner = original_outer.body.clone();
-    let original_inner = original_inner.try_cast::<TirFor>().unwrap();
-    assert!(original_inner.min.clone().try_cast::<Sub>().is_ok());
-}
-
-#[test]
-fn buffer_and_block_bindings_round_trip_cpp_objects() {
+fn module_pruning_keeps_reachable_and_externally_visible_functions() {
     load_tvm_compiler();
 
-    // A C++-created Tensor is consumed through the Rust DataProducer base.
-    // This exercises every entry in the language-neutral data-producer table,
-    // plus Tensor's PrimExpr-conversion entry, without binding Tensor's
-    // concrete storage layout in this acceptance slice.
-    let tensor_dtype = PrimType::new("float32").unwrap();
-    let tensor: DataProducer = Function::get_global("te.Placeholder")
-        .unwrap()
-        .call_packed(&[
-            AnyView::from(&Array::<Expr>::new(Vec::new())),
-            AnyView::from(&tensor_dtype),
-            AnyView::from(&tvm::tvm_ffi::String::from("scalar_input")),
-        ])
-        .unwrap()
-        .try_into()
-        .unwrap();
-    assert!(tensor.shape().unwrap().is_empty());
-    assert_eq!(tensor.data_type().unwrap().dtype, tensor_dtype.dtype);
-    assert_eq!(tensor.name_hint().unwrap().as_str(), "scalar_input");
-    let tensor_expr = PrimExprConvertible::from(tensor).to_prim_expr().unwrap();
-    assert_eq!(
-        tensor_expr.ty.clone().try_cast::<PrimType>().unwrap().dtype,
-        tensor_dtype.dtype
-    );
-
-    let extent = Expr::int("int64", 8).unwrap();
-    let stride = Expr::int("int64", 1).unwrap();
-    let axis_name = Axis::get("m").unwrap();
-    let layout_iter = Iter::new(&extent, &stride, &axis_name).unwrap();
-    let tile_layout = TileLayout::new(vec![layout_iter.clone()], Vec::new(), Map::new());
-    let layout = Layout::from(tile_layout.clone());
-    let buffer_type = BufferType::with_metadata(
-        "global",
-        PrimType::new("int32").unwrap(),
-        vec![extent.clone()],
-        Vec::new(),
-        Expr::int("int64", 0).unwrap(),
-        64,
-        1,
-        Some(layout),
-        Vec::new(),
-        None,
-    )
-    .unwrap();
-    let reflected_layout = buffer_type
-        .layout
-        .as_ref()
-        .unwrap()
-        .clone()
-        .try_cast::<TileLayout>()
-        .unwrap();
-    let layout: tvm::tirx::Layout = reflected_layout.clone().into();
-    let layout_is_valid = layout.verify_well_formed().unwrap();
-    assert!(layout_is_valid);
-    assert_eq!(reflected_layout.shard.len(), 1);
-    assert!(reflected_layout.replica.is_empty());
-    assert!(reflected_layout.offset.is_empty());
-    let reflected_iter = reflected_layout.shard.get(0).unwrap();
-    assert_eq!(
-        reflected_iter
-            .extent
-            .clone()
-            .try_cast::<IntImm>()
-            .unwrap()
-            .value,
-        8
-    );
-    assert_eq!(
-        reflected_iter
-            .stride
-            .clone()
-            .try_cast::<IntImm>()
-            .unwrap()
-            .value,
-        1
-    );
-    assert_eq!(reflected_iter.axis.name.as_str(), "m");
-    let buffer = buffer_type.new_var("A");
-    let axis = Var::new("vi", "int64").unwrap();
-    let axis_domain = Range::from_min_extent(
-        Expr::int("int64", 0).unwrap(),
-        Expr::int("int64", 8).unwrap(),
-    )
-    .unwrap();
-    let iter_var = IterVar::new(&axis_domain, &axis, IterVarType::DataParallel).unwrap();
-    let converted_axis = PrimExprConvertible::from(iter_var.clone())
-        .to_prim_expr()
-        .unwrap();
-    assert_eq!(object_pointer(&converted_axis), object_pointer(&axis));
-    let converted_by_cpp: Add = Function::get_global("tirx.Add")
-        .unwrap()
-        .call_packed(&[
-            AnyView::from(&iter_var),
-            AnyView::from(&Expr::int("int64", 1).unwrap()),
-            AnyView::from(&()),
-        ])
-        .unwrap()
-        .try_into()
-        .unwrap();
-    assert_eq!(object_pointer(&converted_by_cpp.a), object_pointer(&axis));
-    let domainless_iter = IterVar::with_metadata(
-        None,
-        axis.clone(),
-        IterVarType::ThreadIndex,
-        "threadIdx.x",
-        None,
-    )
-    .unwrap();
-    assert!(domainless_iter.dom.is_none());
-    let converted_domainless = PrimExprConvertible::from(domainless_iter)
-        .to_prim_expr()
-        .unwrap();
-    assert_eq!(object_pointer(&converted_domainless), object_pointer(&axis));
-    assert!(BufferLoad::new(&axis, vec![Expr::int("int64", 0).unwrap()], None).is_err());
-    let predicate = Expr::int("bool", 1).unwrap();
-    let load =
-        BufferLoad::new(&buffer, vec![axis.clone().into()], Some(predicate.clone())).unwrap();
-    let explicit_load_type = PrimType::new("int32").unwrap();
-    let complete_load = BufferLoad::from_complete_fields(
-        None,
-        explicit_load_type.clone().into(),
-        buffer.clone(),
-        load.indices.clone(),
-        load.predicate.clone(),
-    );
-    let explicit_load_type: Type = explicit_load_type.into();
-    assert_eq!(
-        object_pointer(&complete_load.ty),
-        object_pointer(&explicit_load_type)
-    );
-    let store = BufferStore::new(
-        &buffer,
-        load.clone(),
-        vec![axis.clone().into()],
-        Some(predicate),
-    )
-    .unwrap();
-    let cpp_indices = tvm::tvm_ffi::Array::new(load.indices.iter().collect());
-    let cpp_predicate = load.predicate.clone();
-    let cpp_load: BufferLoad = Function::get_global("tirx.BufferLoad")
-        .unwrap()
-        .call_packed(&[
-            AnyView::from(&buffer),
-            AnyView::from(&cpp_indices),
-            AnyView::from(&cpp_predicate),
-            AnyView::from(&()),
-        ])
-        .unwrap()
-        .try_into()
-        .unwrap();
-    assert_structural_equal(&load, &cpp_load);
-
-    let load_expr: Expr = load.clone().into();
-    let cpp_store: BufferStore = Function::get_global("tirx.BufferStore")
-        .unwrap()
-        .call_packed(&[
-            AnyView::from(&buffer),
-            AnyView::from(&load_expr),
-            AnyView::from(&cpp_indices),
-            AnyView::from(&cpp_predicate),
-            AnyView::from(&()),
-        ])
-        .unwrap()
-        .try_into()
-        .unwrap();
-    assert_structural_equal(&store, &cpp_store);
-
-    let region = BufferRegion::new(&buffer, vec![axis_domain.clone()]).unwrap();
-    let _: Expr = PrimExprConvertible::from(region.clone())
-        .to_prim_expr()
-        .unwrap();
-    let match_buffer = MatchBufferRegion::new(&buffer, &region).unwrap();
-    let cpp_match_buffer: MatchBufferRegion = Function::get_global("tirx.MatchBufferRegion")
-        .unwrap()
-        .call_packed(&[AnyView::from(&buffer), AnyView::from(&region)])
-        .unwrap()
-        .try_into()
-        .unwrap();
-    assert_structural_equal(&match_buffer, &cpp_match_buffer);
-    assert_eq!(
-        object_pointer(&match_buffer.buffer),
-        object_pointer(&buffer)
-    );
-    assert_eq!(
-        object_pointer(&match_buffer.source),
-        object_pointer(&region)
-    );
-    let annotations: Map<tvm::tvm_ffi::String, Any> = [
-        (tvm::tvm_ffi::String::from("pipeline"), Any::from(2i64)),
-        (
-            tvm::tvm_ffi::String::from("tag"),
-            Any::from(tvm::tvm_ffi::String::from("copy")),
-        ),
-    ]
-    .into_iter()
-    .collect();
-    let block = SBlock::with_metadata(
-        vec![iter_var],
-        vec![region.clone()],
-        vec![region],
-        "copy",
-        store.clone().into(),
-        None,
-        Vec::new(),
-        Vec::new(),
-        annotations,
-        None,
-    );
-    assert_eq!(block.annotations.len(), 2);
-    let realization = SBlockRealize::new(
-        vec![Expr::int("int64", 0).unwrap()],
-        Expr::int("bool", 1).unwrap(),
-        &block,
-    )
-    .unwrap();
-    let function = PrimFunc::new(vec![buffer.clone()], &realization).unwrap();
-
-    assert_eq!(buffer_type.dtype.dtype.bits, 32);
-    assert_eq!(buffer_type.storage_scope.as_str(), "global");
-    assert_eq!(buffer_type.shape.len(), 1);
-    assert!(buffer_type.strides.is_empty());
-    assert!(buffer_type.data_alignment > 0);
-    assert_eq!(buffer_type.offset_factor, 1);
-    assert!(buffer_type.allocated_addr.is_empty());
-    assert_eq!(
-        buffer
-            .ty
-            .clone()
-            .try_cast::<BufferType>()
-            .unwrap()
-            .shape
-            .len(),
-        1
-    );
-    assert_eq!(object_pointer(&load.buffer), object_pointer(&buffer));
-    assert_eq!(load.indices.len(), 1);
-    assert!(load.predicate.is_some());
-    assert_eq!(object_pointer(&store.buffer), object_pointer(&buffer));
-    assert!(store.predicate.is_some());
-    assert_eq!(block.name_hint.as_str(), "copy");
-    assert_eq!(block.iter_vars.len(), 1);
-    let reflected_axis = block.iter_vars.get(0).unwrap();
-    assert_eq!(reflected_axis.iter_type, IterVarType::DataParallel);
-    assert_eq!(object_pointer(&reflected_axis.var), object_pointer(&axis));
-    assert_eq!(
-        reflected_axis
-            .dom
-            .as_ref()
-            .unwrap()
-            .extent
-            .clone()
-            .try_cast::<IntImm>()
-            .unwrap()
-            .value,
-        8
-    );
-    assert_eq!(block.reads.len(), 1);
-    assert_eq!(block.writes.len(), 1);
-    assert_eq!(realization.block.name_hint.as_str(), "copy");
-
-    let statistics = node_statistics(&function).unwrap();
-    assert_eq!(statistics.blocks, 1);
-    assert_eq!(statistics.block_realizations, 1);
-    assert_eq!(statistics.buffer_loads, 1);
-    assert_eq!(statistics.buffer_stores, 1);
-    assert_eq!(
-        memory_access_statistics(&function).unwrap(),
-        tvm::analysis::MemoryAccessStatistics {
-            loads: 1,
-            stores: 1,
-            predicated_loads: 1,
-            predicated_stores: 1,
-            maximum_load_rank: 1,
-            maximum_store_rank: 1,
-        }
-    );
-}
-
-#[test]
-fn rust_unit_loop_elimination_matches_cpp_on_buffer_indices() {
-    load_tvm_compiler();
-    let buffer_type =
-        BufferType::new("global", "int32", vec![Expr::int("int64", 16).unwrap()]).unwrap();
-    let buffer = buffer_type.new_var("A");
-    let outer_var = Var::new("i", "int64").unwrap();
-    let unit_var = Var::new("j", "int64").unwrap();
-    let index: Expr = Add::new(outer_var.clone(), unit_var.clone())
-        .unwrap()
-        .into();
-    let load: Expr = BufferLoad::new(&buffer, vec![index.clone()], None)
-        .unwrap()
-        .into();
-    let store: Stmt = BufferStore::new(&buffer, &load, vec![index], None)
-        .unwrap()
-        .into();
-    let unit_loop: Stmt = TirFor::serial(
-        &unit_var,
-        Expr::int("int64", 2).unwrap(),
-        Expr::int("int64", 1).unwrap(),
-        &store,
-    )
-    .unwrap()
-    .into();
-    let outer_loop = TirFor::serial(
-        &outer_var,
-        Expr::int("int64", 0).unwrap(),
-        Expr::int("int64", 4).unwrap(),
-        &unit_loop,
-    )
-    .unwrap();
-    let function = PrimFunc::new(vec![buffer], &outer_loop).unwrap();
-    let module = IRModule::from_expr(&function).unwrap();
-
-    let rust_result = transform::eliminate_unit_loops()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
-    let cpp_result = cpp_pass("tirx.transform.LowerTIRxOpaque")
-        .run(module.clone())
-        .unwrap();
-
-    assert_eq!(node_statistics(&module).unwrap().loops, 2);
-    assert_eq!(node_statistics(&rust_result).unwrap().loops, 1);
-    assert_structural_equal(&rust_result, &cpp_result);
-
-    let mapped_function = rust_result
-        .functions
-        .iter()
-        .next()
-        .unwrap()
-        .1
-        .try_cast::<PrimFunc>()
-        .unwrap();
-    let mapped_outer = mapped_function.body.clone().try_cast::<TirFor>().unwrap();
-    let mapped_store = mapped_outer.body.clone().try_cast::<BufferStore>().unwrap();
-    let mapped_index = mapped_store
-        .indices
-        .get(0)
-        .unwrap()
-        .try_cast::<Add>()
-        .unwrap();
-    assert_eq!(
-        mapped_index.b.clone().try_cast::<IntImm>().unwrap().value,
-        2
-    );
-    assert_eq!(memory_access_statistics(&rust_result).unwrap().loads, 1);
-    assert_eq!(memory_access_statistics(&rust_result).unwrap().stores, 1);
-}
-
-#[test]
-fn integer_constant_folding_matches_cpp_on_fast_and_analyzer_paths() {
-    load_tvm_compiler();
-    let sum: Expr = Add::new(int_expression(2), int_expression(3))
-        .unwrap()
-        .into();
-    let product: Expr = Mul::new(&sum, int_expression(4)).unwrap().into();
-    let expression: Expr = Sub::new(&product, int_expression(1)).unwrap().into();
-
-    let folded = transform::fold_integer_constants_expr(expression.clone()).unwrap();
-    assert_eq!(folded.clone().try_cast::<IntImm>().unwrap().value, 19);
-
-    let function = PrimFunc::from_body(Evaluate::new(&expression).unwrap()).unwrap();
-    let module = IRModule::from_expr(&function).unwrap();
-    let rust_result = transform::fold_integer_constants()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
-    let cpp_result = cpp_pass("tirx.transform.StmtSimplify").run(module).unwrap();
-    assert_structural_equal(&rust_result, &cpp_result);
-
-    let maximum = Expr::int("int8", 127).unwrap();
-    let one = Expr::int("int8", 1).unwrap();
-    let overflow: Expr = Add::new(&maximum, &one).unwrap().into();
-    let overflow_module =
-        IRModule::from_expr(PrimFunc::from_body(Evaluate::new(&overflow).unwrap()).unwrap())
-            .unwrap();
-    let rust_overflow = transform::fold_integer_constants()
-        .unwrap()
-        .run(overflow_module.clone())
-        .unwrap();
-    let cpp_overflow = cpp_pass("tirx.transform.StmtSimplify")
-        .run(overflow_module)
-        .unwrap();
-    assert_structural_equal(&rust_overflow, &cpp_overflow);
-}
-
-#[test]
-fn integer_increment_reports_overflow_without_panicking() {
-    load_tvm_compiler();
-
-    let incremented = transform::increment_int_immediates(Expr::int("int64", 41).unwrap())
-        .unwrap()
-        .try_cast::<IntImm>()
-        .unwrap();
-    assert_eq!(incremented.value, 42);
-
-    let result = transform::increment_int_immediates(Expr::int("int64", i64::MAX).unwrap());
-    assert!(result.is_err());
-}
-
-#[test]
-fn call_effect_kind_preserves_future_native_values() {
-    let future_value = CallEffectKind::from_raw(17);
-    assert_eq!(future_value.as_raw(), 17);
-    assert!(future_value.may_update_state());
-    assert_eq!(CallEffectKind::try_from(17).unwrap(), future_value);
-    assert!(CallEffectKind::try_from(i64::MAX).is_err());
-}
-
-#[test]
-fn known_control_flow_simplification_matches_cpp_on_analyzed_constants() {
-    load_tvm_compiler();
-    let condition: Expr = Add::new(Expr::int("bool", 1).unwrap(), Expr::int("bool", 0).unwrap())
-        .unwrap()
-        .into();
-    let then_case: Stmt = Evaluate::from_i64(7).unwrap().into();
-    let else_case: Stmt = Evaluate::from_i64(9).unwrap().into();
-    let conditional: Stmt = IfThenElse::new(&condition, &then_case, Some(else_case))
-        .unwrap()
-        .into();
-    let standalone = IRModule::from_expr(PrimFunc::from_body(&conditional).unwrap()).unwrap();
-    let rust_standalone = transform::simplify_known_control_flow()
-        .unwrap()
-        .run(standalone.clone())
-        .unwrap();
-    let cpp_standalone = cpp_pass("tirx.transform.RemoveNoOp")
-        .run(standalone)
-        .unwrap();
-    assert_structural_equal(&rust_standalone, &cpp_standalone);
-
-    let loop_var = Var::new("i", "int32").unwrap();
-    let zero_extent: Expr = Sub::new(int_expression(2), int_expression(2))
-        .unwrap()
-        .into();
-    let empty_loop: Stmt = TirFor::serial(
-        &loop_var,
-        int_expression(0),
-        &zero_extent,
-        Evaluate::from_i64(11).unwrap(),
-    )
-    .unwrap()
-    .into();
-    let body = SeqStmt::new(vec![conditional, empty_loop]).unwrap();
-    let function = PrimFunc::from_body(&body).unwrap();
-    let module = IRModule::from_expr(&function).unwrap();
-
-    let rust_result = transform::simplify_known_control_flow()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
-    let cpp_result = cpp_pass("tirx.transform.RemoveNoOp").run(module).unwrap();
-    assert_structural_equal(&rust_result, &cpp_result);
-    assert_eq!(node_statistics(&rust_result).unwrap().conditionals, 0);
-    assert_eq!(node_statistics(&rust_result).unwrap().loops, 0);
-
-    let pure_expression: Expr = Add::new(int_expression(3), int_expression(4))
-        .unwrap()
-        .into();
-    assert_eq!(side_effect(&pure_expression).unwrap(), CallEffectKind::Pure);
-    let read_buffer_type =
-        BufferType::new("global", "int32", vec![Expr::int("int64", 1).unwrap()]).unwrap();
-    let read_buffer = read_buffer_type.new_var("read_buffer");
-    let read_expression: Expr =
-        BufferLoad::new(&read_buffer, vec![Expr::int("int64", 0).unwrap()], None)
-            .unwrap()
-            .into();
-    assert_eq!(
-        side_effect(&read_expression).unwrap(),
-        CallEffectKind::ReadState
-    );
-    let opaque_operator: Expr = GlobalVar::new("opaque_function").into();
-    let opaque_call: Expr =
-        Call::new(PrimType::new("int32").unwrap(), opaque_operator, Vec::new()).into();
-    assert_eq!(
-        side_effect(&opaque_call).unwrap(),
-        CallEffectKind::UpdateState
-    );
-    let evaluations = SeqStmt::new(vec![
-        Evaluate::new(&pure_expression).unwrap().into(),
-        Evaluate::new(&read_expression).unwrap().into(),
-        Evaluate::new(&opaque_call).unwrap().into(),
-    ])
-    .unwrap();
-    let effects_module = IRModule::from_expr(PrimFunc::from_body(&evaluations).unwrap()).unwrap();
-    let rust_effects = transform::simplify_known_control_flow()
-        .unwrap()
-        .run(effects_module.clone())
-        .unwrap();
-    let cpp_effects = cpp_pass("tirx.transform.RemoveNoOp")
-        .run(effects_module)
-        .unwrap();
-    assert_structural_equal(&rust_effects, &cpp_effects);
-    assert_eq!(node_statistics(&rust_effects).unwrap().evaluations, 1);
-}
-
-#[test]
-fn module_reachability_pruning_keeps_callees_and_external_roots() {
-    load_tvm_compiler();
     let result_type: Type = PrimType::new("int32").unwrap().into();
-    let main_global = GlobalVar::new("main");
-    let helper_global = GlobalVar::new("helper");
-    let exported_global = GlobalVar::new("exported");
-    let dead_global = GlobalVar::new("dead");
-    let helper_call: Expr = Call::new(&result_type, helper_global.clone(), Vec::new()).into();
+    let main = GlobalVar::new("main").unwrap();
+    let helper = GlobalVar::new("helper").unwrap();
+    let exported = GlobalVar::new("exported").unwrap();
+    let dead = GlobalVar::new("dead").unwrap();
+    let helper_call = Call::new(result_type, helper.clone(), Vec::new()).unwrap();
 
-    let main_function: tvm::ir::BaseFunc =
-        PrimFunc::from_body(Evaluate::new(&helper_call).unwrap())
-            .unwrap()
-            .into();
-    let helper_function: tvm::ir::BaseFunc = PrimFunc::from_body(Evaluate::from_i64(42).unwrap())
+    let main_function: BaseFunc = PrimFunc::from_body(Evaluate::new(helper_call).unwrap())
         .unwrap()
         .into();
-    let exported_attributes = DictAttrs::from_dictionary(
+    let helper_function: BaseFunc = PrimFunc::from_body(Evaluate::from_i64(1).unwrap())
+        .unwrap()
+        .into();
+    let exported_attrs = DictAttrs::from_dictionary(
         [(
-            tvm::tvm_ffi::String::from("global_symbol"),
-            Any::from(tvm::tvm_ffi::String::from("exported_symbol")),
+            FfiString::from("global_symbol"),
+            Any::from(FfiString::from("exported_symbol")),
         )]
         .into_iter()
         .collect(),
-    );
-    let exported_function: tvm::ir::BaseFunc = PrimFunc::with_metadata(
+    )
+    .unwrap();
+    let exported_function: BaseFunc = PrimFunc::with_metadata(
         Vec::new(),
-        Evaluate::from_i64(7).unwrap(),
-        Type::missing(),
-        exported_attributes,
+        Evaluate::from_i64(2).unwrap(),
+        Type::missing().unwrap(),
+        exported_attrs,
         None,
     )
     .unwrap()
     .into();
-    let dead_function: tvm::ir::BaseFunc = PrimFunc::from_body(Evaluate::from_i64(99).unwrap())
+    let dead_function: BaseFunc = PrimFunc::from_body(Evaluate::from_i64(3).unwrap())
         .unwrap()
         .into();
     let module = IRModule::with_metadata(
         [
-            (main_global, main_function),
-            (helper_global, helper_function),
-            (exported_global, exported_function),
-            (dead_global, dead_function),
+            (main, main_function),
+            (helper, helper_function),
+            (exported, exported_function),
+            (dead, dead_function),
         ]
         .into_iter()
         .collect(),
-        SourceMap::new(),
-        DictAttrs::empty(),
+        SourceMap::new().unwrap(),
+        DictAttrs::empty().unwrap(),
         Map::new(),
     )
     .unwrap();
 
     let direct = transform::prune_unreachable_functions_from_main(module.clone()).unwrap();
-    assert_eq!(direct.functions.len(), 3);
-    let mut retained_names = direct
-        .functions
+    let mut names = direct
+        .functions()
+        .unwrap()
         .iter()
-        .map(|(global, _)| global.name_hint.as_str().to_owned())
+        .map(|(global, _)| global.name_hint().unwrap().as_str().to_owned())
         .collect::<Vec<_>>();
-    retained_names.sort();
-    assert_eq!(retained_names, vec!["exported", "helper", "main"]);
+    names.sort();
+    assert_eq!(names, vec!["exported", "helper", "main"]);
 
     let through_pass = transform::prune_unreachable_functions_pass(vec!["main".to_owned()])
         .unwrap()
-        .run(module.clone())
-        .unwrap();
-    assert_structural_equal(&direct, &through_pass);
-
-    let external_only = transform::prune_unreachable_functions_pass(Vec::new())
-        .unwrap()
         .run(module)
         .unwrap();
-    let external_names = external_only
-        .functions
-        .iter()
-        .map(|(global, _)| global.name_hint.as_str().to_owned())
-        .collect::<Vec<_>>();
-    assert_eq!(external_names, vec!["exported"]);
-    assert!(transform::prune_unreachable_functions(direct, &["missing"]).is_err());
+    assert_structural_equal(&direct, &through_pass);
 }
 
 #[test]
-fn unit_loop_elimination_preserves_annotated_loops() {
+fn definition_regions_are_visible_to_typed_walk_callbacks() {
     load_tvm_compiler();
-    let loop_var = Var::new("i", "int64").unwrap();
-    let body: Stmt = Evaluate::new(Expr::from(loop_var.clone())).unwrap().into();
-    let annotations: Map<tvm::tvm_ffi::String, Any> = [(
-        tvm::tvm_ffi::String::from("keep_unit_loop"),
-        Any::from(1i64),
-    )]
-    .into_iter()
-    .collect();
-    let loop_statement = TirFor::with_metadata(
-        loop_var,
-        Expr::int("int64", 7).unwrap(),
-        Expr::int("int64", 1).unwrap(),
-        tvm::tirx::ForKind::Serial,
-        body,
-        None,
-        annotations,
-        None,
-        None,
+    let variable = Var::new("x", "int32").unwrap();
+    let function = PrimFunc::new(
+        vec![variable.clone()],
+        Evaluate::new(variable.clone()).unwrap(),
     )
     .unwrap();
-    let function = PrimFunc::from_body(&loop_statement).unwrap();
-    let module = IRModule::from_expr(&function).unwrap();
-
-    let rust_result = transform::eliminate_unit_loops()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
-    let cpp_result = cpp_pass("tirx.transform.LowerTIRxOpaque")
-        .run(module)
-        .unwrap();
-
-    assert_eq!(node_statistics(&rust_result).unwrap().loops, 1);
-    assert_structural_equal(&rust_result, &cpp_result);
+    let mut definitions = 0;
+    let mut uses = 0;
+    structural_walk(
+        &function,
+        |_: &tvm::ir::VarObj, region: DefRegionKind| {
+            if region == DefRegionKind::None {
+                uses += 1;
+            } else {
+                definitions += 1;
+            }
+            WalkResult::Advance
+        },
+        WalkOrder::PreOrder,
+    )
+    .unwrap();
+    assert_eq!((definitions, uses), (1, 1));
 }

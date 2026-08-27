@@ -436,10 +436,9 @@ class PrimExpr : public TypedExpr<PrimType> {
  * \sa PrimExpr
  */
 class PrimExprConvertibleNode : public ffi::Object {
- protected:
-  PrimExprConvertibleNode() = default;
-
  public:
+  virtual ~PrimExprConvertibleNode() {}
+  virtual PrimExpr ToPrimExpr() const = 0;
   TVM_FFI_DECLARE_OBJECT_INFO("ir.PrimExprConvertible", PrimExprConvertibleNode, ffi::Object);
 };
 
@@ -449,9 +448,6 @@ class PrimExprConvertibleNode : public ffi::Object {
  */
 class PrimExprConvertible : public ffi::ObjectRef {
  public:
-  /*! \brief Convert this object using its type-registered conversion hook. */
-  TVM_DLL PrimExpr ToPrimExpr() const;
-
   TVM_FFI_DEFINE_OBJECT_REF_METHODS_NULLABLE(PrimExprConvertible, ffi::ObjectRef,
                                              PrimExprConvertibleNode);
 };
@@ -552,7 +548,7 @@ struct TypeTraits<PrimExpr>
     return PrimExpr::ConvertFallbackValue(value);
   }
   TVM_FFI_INLINE static PrimExpr ConvertFallbackValue(PrimExprConvertible value) {
-    return value.ToPrimExpr();
+    return value->ToPrimExpr();
   }
 };
 

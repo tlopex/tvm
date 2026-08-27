@@ -35,9 +35,9 @@ impl LazyAnalyzer {
     }
 }
 
-pub(super) fn int_value(expr: &Expr) -> Option<i64> {
-    expr.clone()
-        .try_cast::<IntImm>()
-        .ok()
-        .map(|value| value.value)
+pub(super) fn int_value(expr: &Expr) -> Result<Option<i64>> {
+    let Ok(value) = expr.clone().try_cast::<IntImm>() else {
+        return Ok(None);
+    };
+    Ok(Some(value.value()?))
 }

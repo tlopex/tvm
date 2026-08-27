@@ -35,11 +35,7 @@ void TensorNode::RegisterReflection() {
       .def_ro("shape", &TensorNode::shape)
       .def_ro("dtype", &TensorNode::dtype)
       .def_ro("op", &TensorNode::op)
-      .def_ro("value_index", &TensorNode::value_index)
-      .def("get_shape", &TensorNode::GetShape)
-      .def("get_data_type", &TensorNode::GetDataType)
-      .def("get_name_hint", &TensorNode::GetNameHint)
-      .def("to_prim_expr", &TensorNode::ToPrimExpr);
+      .def_ro("value_index", &TensorNode::value_index);
 }
 
 TVM_FFI_STATIC_INIT_BLOCK() { TensorNode::RegisterReflection(); }

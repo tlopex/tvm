@@ -32,10 +32,10 @@ use crate::ir::{BaseFunc, GlobalVar, GlobalVarObj, IRModule};
 /// module, this conservative prototype returns the original module unchanged.
 pub fn prune_unreachable_functions(module: IRModule, entry_names: &[&str]) -> Result<IRModule> {
     let functions = module
-        .functions
+        .functions()?
         .iter()
-        .map(|(global, function)| (global.name_hint.as_str().to_owned(), (global, function)))
-        .collect::<HashMap<_, _>>();
+        .map(|(global, function)| Ok((global.name_hint()?.as_str().to_owned(), (global, function))))
+        .collect::<Result<HashMap<_, _>>>()?;
 
     let mut reachable = HashSet::new();
     let mut pending = Vec::new();
@@ -71,9 +71,9 @@ pub fn prune_unreachable_functions(module: IRModule, entry_names: &[&str]) -> Re
         let mut callees = Vec::new();
         structural_walk(
             function,
-            |global: &GlobalVarObj| {
-                callees.push(global.name_hint.as_str().to_owned());
-                WalkResult::Advance
+            |global: &GlobalVarObj| -> Result<WalkResult> {
+                callees.push(global.name_hint()?.as_str().to_owned());
+                Ok(WalkResult::Advance)
             },
             WalkOrder::PreOrder,
         )?;
@@ -88,15 +88,19 @@ pub fn prune_unreachable_functions(module: IRModule, entry_names: &[&str]) -> Re
     }
 
     let retained: Map<GlobalVar, BaseFunc> = module
-        .functions
+        .functions()?
         .iter()
-        .filter(|(global, _)| reachable.contains(global.name_hint.as_str()))
+        .map(|(global, function)| Ok((global.name_hint()?, global, function)))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|(name, _, _)| reachable.contains(name.as_str()))
+        .map(|(_, global, function)| (global, function))
         .collect();
     IRModule::with_metadata(
         retained,
-        module.source_map.clone(),
-        module.attrs.clone(),
-        module.global_infos.clone(),
+        module.source_map()?,
+        module.attrs()?,
+        module.global_infos()?,
     )
 }
 
@@ -120,7 +124,11 @@ pub fn prune_unreachable_functions_pass(entry_names: Vec<std::string::String>) -
 }
 
 fn has_external_linkage(function: &BaseFunc) -> Result<bool> {
-    let Some(symbol) = function.attrs.dict.get(&FfiString::from("global_symbol"))? else {
+    let Some(symbol) = function
+        .attrs()?
+        .dict()?
+        .get(&FfiString::from("global_symbol"))?
+    else {
         return Ok(false);
     };
     FfiString::try_from(symbol)?;

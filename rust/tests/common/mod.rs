@@ -20,8 +20,6 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use tvm::tvm_ffi::tvm_ffi_sys::{TVMFFIFieldInfo, TVMFFIGetTypeInfo, TVMFFITypeInfo};
-use tvm::tvm_ffi::ObjectCore;
 use tvm::tvm_ffi::{AnyCompatible, AnyView, Function, Module, ObjectArc, ObjectRefCore, String};
 
 static TVM_COMPILER: OnceLock<Module> = OnceLock::new();
@@ -40,12 +38,10 @@ pub fn load_tvm_compiler() {
     });
 }
 
-#[allow(dead_code)]
 pub fn object_pointer<O: ObjectRefCore>(value: &O) -> *const () {
     unsafe { ObjectArc::as_raw(O::data(value)).cast() }
 }
 
-#[allow(dead_code)]
 pub fn assert_structural_equal<L: AnyCompatible, R: AnyCompatible>(lhs: &L, rhs: &R) {
     let equal = Function::get_global("ffi.StructuralEqual")
         .unwrap()
@@ -62,21 +58,4 @@ pub fn assert_structural_equal<L: AnyCompatible, R: AnyCompatible>(lhs: &L, rhs:
         let rhs = String::try_from(repr.call_packed(&[AnyView::from(rhs)]).unwrap()).unwrap();
         panic!("structural mismatch:\nleft:  {lhs}\nright: {rhs}");
     }
-}
-
-#[allow(dead_code)]
-pub fn runtime_type_info<N: ObjectCore>() -> &'static TVMFFITypeInfo {
-    let pointer = unsafe { TVMFFIGetTypeInfo(N::type_index()) };
-    assert!(!pointer.is_null(), "missing type info for {}", N::TYPE_KEY);
-    unsafe { &*pointer }
-}
-
-#[allow(dead_code)]
-pub fn direct_fields<N: ObjectCore>() -> &'static [TVMFFIFieldInfo] {
-    let info = runtime_type_info::<N>();
-    if info.num_fields == 0 {
-        return &[];
-    }
-    assert!(!info.fields.is_null(), "missing fields for {}", N::TYPE_KEY);
-    unsafe { std::slice::from_raw_parts(info.fields, info.num_fields as usize) }
 }

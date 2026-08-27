@@ -455,17 +455,13 @@ class FunctionNode : public BaseFuncNode {
   /*! \brief Whether the function is annotated as pure or not. */
   bool is_pure;
 
-  static ffi::Map<ffi::String, ffi::Any> PrepareFFI(ffi::Array<Var> params, Expr body,
-                                                    ffi::Optional<Type> ret_ty, bool is_pure);
-
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<FunctionNode>()
         .def_ro("params", &FunctionNode::params, refl::AttachFieldFlag::SEqHashDefRecursive())
         .def_ro("body", &FunctionNode::body)
         .def_ro("ret_ty", &FunctionNode::ret_ty)
-        .def_ro("is_pure", &FunctionNode::is_pure)
-        .def_static("__ffi_prepare__", &FunctionNode::PrepareFFI);
+        .def_ro("is_pure", &FunctionNode::is_pure);
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindDAGNode;

@@ -23,7 +23,6 @@
  */
 #include <tvm/arith/analyzer.h>
 #include <tvm/ffi/function.h>
-#include <tvm/ffi/reflection/accessor.h>
 #include <tvm/ffi/reflection/registry.h>
 #include <tvm/ir/expr.h>
 #include <tvm/ir/function.h>
@@ -34,11 +33,13 @@
 #include <cmath>
 
 #include "../support/limits.h"
+
 namespace tvm {
 
 TVM_FFI_STATIC_INIT_BLOCK() {
-  namespace refl = ffi::reflection;
-  refl::ObjectDef<PrimExprConvertibleNode>();
+  namespace refl = tvm::ffi::reflection;
+  refl::ObjectDef<PrimExprConvertibleNode>().def("to_prim_expr",
+                                                 &PrimExprConvertibleNode::ToPrimExpr);
   ExprNode::RegisterReflection();
   OpaqueExprNode::RegisterReflection();
   BaseFuncNode::RegisterReflection();
@@ -50,13 +51,6 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   IntImmNode::RegisterReflection();
   FloatImmNode::RegisterReflection();
   RangeNode::RegisterReflection();
-}
-
-PrimExpr PrimExprConvertible::ToPrimExpr() const {
-  TVM_FFI_CHECK(defined(), ValueError) << "Cannot convert an undefined object to PrimExpr";
-  return ffi::reflection::GetMethod(GetTypeKey(), "to_prim_expr")
-      .CallExpected<PrimExpr>(*this)
-      .value();
 }
 
 Tuple::Tuple(ffi::Array<Expr> fields, Span span) {

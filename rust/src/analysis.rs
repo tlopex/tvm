@@ -352,15 +352,15 @@ pub struct MemoryAccessStatistics {
 impl MemoryAccessStatistics {
     fn walk_load(&mut self, node: &BufferLoadObj) -> Result<WalkResult> {
         self.loads += 1;
-        self.maximum_load_rank = self.maximum_load_rank.max(node.indices.len());
-        self.predicated_loads += usize::from(node.predicate.is_some());
+        self.maximum_load_rank = self.maximum_load_rank.max(node.indices()?.len());
+        self.predicated_loads += usize::from(node.predicate()?.is_some());
         Ok(WalkResult::Advance)
     }
 
     fn walk_store(&mut self, node: &BufferStoreObj) -> Result<WalkResult> {
         self.stores += 1;
-        self.maximum_store_rank = self.maximum_store_rank.max(node.indices.len());
-        self.predicated_stores += usize::from(node.predicate.is_some());
+        self.maximum_store_rank = self.maximum_store_rank.max(node.indices()?.len());
+        self.predicated_stores += usize::from(node.predicate()?.is_some());
         Ok(WalkResult::Advance)
     }
 }
@@ -403,13 +403,13 @@ fn visit_loop_body(
 ) -> Result<Option<VisitInterrupt>> {
     visitor.state_mut().loops += 1;
 
-    if let Some(interrupt) = visitor.visit_with(&node.loop_var, DefRegionKind::Recursive)? {
+    if let Some(interrupt) = visitor.visit_with(&node.loop_var()?, DefRegionKind::Recursive)? {
         return Ok(Some(interrupt));
     }
-    if let Some(interrupt) = visitor.visit(&node.min)? {
+    if let Some(interrupt) = visitor.visit(&node.min()?)? {
         return Ok(Some(interrupt));
     }
-    if let Some(interrupt) = visitor.visit(&node.extent)? {
+    if let Some(interrupt) = visitor.visit(&node.extent()?)? {
         return Ok(Some(interrupt));
     }
 
@@ -418,20 +418,20 @@ fn visit_loop_body(
         state.current_depth += 1;
         state.maximum_depth = state.maximum_depth.max(state.current_depth);
     }
-    let body_result = visitor.visit(&node.body);
+    let body_result = visitor.visit(&node.body()?);
     visitor.state_mut().current_depth -= 1;
     if let Some(interrupt) = body_result? {
         return Ok(Some(interrupt));
     }
 
-    if let Some(interrupt) = visitor.visit(&node.thread_binding)? {
+    if let Some(interrupt) = visitor.visit(&node.thread_binding()?)? {
         return Ok(Some(interrupt));
     }
-    if let Some(interrupt) = visitor.visit(&node.annotations)? {
+    if let Some(interrupt) = visitor.visit(&node.annotations()?)? {
         return Ok(Some(interrupt));
     }
-    if let Some(step) = &node.step {
-        if let Some(interrupt) = visitor.visit(step)? {
+    if let Some(step) = node.step()? {
+        if let Some(interrupt) = visitor.visit(&step)? {
             return Ok(Some(interrupt));
         }
     }
@@ -458,7 +458,7 @@ impl ExprTrace {
     }
 
     fn walk_integer(&mut self, node: &IntImmObj) -> Result<WalkResult> {
-        self.events.push(ExprTraceEvent::Int(node.value));
+        self.events.push(ExprTraceEvent::Int(node.value()?));
         Ok(WalkResult::Advance)
     }
 }
@@ -481,7 +481,7 @@ where
     let outcome = structural_walk(
         root,
         |node: &IntImmObj| -> Result<WalkResult> {
-            if node.value == target {
+            if node.value()? == target {
                 Ok(WalkResult::Interrupt)
             } else {
                 Ok(WalkResult::Advance)
@@ -499,7 +499,7 @@ where
 {
     structural_walk(
         root,
-        |node: &IntImmObj| -> Result<WalkResult> { Ok(WalkResult::interrupt_with(node.value)) },
+        |node: &IntImmObj| -> Result<WalkResult> { Ok(WalkResult::interrupt_with(node.value()?)) },
         WalkOrder::PreOrder,
     )?
     .map(|interrupt| i64::try_from(interrupt.value))

@@ -784,11 +784,10 @@ class BufferRegionNode : public PrimExprConvertibleNode {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<BufferRegionNode>()
         .def_ro("buffer", &BufferRegionNode::buffer, refl::AttachFieldFlag::SEqHashDefRecursive())
-        .def_ro("region", &BufferRegionNode::region)
-        .def("to_prim_expr", &BufferRegionNode::ToPrimExpr);
+        .def_ro("region", &BufferRegionNode::region);
   }
 
-  TVM_DLL PrimExpr ToPrimExpr() const;
+  TVM_DLL PrimExpr ToPrimExpr() const final;
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("tirx.BufferRegion", BufferRegionNode, PrimExprConvertibleNode);
@@ -837,15 +836,12 @@ class MatchBufferRegionNode : public ffi::Object {
   /*! \brief The source buffer region. */
   BufferRegion source;
 
-  static ffi::Map<ffi::String, ffi::Any> PrepareFFI(BufferVar buffer, BufferRegion source);
-
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<MatchBufferRegionNode>()
         .def_ro("buffer", &MatchBufferRegionNode::buffer,
                 refl::AttachFieldFlag::SEqHashDefRecursive())
-        .def_ro("source", &MatchBufferRegionNode::source)
-        .def_static("__ffi_prepare__", &MatchBufferRegionNode::PrepareFFI);
+        .def_ro("source", &MatchBufferRegionNode::source);
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
