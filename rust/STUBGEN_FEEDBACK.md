@@ -365,10 +365,10 @@ arithmetic analyzer. The prototype therefore binds `arith.Analyzer` as an
 opaque FFI object and calls its existing registered operations; stubgen must be
 able to distinguish an opaque compiler service like this from an ABI-complete,
 Rust-allocated IR node. Control-flow removal can now recognize values
-simplified by that analyzer. TVM's existing side-effect classifier is exposed
-as the registered `tirx.analysis.SideEffect` service, allowing Rust to discard
-pure evaluations while preserving opaque or state-updating calls without
-copying `TCallEffectKind` lookup rules. Function reachability can combine a
+simplified by that analyzer. The Rust side-effect classifier walks the bound IR
+and queries the existing `ir.OpGetAttr` service for each operator's
+`TCallEffectKind`, allowing Rust to discard pure evaluations while preserving
+opaque or state-updating calls. Function reachability can combine a
 walk-built call graph, `global_symbol` linkage roots, and an `IRModule` rebuild,
 but full dead-code elimination additionally needs exact callee semantics and
 Relax binding-effect analysis. These are reusable compiler services, not facts

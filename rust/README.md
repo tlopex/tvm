@@ -93,9 +93,10 @@ module passes. `SkipAssert`, arithmetic and analyzer-backed control-flow
 simplification, and buffer-index-aware unit-loop elimination are compared with
 the corresponding C++ passes using structural equality. Arithmetic passes
 reuse an opaque handle to TVM's existing `arith.Analyzer` instead of copying
-its compiler rules into Rust. Control-flow simplification similarly calls the
-registered `tirx.analysis.SideEffect` service before discarding an evaluated
-expression. A two-phase module pass builds a call graph with `structural_walk`,
+its compiler rules into Rust. Control-flow simplification classifies expression
+effects with `structural_walk` and reuses the existing `ir.OpGetAttr` registry
+lookup for each operator's `TCallEffectKind`. A two-phase module pass builds a
+call graph with `structural_walk`,
 treats `global_symbol` functions as external roots, and then prunes unreachable
 functions. Additional tests check definition/use identity, DAG memoization,
 ownership, annotations, and scope-sensitive recursion.

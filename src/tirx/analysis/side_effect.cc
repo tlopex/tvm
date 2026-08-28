@@ -74,12 +74,5 @@ CallEffectKind SideEffect(const PrimExpr& e) {
   return visitor.kind_;
 }
 
-TVM_FFI_STATIC_INIT_BLOCK() {
-  namespace refl = tvm::ffi::reflection;
-  refl::GlobalDef().def("tirx.analysis.SideEffect", [](const PrimExpr& expr) -> int64_t {
-    return static_cast<int64_t>(SideEffect(expr));
-  });
-}
-
 }  // namespace tirx
 }  // namespace tvm

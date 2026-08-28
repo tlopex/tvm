@@ -362,6 +362,19 @@ fn full_direct_constructors_preserve_source_spans() {
     );
 
     let variable = Var::with_type_and_span("x", &int_type, Some(&span));
+    let iter_domain = Range::from_min_extent(
+        IntImm::new("int32", 0).unwrap(),
+        IntImm::new("int32", 4).unwrap(),
+    )
+    .unwrap();
+    let iter_var = IterVar::with_metadata(
+        Some(iter_domain),
+        variable.clone(),
+        IterVarType::DataParallel,
+        "",
+        Some(&span),
+    )
+    .unwrap();
     let literal =
         IntImm::from_dtype_with_span(PrimType::new("int32").unwrap().dtype, 1, Some(&span))
             .unwrap();
@@ -407,6 +420,10 @@ fn full_direct_constructors_preserve_source_spans() {
     );
     assert_eq!(
         object_pointer(block.span.as_ref().unwrap()),
+        object_pointer(&span)
+    );
+    assert_eq!(
+        object_pointer(iter_var.span().unwrap().as_ref().unwrap()),
         object_pointer(&span)
     );
 }

@@ -19,8 +19,8 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    structural_visit, structural_walk, AnyView, DefRegionKind, Error, ObjectArc, Result,
-    VisitCallbacks, VisitContext, VisitInterrupt, WalkOrder, WalkResult, VALUE_ERROR,
+    structural_visit, structural_walk, AnyView, DefRegionKind, Error, ObjectArc, ObjectRefCast,
+    Result, VisitCallbacks, VisitContext, VisitInterrupt, WalkOrder, WalkResult, VALUE_ERROR,
 };
 
 use crate::ir::{CallObj, ExprObj, IntImmObj, PrimExpr, VarObj};
@@ -145,12 +145,65 @@ impl TryFrom<i64> for CallEffectKind {
     }
 }
 
+/// Opaque view of a registry-owned TVM operator.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "ir.Op"]
+#[type_final]
+struct OpObj {
+    base: ExprObj,
+}
+
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+struct Op {
+    data: ObjectArc<OpObj>,
+}
+
+struct SideEffectAnalyzer {
+    kind: CallEffectKind,
+}
+
+impl SideEffectAnalyzer {
+    fn update(&mut self, kind: CallEffectKind) -> WalkResult {
+        let kind = if kind > CallEffectKind::UpdateState {
+            CallEffectKind::UpdateState
+        } else {
+            kind
+        };
+        self.kind = self.kind.max(kind);
+        if self.kind.may_update_state() {
+            WalkResult::Interrupt
+        } else {
+            WalkResult::Advance
+        }
+    }
+}
+
+#[tvm_ffi::dispatch(walk)]
+impl SideEffectAnalyzer {
+    fn walk_buffer_load(&mut self, _node: &BufferLoadObj) -> WalkResult {
+        self.update(CallEffectKind::ReadState)
+    }
+
+    fn walk_call(&mut self, node: &CallObj) -> Result<WalkResult> {
+        let Ok(op) = node.op.clone().try_cast::<Op>() else {
+            return Ok(self.update(CallEffectKind::UpdateState));
+        };
+        let raw: i64 = tvm_ffi::cached_global_func!("ir.OpGetAttr")
+            .call_tuple((op, tvm_ffi::String::from("TCallEffectKind")))?
+            .try_into()?;
+        Ok(self.update(raw.try_into()?))
+    }
+}
+
 /// Classify whether evaluating a primitive expression reads or updates external state.
 pub fn side_effect(expression: &PrimExpr) -> Result<CallEffectKind> {
-    let value: i64 = tvm_ffi::cached_global_func!("tirx.analysis.SideEffect")
-        .call_tuple((expression,))?
-        .try_into()?;
-    value.try_into()
+    let mut analyzer = SideEffectAnalyzer {
+        kind: CallEffectKind::Pure,
+    };
+    structural_walk(expression, &mut analyzer, WalkOrder::PreOrder)?;
+    Ok(analyzer.kind)
 }
 
 /// Count expression nodes using TVM's language-agnostic structural protocol.

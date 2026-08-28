@@ -18,7 +18,6 @@
  */
 
 #include <gtest/gtest.h>
-#include <tvm/ffi/function.h>
 #include <tvm/runtime/logging.h>
 #include <tvm/te/operation.h>
 #include <tvm/tirx/analysis.h>
@@ -34,8 +33,4 @@ TEST(SimplePasses, SideEffect) {
   TVM_FFI_ICHECK(tirx::SideEffect(tvm::Call(PrimType::Void(), tirx::builtin::tvm_storage_sync(), {})
                                       .as_or_throw<PrimExpr>()) ==
                  tirx::CallEffectKind::kUpdateState);
-
-  auto side_effect = ffi::Function::GetGlobalRequired("tirx.analysis.SideEffect");
-  TVM_FFI_ICHECK(side_effect(tirx::BufferLoad(buf, {i})).cast<int64_t>() ==
-                 static_cast<int64_t>(tirx::CallEffectKind::kReadState));
 }
