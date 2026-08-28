@@ -60,10 +60,8 @@ class TypeNode : public ffi::Object {
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     // span do not participate in structural equal and hash.
-    refl::ObjectDef<TypeNode>()
-        .def_ro("span", &TypeNode::span, refl::DefaultValue(Span()),
-                refl::AttachFieldFlag::SEqHashIgnore())
-        .def_complete_layout();
+    refl::ObjectDef<TypeNode>().def_ro("span", &TypeNode::span, refl::DefaultValue(Span()),
+                                       refl::AttachFieldFlag::SEqHashIgnore());
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
@@ -127,7 +125,7 @@ class PrimTypeNode final : public TypeNode {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<PrimTypeNode>().def_ro("dtype", &PrimTypeNode::dtype).def_complete_layout();
+    refl::ObjectDef<PrimTypeNode>().def_ro("dtype", &PrimTypeNode::dtype);
   }
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("ir.PrimType", PrimTypeNode, TypeNode);
 };
@@ -321,8 +319,7 @@ class ExprNode : public ffi::Object {
     refl::ObjectDef<ExprNode>()
         .def_ro("span", &ExprNode::span, refl::DefaultValue(Span()),
                 refl::AttachFieldFlag::SEqHashIgnore())
-        .def_ro("ty", &ExprNode::ty, refl::DefaultValue(Type::Missing()))
-        .def_complete_layout();
+        .def_ro("ty", &ExprNode::ty, refl::DefaultValue(Type::Missing()));
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;

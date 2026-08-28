@@ -97,7 +97,7 @@ class DummyGlobalInfoNode : public GlobalInfoNode {
  public:
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<DummyGlobalInfoNode>().def_complete_layout();
+    refl::ObjectDef<DummyGlobalInfoNode>();
   }
 
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("ir.DummyGlobalInfo", DummyGlobalInfoNode, GlobalInfoNode);

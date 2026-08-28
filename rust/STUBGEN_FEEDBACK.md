@@ -72,8 +72,8 @@ pub fn new(a: &Expr, b: &Expr) -> Result<Add> {
 }
 ```
 
-Stubgen emits this allocator only after the native-layout manifest certifies
-the complete type and the generator verifies its parent, size, alignment,
+Stubgen emits this allocator only after authoritative build-time layout input
+lets the generator verify the complete type's parent, size, alignment,
 finality, and fields. The generated target code then uses `ObjectArc::new` to
 install a common `TVMFFIObject` header and a Rust deleter without repeating the
 generator's validation as a per-type Rust macro.
@@ -154,7 +154,7 @@ facts by guessing:
 | Manifest section | Required facts | Authority |
 | --- | --- | --- |
 | Runtime type | type key, parent chain, reflected field names/schemas/flags, structural attributes | TVM FFI registry |
-| Native layout | finality, total size/alignment, ordered physical fields, exact C++ widths/offsets, explicit vptr/STL/unreflected blockers, and a stable per-type fingerprint | C++ build-generated layout data plus a matching runtime-published fingerprint |
+| Native layout | finality, total size/alignment, ordered physical fields, exact C++ widths/offsets, and explicit vptr/STL/unreflected blockers | C++ build-generated layout data |
 | Rust mapping | object/reference names, module path, exact Rust type for every physical field, nullable/container mapping, and upcasts | reviewed mapping rules |
 
 For each type the generator first joins these sections by type key, verifies
@@ -195,8 +195,8 @@ packed-constructor fallback is a generation error.
 The generated crate is tied to the native-layout manifest consumed by its
 stubgen invocation and is built and tested against that TVM build. If a future
 distribution supports loading arbitrary TVM shared-library versions, it should
-add one centralized ABI version/fingerprint gate rather than emit a validator
-beside every generated object.
+add one centralized ABI version gate rather than emit a validator beside every
+generated object.
 
 ## Integration with the existing stubgen
 
@@ -324,8 +324,8 @@ copy path. Generated pass wrappers should use this standard holder.
 
 The current experiment still needs explicit decisions for:
 
-- consuming `__ffi_native_object_layout__` certificates and explicit opaque
-  blockers while deciding what Rust code to emit;
+- obtaining authoritative build-time layouts and explicit opaque blockers while
+  deciding what Rust code to emit;
 - constructor parameter type schemas, nullability/defaults, and validation
   semantics that should eventually be generated rather than handwritten;
 - build-configuration values used by constructor defaults;
@@ -340,14 +340,10 @@ behind a packed global.
 
 ## Layout evidence
 
-`ObjectDef::def_complete_layout()` publishes the certificate that stubgen uses
-to validate total size, native alignment, finality, fields, and the layout
-fingerprint before generating a complete Rust object. The opt-in certifies
-complete reflection coverage and rejects polymorphic C++ classes at compile
-time. Types without that certificate are opaque blockers; stubgen must not
-infer completeness from their fields. The accepted target code contains only
-the resulting `#[repr(C)]` object and allocator, not a second copy of the
-generator's layout validator.
+Stubgen must validate physical layouts from authoritative build-time input;
+runtime reflection metadata does not certify that every physical field is
+reflected. The accepted target code contains only the resulting `#[repr(C)]`
+object and allocator, not a second copy of the generator's layout validator.
 
 ## Structural-pass lessons
 

@@ -122,8 +122,7 @@ class BufferTypeNode : public TypeNode {
         .def_ro("data_alignment", &BufferTypeNode::data_alignment)
         .def_ro("offset_factor", &BufferTypeNode::offset_factor)
         .def_ro("layout", &BufferTypeNode::layout)
-        .def_ro("allocated_addr", &BufferTypeNode::allocated_addr)
-        .def_complete_layout();
+        .def_ro("allocated_addr", &BufferTypeNode::allocated_addr);
   }
 
   /*! \return preferred index type for this buffer node */

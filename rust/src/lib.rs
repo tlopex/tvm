@@ -19,7 +19,7 @@
 
 //! Minimal handwritten TVM IR bindings used to develop Rust analyses and passes.
 //!
-//! Ordinary nodes with certified complete `#[repr(C)]` layouts are allocated by
+//! Ordinary nodes with ABI-complete `#[repr(C)]` layouts are allocated by
 //! Rust. Polymorphic, registry-owned, interned, and STL-backed C++ nodes remain
 //! opaque and are allocated by their existing native operations; Rust reads
 //! their reflected fields and calls existing registered operations without

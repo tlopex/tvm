@@ -60,8 +60,7 @@ class PrimFuncNode : public BaseFuncNode {
     refl::ObjectDef<PrimFuncNode>()
         .def_ro("params", &PrimFuncNode::params, refl::AttachFieldFlag::SEqHashDefRecursive())
         .def_ro("ret_type", &PrimFuncNode::ret_type)
-        .def_ro("body", &PrimFuncNode::body)
-        .def_complete_layout();
+        .def_ro("body", &PrimFuncNode::body);
     refl::TypeAttrDef<PrimFuncNode>()
         .def("__s_equal__", &PrimFuncNode::SEqual)
         .def("__s_hash__", &PrimFuncNode::SHash);

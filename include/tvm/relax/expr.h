@@ -200,8 +200,7 @@ class BindingNode : public ffi::Object {
     refl::ObjectDef<BindingNode>()
         .def_ro("span", &BindingNode::span, refl::AttachFieldFlag::SEqHashIgnore())
         // TODO(tqchen): use SEqHashDefNonRecursive after the next pypi tvm-ffi release
-        .def_ro("var", &BindingNode::var, refl::AttachFieldFlag::SEqHashDefRecursive())
-        .def_complete_layout();
+        .def_ro("var", &BindingNode::var, refl::AttachFieldFlag::SEqHashDefRecursive());
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
@@ -268,7 +267,7 @@ class VarBindingNode : public BindingNode {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<VarBindingNode>().def_ro("value", &VarBindingNode::value).def_complete_layout();
+    refl::ObjectDef<VarBindingNode>().def_ro("value", &VarBindingNode::value);
     // customize the SEqual and SHash methods for better error messages
     refl::TypeAttrDef<VarBindingNode>()
         .def("__s_equal__", &VarBindingNode::SEqual)
@@ -298,8 +297,7 @@ class BindingBlockNode : public ffi::Object {
     refl::ObjectDef<BindingBlockNode>()
         .def_ro("bindings", &BindingBlockNode::bindings)
         .def_ro("span", &BindingBlockNode::span, refl::AttachFieldFlag::SEqHashIgnore(),
-                refl::DefaultValue(Span()))
-        .def_complete_layout();
+                refl::DefaultValue(Span()));
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
@@ -344,8 +342,7 @@ class SeqExprNode : public ExprNode {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<SeqExprNode>()
         .def_ro("blocks", &SeqExprNode::blocks)
-        .def_ro("body", &SeqExprNode::body)
-        .def_complete_layout();
+        .def_ro("body", &SeqExprNode::body);
     refl::TypeAttrDef<SeqExprNode>()
         .def("__s_equal__", &SeqExprNode::SEqual)
         .def("__s_hash__", &SeqExprNode::SHash);
@@ -414,8 +411,7 @@ class IfNode : public ExprNode {
     refl::ObjectDef<IfNode>()
         .def_ro("cond", &IfNode::cond)
         .def_ro("true_branch", &IfNode::true_branch)
-        .def_ro("false_branch", &IfNode::false_branch)
-        .def_complete_layout();
+        .def_ro("false_branch", &IfNode::false_branch);
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindDAGNode;
@@ -465,8 +461,7 @@ class FunctionNode : public BaseFuncNode {
         .def_ro("params", &FunctionNode::params, refl::AttachFieldFlag::SEqHashDefRecursive())
         .def_ro("body", &FunctionNode::body)
         .def_ro("ret_ty", &FunctionNode::ret_ty)
-        .def_ro("is_pure", &FunctionNode::is_pure)
-        .def_complete_layout();
+        .def_ro("is_pure", &FunctionNode::is_pure);
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindDAGNode;

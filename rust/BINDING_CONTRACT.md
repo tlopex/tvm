@@ -31,8 +31,8 @@ semantics. For an ordinary data node, generated Rust should therefore:
 
 1. emit the complete inheritance prefix and every physical field in C++ order;
 2. use ABI-equivalent Rust field types under `#[repr(C)]`;
-3. let stubgen require a complete native-layout certificate and verify the
-   generated inheritance, size, alignment, finality, and field offsets before
+3. let stubgen verify the generated inheritance, size, alignment, finality,
+   and field offsets against authoritative build-time layout input before
    emitting direct `ObjectArc::new` allocation;
 4. initialize the same defaults and validate the same invariants as C++; and
 5. expose physical fields directly through the reference wrapper's `Deref`, so
@@ -107,7 +107,7 @@ A binding is accepted only when every applicable check passes:
 | --- | --- |
 | Runtime identity | exact type key, parent, depth, and finality |
 | Physical layout | complete base prefix, field order, size, alignment, and exact scalar widths |
-| Generation-time layout compatibility | stubgen accepts the type only when an explicit native completeness certificate and its size, alignment, finality, field count, and fingerprint match the generated representation |
+| Generation-time layout compatibility | stubgen accepts the type only when authoritative build-time size, alignment, finality, and field offsets match the generated representation |
 | Reflected surface | exact reflected names, schemas, defaults, and structural flags |
 | Complete allocator API | exact stored types by value, direct `Self` return, no hidden clone/conversion work, and visibility that preserves external invariants |
 | Constructor parity | matching defaults, rejection cases, normalization, and derived state |
@@ -123,10 +123,8 @@ a C++ field getter on a Rust-created `Add` and compares that node with a
 C++-created `Add` using C++ structural equality. For every ABI-complete object,
 `tests/binding_contract.rs` checks the exact reflected schema, flags, registered
 default values, and every public owned `from_complete_fields` signature.
-`ObjectDef::def_complete_layout()` is the explicit native proof that no
-physical field is unreflected and publishes the authoritative alignment,
-finality, and fingerprint for stubgen to consume. Layout comparison belongs to
-stubgen and its generation tests, not to each generated Rust object.
+Layout completeness and comparison belong to stubgen and its generation tests,
+not to runtime reflection registration or each generated Rust object.
 Broader pass behavior is in
 `tests/structural_passes.rs`.
 
@@ -195,8 +193,8 @@ a separately reviewed C++ ABI migration removes that blocker.
 - Constructor semantics that are not mechanically derivable remain explicit,
   reviewed Rust code. Differential tests against the C++ constructor detect
   drift in defaults, validation, normalization, and derived fields.
-- A native layout certificate proves physical compatibility; it does not by
-  itself authorize construction. Registry identity, interning, sentinels, and
+- Physical layout compatibility does not by itself authorize construction.
+  Registry identity, interning, sentinels, and
   native resource ownership are constructor semantics. `Axis`, `SourceName`,
   `Source`, and `Type::Missing` therefore use their existing native operations
   and expose no direct Rust allocator.
@@ -215,8 +213,7 @@ a separately reviewed C++ ABI migration removes that blocker.
 - This target-code demo is generated for the same TVM build that supplies its
   native-layout manifest. If generated crates later support loading arbitrary
   TVM shared-library versions, compatibility should be checked once through a
-  centralized ABI version/fingerprint gate rather than by emitting a layout
-  macro beside every generated class.
+  centralized ABI version gate rather than beside every generated class.
 - A C++-created node keeps its C++ deleter; the same Rust wrapper can reference
   either origin.
 - Reflection describes structural fields, not necessarily all physical fields.
@@ -282,12 +279,12 @@ The actual stubgen is complete only when one invocation emits the mechanical
 surface from layout input and the remaining handwritten semantic layer composes
 with it without changing the acceptance tests.
 
-The current prototype is **not yet frozen**: the runtime now publishes explicit
-layout certificates, but stubgen does not yet consume them, and enum declarations
-plus full semantic validation/default logic still need either generator support
-or a reviewed handwritten implementation. Passing the handwritten conformance
-tests proves the current selected build and surface; the next gate is reproducing
-the mechanical portion from generated code.
+The current prototype is **not yet frozen**: stubgen does not yet consume
+authoritative native layout input, and enum declarations plus full semantic
+validation/default logic still need either generator support or a reviewed
+handwritten implementation. Passing the handwritten conformance tests proves
+the current selected build and surface; the next gate is reproducing the
+mechanical portion from generated code.
 
 The acceptance slice is ready to replace only when stubgen can generate the
 same complete layouts and complete-field allocators while preserving the

@@ -101,8 +101,7 @@ class SpanNode : public ffi::Object {
         .def_ro("line", &SpanNode::line)
         .def_ro("column", &SpanNode::column)
         .def_ro("end_line", &SpanNode::end_line)
-        .def_ro("end_column", &SpanNode::end_column)
-        .def_complete_layout();
+        .def_ro("end_column", &SpanNode::end_column);
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
@@ -196,9 +195,7 @@ class SourceMapObj : public ffi::Object {
 
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
-    refl::ObjectDef<SourceMapObj>()
-        .def_ro("source_map", &SourceMapObj::source_map)
-        .def_complete_layout();
+    refl::ObjectDef<SourceMapObj>().def_ro("source_map", &SourceMapObj::source_map);
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;

@@ -27,7 +27,7 @@
 namespace tvm {
 
 TVM_FFI_STATIC_INIT_BLOCK() {
-  ffi::reflection::ObjectDef<GlobalInfoNode>().def_complete_layout();
+  ffi::reflection::ObjectDef<GlobalInfoNode>();
   VDeviceNode::RegisterReflection();
   DummyGlobalInfoNode::RegisterReflection();
 }

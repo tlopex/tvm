@@ -29,9 +29,9 @@ supplied by `tvm-ffi`, or recorded as an explicit ABI blocker.
 The prototype now exercises the object ABI in both directions.  For ordinary
 data nodes, Rust declares the complete `#[repr(C)]` layout, reads fields
 directly, and allocates them with `ObjectArc::new`. Stubgen is responsible for
-checking the native completeness certificate, alignment, finality, field
-offsets, and layout fingerprint before it emits that code; those checks are not
-repeated as per-object boilerplate in the generated Rust surface. C++ can consume those allocations
+checking authoritative build-time layout information before it emits that
+code; those checks are not repeated as per-object boilerplate in the generated
+Rust surface. C++ can consume those allocations
 because the object header, field layout, reference counting, and deleter all
 follow the shared TVM FFI ABI. Complete-field Rust allocation is separate from
 a convenience `new()`: the latter additionally needs validation, defaults,
@@ -110,9 +110,9 @@ test surface becomes immutable only after the golden-reference freeze gate in
 [`tests/binding_contract.rs`](tests/binding_contract.rs) separately checks the
 reflection contract of every object wrapper currently handwritten by the
 prototype, including exact field schemas, flags, registered defaults, type
-identity, inheritance, and structural metadata. Native layout certificates are
-stubgen input and belong to stubgen's generation tests rather than the generated
-target code.
+identity, inheritance, and structural metadata. Physical layout validation
+belongs to stubgen's generation tests rather than runtime reflection metadata
+or generated target code.
 
 See [BINDING_CONTRACT.md](BINDING_CONTRACT.md) for the correctness standard and
 [STUBGEN_FEEDBACK.md](STUBGEN_FEEDBACK.md) for the concrete generator, runtime,
@@ -121,7 +121,7 @@ and metadata requirements found by the experiment.
 ## Current design verdict
 
 For the exact TVM/tvm-ffi build used to generate and test it, the handwritten
-surface is now a suitable golden Rust API: certified complete nodes allocate in
+surface is now a suitable golden Rust API: ABI-complete nodes allocate in
 Rust, fields borrow directly, non-mechanical semantic constructors are reviewed
 Rust implementations, and native semantic blockers retain their identity,
 resource ownership, or virtual ABI behind opaque wrappers. The acceptance tests cover both object origins and all four structural

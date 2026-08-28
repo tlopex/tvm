@@ -295,8 +295,7 @@ class IterNode : public ffi::Object {
     refl::ObjectDef<IterNode>()
         .def_ro("extent", &IterNode::extent)
         .def_ro("stride", &IterNode::stride)
-        .def_ro("axis", &IterNode::axis)
-        .def_complete_layout();
+        .def_ro("axis", &IterNode::axis);
   }
 
   static constexpr TVMFFISEqHashKind _type_s_eq_hash_kind = kTVMFFISEqHashKindTreeNode;
