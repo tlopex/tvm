@@ -23,7 +23,9 @@
 //! stubgen should replace first.  Once those bindings are generated, deleting
 //! their handwritten definitions must not require changing this file.
 
-use tvm::ir::{BaseFuncObj, Expr, ExprObj, IntImm, IntImmObj, PrimType, Type, Var, VarObj};
+use tvm::ir::{
+    BaseFuncObj, Expr, ExprObj, IntImm, IntImmObj, PrimExpr, PrimType, Type, Var, VarObj,
+};
 use tvm::tirx::{Add, AddObj, Evaluate, EvaluateObj, PrimFunc, PrimFuncObj, StmtObj};
 use tvm::tvm_ffi::tvm_ffi_sys::{TVMFFIFieldFlagBitMask, TVMFFIFieldInfo};
 use tvm::tvm_ffi::{
@@ -195,11 +197,11 @@ fn direct_and_semantic_constructors_round_trip() {
     let body = function.body.clone().try_cast::<Evaluate>().unwrap();
     assert!(body.span.is_none());
     let addition = body.value.clone().try_cast::<Add>().unwrap();
-    let lhs_count = ObjectArc::strong_count(<Expr as ObjectRefCore>::data(&addition.a));
+    let lhs_count = ObjectArc::strong_count(<PrimExpr as ObjectRefCore>::data(&addition.a));
     let borrowed_lhs: &Expr = &addition.a;
     assert_eq!(object_pointer(borrowed_lhs), object_pointer(&addition.a));
     assert_eq!(
-        ObjectArc::strong_count(<Expr as ObjectRefCore>::data(&addition.a)),
+        ObjectArc::strong_count(<PrimExpr as ObjectRefCore>::data(&addition.a)),
         lhs_count,
         "borrowing a generated public field must not clone its object handle"
     );
@@ -213,8 +215,13 @@ fn direct_and_semantic_constructors_round_trip() {
     let lhs_tracker = moved_lhs.clone();
     let lhs_count = ObjectArc::strong_count(<Expr as ObjectRefCore>::data(&lhs_tracker));
     let moved_rhs = typed_int_expression("int32", 4);
-    let result_type = moved_lhs.ty.clone();
-    let direct_add = Add::from_complete_fields(None, result_type, moved_lhs, moved_rhs);
+    let result_type = moved_lhs.ty.clone().try_cast::<PrimType>().unwrap();
+    let direct_add = Add::from_complete_fields(
+        None,
+        result_type,
+        PrimExpr::try_from(moved_lhs).unwrap(),
+        PrimExpr::try_from(moved_rhs).unwrap(),
+    );
     assert_eq!(object_pointer(&direct_add.a), object_pointer(&lhs_tracker));
     assert_eq!(
         ObjectArc::strong_count(<Expr as ObjectRefCore>::data(&lhs_tracker)),

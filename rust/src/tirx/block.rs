@@ -23,8 +23,8 @@ use tvm_ffi::{
     Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
-use super::{primitive_type, BufferRegion, MatchBufferRegion, Stmt, StmtObj};
-use crate::ir::{Expr, PrimExprConvertible, PrimExprConvertibleObj, Range, Span, Var};
+use super::{primitive_type, BufferRegion, BufferVar, MatchBufferRegion, PrimVar, Stmt, StmtObj};
+use crate::ir::{Expr, PrimExpr, PrimExprConvertible, PrimExprConvertibleObj, Range, Span, Var};
 
 /// Scheduling role attached to a TIR block iteration variable.
 ///
@@ -119,7 +119,7 @@ impl IterVar {
         self.field("dom")
     }
 
-    pub fn var(&self) -> Result<Var> {
+    pub fn var(&self) -> Result<PrimVar> {
         self.field("var")
     }
 
@@ -155,6 +155,7 @@ impl IterVar {
         span: Option<&Span>,
     ) -> Result<Self> {
         validate_iter_var(domain.as_ref(), &variable)?;
+        let variable = PrimVar::try_from(variable)?;
         tvm_ffi::cached_global_func!("tirx.IterVar")
             .call_tuple((
                 domain,
@@ -210,7 +211,7 @@ pub struct SBlockObj {
     pub reads: Array<BufferRegion>,
     pub writes: Array<BufferRegion>,
     pub name_hint: String,
-    pub alloc_buffers: Array<Var>,
+    pub alloc_buffers: Array<BufferVar>,
     pub match_buffers: Array<MatchBufferRegion>,
     pub annotations: Map<String, Any>,
     pub init: Option<Stmt>,
@@ -269,7 +270,7 @@ impl SBlock {
         name_hint: &str,
         body: Stmt,
         init: Option<Stmt>,
-        allocated_buffers: Vec<Var>,
+        allocated_buffers: Vec<BufferVar>,
         match_buffers: Vec<MatchBufferRegion>,
         annotations: Map<String, Any>,
         span: Option<&Span>,
@@ -296,7 +297,7 @@ impl SBlock {
         reads: Array<BufferRegion>,
         writes: Array<BufferRegion>,
         name_hint: String,
-        alloc_buffers: Array<Var>,
+        alloc_buffers: Array<BufferVar>,
         match_buffers: Array<MatchBufferRegion>,
         annotations: Map<String, Any>,
         init: Option<Stmt>,
@@ -326,8 +327,8 @@ impl SBlock {
 #[type_final]
 pub struct SBlockRealizeObj {
     base: StmtObj,
-    pub iter_values: Array<Expr>,
-    pub predicate: Expr,
+    pub iter_values: Array<PrimExpr>,
+    pub predicate: PrimExpr,
     pub block: SBlock,
 }
 
@@ -395,6 +396,11 @@ impl SBlockRealize {
                 "",
             ));
         }
+        let iter_values = iter_values
+            .into_iter()
+            .map(PrimExpr::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        let predicate = PrimExpr::try_from(predicate)?;
         Ok(Self::from_complete_fields(
             span.cloned(),
             Array::new(iter_values),
@@ -406,8 +412,8 @@ impl SBlockRealize {
     /// Construct a block realization from every physical field after external validation.
     pub fn from_complete_fields(
         span: Option<Span>,
-        iter_values: Array<Expr>,
-        predicate: Expr,
+        iter_values: Array<PrimExpr>,
+        predicate: PrimExpr,
         block: SBlock,
     ) -> Self {
         Self {

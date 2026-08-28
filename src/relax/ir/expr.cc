@@ -287,16 +287,8 @@ TVM_FFI_STATIC_INIT_BLOCK() {
   });
 }
 
-namespace {
-
-struct FunctionDerivedFields {
-  SeqExpr body;
-  Type ret_ty;
-  Type function_ty;
-};
-
-FunctionDerivedFields DeriveFunctionFields(const ffi::Array<Var>& params, const Expr& body,
-                                           ffi::Optional<Type> ret_ty, bool is_pure) {
+Function::Function(ffi::Array<Var> params, Expr body, ffi::Optional<Type> ret_ty, bool is_pure,
+                   DictAttrs attrs, Span span) {
   // Set the function type.
   // For function, we take a conservative approach and require the function type
   // to be known at construction time.
@@ -342,23 +334,15 @@ FunctionDerivedFields DeriveFunctionFields(const ffi::Array<Var>& params, const 
     ret_ty = EraseToWellDefined(body_ty.value(), f_var_map);
   }
 
-  Type normalized_ret_ty = ret_ty.value();
-  return {SeqExpr(body), normalized_ret_ty, FuncType(param_ty, normalized_ret_ty, is_pure)};
-}
-
-}  // namespace
-
-Function::Function(ffi::Array<Var> params, Expr body, ffi::Optional<Type> ret_ty, bool is_pure,
-                   DictAttrs attrs, Span span) {
-  FunctionDerivedFields fields = DeriveFunctionFields(params, body, std::move(ret_ty), is_pure);
+  FuncType func_ty(param_ty, ret_ty.value(), is_pure);
 
   // set the fields
   ffi::ObjectPtr<FunctionNode> n = ffi::make_object<FunctionNode>();
   n->params = std::move(params);
-  n->body = std::move(fields.body);
-  n->ret_ty = std::move(fields.ret_ty);
+  n->body = std::move(body);
+  n->ret_ty = ret_ty.value();
   n->is_pure = is_pure;
-  n->ty = std::move(fields.function_ty);
+  n->ty = std::move(func_ty);
   n->attrs = std::move(attrs);
   n->span = std::move(span);
   data_ = std::move(n);

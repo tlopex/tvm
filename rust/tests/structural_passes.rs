@@ -22,8 +22,8 @@ use tvm::analysis::{
     node_statistics, side_effect, CallEffectKind, ExprTraceEvent,
 };
 use tvm::ir::{
-    Call, DictAttrs, DummyGlobalInfo, Expr, GlobalVar, IRModule, IntImm, PrimExprConvertible,
-    PrimType, Range, SourceMap, SourceName, Span, TupleType, Type, Var,
+    Call, DictAttrs, DummyGlobalInfo, Expr, GlobalVar, IRModule, IntImm, PrimExpr,
+    PrimExprConvertible, PrimType, Range, SourceMap, SourceName, Span, TupleType, Type, Var,
 };
 use tvm::relax::{
     BindingBlock, If as RelaxIf, RelaxFunction, SeqExpr, Tuple as RelaxTuple, VarBinding,
@@ -73,6 +73,10 @@ fn int_expression(value: i64) -> Expr {
 
 fn typed_int_expression(dtype: &str, value: i64) -> Expr {
     IntImm::new(dtype, value).unwrap().into()
+}
+
+fn prim_int_expression(value: i64) -> PrimExpr {
+    IntImm::new("int32", value).unwrap().into()
 }
 
 fn add_expression<L, R>(lhs: L, rhs: R) -> Expr
@@ -421,9 +425,13 @@ fn complete_field_allocators_preserve_supplied_inherited_fields() {
     let global = GlobalVar::from_complete_fields(None, missing.clone(), "typed".into());
     assert_eq!(object_pointer(&global.ty), object_pointer(&missing));
 
-    let explicit_add_type: Type = PrimType::new("int32").unwrap().into();
-    let addition =
-        Add::from_complete_fields(None, explicit_add_type.clone(), lhs.clone(), rhs.clone());
+    let explicit_add_type = PrimType::new("int32").unwrap();
+    let addition = Add::from_complete_fields(
+        None,
+        explicit_add_type.clone(),
+        PrimExpr::try_from(lhs.clone()).unwrap(),
+        PrimExpr::try_from(rhs.clone()).unwrap(),
+    );
     assert_eq!(
         object_pointer(&addition.ty),
         object_pointer(&explicit_add_type)
@@ -570,9 +578,9 @@ fn every_layout_registered_operation_is_callable() {
     load_tvm_compiler();
 
     let axis = Axis::get("m").unwrap();
-    let eight = int_expression(8);
-    let one = int_expression(1);
-    let three = int_expression(3);
+    let eight = prim_int_expression(8);
+    let one = prim_int_expression(1);
+    let three = prim_int_expression(3);
     let tile = TileLayout::new(
         vec![Iter::new(&eight, &one, &axis).unwrap()],
         Vec::new(),
@@ -649,7 +657,7 @@ fn every_layout_registered_operation_is_callable() {
     );
 
     let tiled = layout.tile(&tile, &shape, &shape).unwrap();
-    let tiled_shape = Array::new(vec![int_expression(64)]);
+    let tiled_shape = Array::new(vec![prim_int_expression(64)]);
     assert!(layout
         .is_tile_inner(&tiled, &tiled_shape, &shape)
         .unwrap()
@@ -684,17 +692,17 @@ fn every_layout_registered_operation_is_callable() {
         Map::new(),
     )
     .unwrap();
-    let left_shape = Array::new(vec![int_expression(2), int_expression(2)]);
+    let left_shape = Array::new(vec![prim_int_expression(2), prim_int_expression(2)]);
     let right_shape = left_shape.clone();
     let right_layout: Layout = right.clone().into();
     let direct_sum = right_layout
         .direct_sum(&left, &left_shape, &right_shape)
         .unwrap();
     let interleaved_shape = Array::new(vec![
-        int_expression(2),
-        int_expression(2),
-        int_expression(2),
-        int_expression(2),
+        prim_int_expression(2),
+        prim_int_expression(2),
+        prim_int_expression(2),
+        prim_int_expression(2),
     ]);
     assert!(right_layout
         .is_direct_sum_right(&direct_sum, &interleaved_shape, &right_shape)
@@ -1336,7 +1344,7 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
     let explicit_load_type = PrimType::new("int32").unwrap();
     let complete_load = BufferLoad::from_complete_fields(
         None,
-        explicit_load_type.clone().into(),
+        explicit_load_type.clone(),
         buffer.clone(),
         load.indices.clone(),
         load.predicate.clone(),
@@ -1431,7 +1439,7 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
         &block,
     )
     .unwrap();
-    let function = PrimFunc::new(vec![buffer.clone()], &realization).unwrap();
+    let function = PrimFunc::new(vec![buffer.clone().into()], &realization).unwrap();
 
     assert_eq!(buffer_type.dtype.dtype.bits, 32);
     assert_eq!(buffer_type.storage_scope.as_str(), "global");
@@ -1533,7 +1541,7 @@ fn rust_unit_loop_elimination_matches_cpp_on_buffer_indices() {
         &unit_loop,
     )
     .unwrap();
-    let function = PrimFunc::new(vec![buffer], &outer_loop).unwrap();
+    let function = PrimFunc::new(vec![buffer.into()], &outer_loop).unwrap();
     let module = IRModule::from_expr(&function).unwrap();
 
     let rust_result = transform::eliminate_unit_loops()
@@ -1684,7 +1692,10 @@ fn known_control_flow_simplification_matches_cpp_on_analyzed_constants() {
     let pure_expression: Expr = Add::new(int_expression(3), int_expression(4))
         .unwrap()
         .into();
-    assert_eq!(side_effect(&pure_expression).unwrap(), CallEffectKind::Pure);
+    assert_eq!(
+        side_effect(&PrimExpr::try_from(&pure_expression).unwrap()).unwrap(),
+        CallEffectKind::Pure
+    );
     let read_buffer_type =
         BufferType::new("global", "int32", vec![typed_int_expression("int64", 1)]).unwrap();
     let read_buffer = read_buffer_type.new_var("read_buffer");
@@ -1693,14 +1704,14 @@ fn known_control_flow_simplification_matches_cpp_on_analyzed_constants() {
             .unwrap()
             .into();
     assert_eq!(
-        side_effect(&read_expression).unwrap(),
+        side_effect(&PrimExpr::try_from(&read_expression).unwrap()).unwrap(),
         CallEffectKind::ReadState
     );
     let opaque_operator: Expr = GlobalVar::new("opaque_function").into();
     let opaque_call: Expr =
         Call::new(PrimType::new("int32").unwrap(), opaque_operator, Vec::new()).into();
     assert_eq!(
-        side_effect(&opaque_call).unwrap(),
+        side_effect(&PrimExpr::try_from(&opaque_call).unwrap()).unwrap(),
         CallEffectKind::UpdateState
     );
     let evaluations = SeqStmt::new(vec![

@@ -21,7 +21,7 @@ use tvm_ffi::{structural_map, Any, DLDataType, DLDataTypeCode, ObjectRefCast, Re
 
 use super::utils::LazyAnalyzer;
 use super::{create_prim_func_pass, Pass};
-use crate::ir::{Expr, IntImm, PrimType, Span};
+use crate::ir::{Expr, IntImm, PrimExpr, PrimType, Span};
 use crate::tirx::{Add, Mul, PrimFunc, Sub};
 
 /// Fold binary integer expressions with checked Rust arithmetic and TVM's analyzer.
@@ -55,7 +55,7 @@ struct IntegerConstantFolder {
 impl IntegerConstantFolder {
     fn fold_or_analyze(
         &mut self,
-        original: Expr,
+        original: PrimExpr,
         lhs: &Expr,
         rhs: &Expr,
         span: Option<&Span>,

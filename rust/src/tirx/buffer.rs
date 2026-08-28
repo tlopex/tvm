@@ -26,8 +26,8 @@ use tvm_ffi::{
 use super::{primitive_type, Stmt, StmtObj};
 use crate::analysis::Analyzer;
 use crate::ir::{
-    Expr, ExprObj, IntImm, PrimExprConvertible, PrimExprConvertibleObj, PrimType, Range, Span,
-    Type, TypeObj, Var,
+    Expr, ExprObj, IntImm, PrimExpr, PrimExprConvertible, PrimExprConvertibleObj, PrimType, Range,
+    Span, Type, TypeObj, TypedVar, Var,
 };
 
 /// Opaque prefix for native objects that expose tensor-like producer behavior.
@@ -84,7 +84,7 @@ impl std::ops::Deref for Layout {
 
 impl Layout {
     /// Check whether this layout can describe the supplied logical shape.
-    pub fn compatible_with_shape(&self, shape: &Array<Expr>) -> Result<bool> {
+    pub fn compatible_with_shape(&self, shape: &Array<PrimExpr>) -> Result<bool> {
         tvm_ffi::cached_global_func!("tirx.LayoutCompatibleWithShape")
             .call_tuple((self, shape))?
             .try_into()
@@ -98,7 +98,7 @@ impl Layout {
     }
 
     /// Return the logical size for all axes or one named axis.
-    pub fn get_size(&self, axis_name: Option<&str>) -> Result<Expr> {
+    pub fn get_size(&self, axis_name: Option<&str>) -> Result<PrimExpr> {
         let axis_name = axis_name.map(String::from);
         tvm_ffi::cached_global_func!("tirx.LayoutGetSize")
             .call_tuple((self, axis_name))?
@@ -106,7 +106,7 @@ impl Layout {
     }
 
     /// Return the physical span for all axes or one named axis.
-    pub fn get_span(&self, axis_name: Option<&str>) -> Result<Expr> {
+    pub fn get_span(&self, axis_name: Option<&str>) -> Result<PrimExpr> {
         let axis_name = axis_name.map(String::from);
         tvm_ffi::cached_global_func!("tirx.LayoutGetSpan")
             .call_tuple((self, axis_name))?
@@ -114,14 +114,14 @@ impl Layout {
     }
 
     /// Map one structured coordinate through this layout.
-    pub fn apply(&self, coord: &Array<Expr>) -> Result<Map<String, Expr>> {
+    pub fn apply(&self, coord: &Array<PrimExpr>) -> Result<Map<String, PrimExpr>> {
         tvm_ffi::cached_global_func!("tirx.LayoutApply")
             .call_tuple((self, coord))?
             .try_into()
     }
 
     /// Map one flattened coordinate through this layout.
-    pub fn apply_linear(&self, coord: &Expr) -> Result<Map<String, Expr>> {
+    pub fn apply_linear(&self, coord: &PrimExpr) -> Result<Map<String, PrimExpr>> {
         tvm_ffi::cached_global_func!("tirx.LayoutApplyLinear")
             .call_tuple((self, coord))?
             .try_into()
@@ -130,9 +130,9 @@ impl Layout {
     /// Map a coordinate whose dimensions are grouped by `shape`.
     pub fn apply_with_shape(
         &self,
-        coord: &Array<Expr>,
-        shape: &Array<Expr>,
-    ) -> Result<Map<String, Expr>> {
+        coord: &Array<PrimExpr>,
+        shape: &Array<PrimExpr>,
+    ) -> Result<Map<String, PrimExpr>> {
         tvm_ffi::cached_global_func!("tirx.LayoutApplyWithShape")
             .call_tuple((self, coord, shape))?
             .try_into()
@@ -149,8 +149,8 @@ impl Layout {
     pub fn tile(
         &self,
         outer: &TileLayout,
-        outer_shape: &Array<Expr>,
-        inner_shape: &Array<Expr>,
+        outer_shape: &Array<PrimExpr>,
+        inner_shape: &Array<PrimExpr>,
     ) -> Result<Layout> {
         tvm_ffi::cached_global_func!("tirx.LayoutTile")
             .call_tuple((self, outer, outer_shape, inner_shape))?
@@ -158,7 +158,7 @@ impl Layout {
     }
 
     /// Restrict this layout to one region.
-    pub fn slice(&self, shape: &Array<Expr>, region: &Array<Range>) -> Result<Option<Layout>> {
+    pub fn slice(&self, shape: &Array<PrimExpr>, region: &Array<Range>) -> Result<Option<Layout>> {
         tvm_ffi::cached_global_func!("tirx.LayoutSlice")
             .call_tuple((self, shape, region))?
             .try_into()
@@ -168,8 +168,8 @@ impl Layout {
     pub fn direct_sum(
         &self,
         left: &TileLayout,
-        left_shape: &Array<Expr>,
-        right_shape: &Array<Expr>,
+        left_shape: &Array<PrimExpr>,
+        right_shape: &Array<PrimExpr>,
     ) -> Result<Layout> {
         tvm_ffi::cached_global_func!("tirx.LayoutDirectSum")
             .call_tuple((self, left, left_shape, right_shape))?
@@ -180,8 +180,8 @@ impl Layout {
     pub fn is_tile_inner(
         &self,
         layout: &Layout,
-        tiled_shape: &Array<Expr>,
-        inner_shape: &Array<Expr>,
+        tiled_shape: &Array<PrimExpr>,
+        inner_shape: &Array<PrimExpr>,
     ) -> Result<Option<TileLayout>> {
         tvm_ffi::cached_global_func!("tirx.LayoutIsTileInner")
             .call_tuple((self, layout, tiled_shape, inner_shape))?
@@ -192,8 +192,8 @@ impl Layout {
     pub fn is_tile_outer(
         &self,
         layout: &Layout,
-        tiled_shape: &Array<Expr>,
-        outer_shape: &Array<Expr>,
+        tiled_shape: &Array<PrimExpr>,
+        outer_shape: &Array<PrimExpr>,
     ) -> Result<Option<Layout>> {
         tvm_ffi::cached_global_func!("tirx.LayoutIsTileOuter")
             .call_tuple((self, layout, tiled_shape, outer_shape))?
@@ -204,8 +204,8 @@ impl Layout {
     pub fn is_direct_sum_right(
         &self,
         layout: &Layout,
-        interleaved_shape: &Array<Expr>,
-        right_shape: &Array<Expr>,
+        interleaved_shape: &Array<PrimExpr>,
+        right_shape: &Array<PrimExpr>,
     ) -> Result<Option<TileLayout>> {
         tvm_ffi::cached_global_func!("tirx.LayoutIsDirectSumRight")
             .call_tuple((self, layout, interleaved_shape, right_shape))?
@@ -216,8 +216,8 @@ impl Layout {
     pub fn is_direct_sum_left(
         &self,
         layout: &Layout,
-        interleaved_shape: &Array<Expr>,
-        left_shape: &Array<Expr>,
+        interleaved_shape: &Array<PrimExpr>,
+        left_shape: &Array<PrimExpr>,
     ) -> Result<Option<Layout>> {
         tvm_ffi::cached_global_func!("tirx.LayoutIsDirectSumLeft")
             .call_tuple((self, layout, interleaved_shape, left_shape))?
@@ -273,8 +273,8 @@ impl Axis {
 #[type_final]
 pub struct IterObj {
     base: tvm_ffi::Object,
-    pub extent: Expr,
-    pub stride: Expr,
+    pub extent: PrimExpr,
+    pub stride: PrimExpr,
     pub axis: Axis,
 }
 
@@ -305,11 +305,13 @@ impl Iter {
         let stride = stride.into();
         primitive_type(&extent, "layout iterator extent")?;
         primitive_type(&stride, "layout iterator stride")?;
+        let extent = PrimExpr::try_from(extent)?;
+        let stride = PrimExpr::try_from(stride)?;
         Ok(Self::from_complete_fields(extent, stride, axis.into()))
     }
 
     /// Construct one layout iterator from every physical field after external validation.
-    pub fn from_complete_fields(extent: Expr, stride: Expr, axis: Axis) -> Self {
+    pub fn from_complete_fields(extent: PrimExpr, stride: PrimExpr, axis: Axis) -> Self {
         Self {
             data: ObjectArc::new(IterObj {
                 base: tvm_ffi::Object::new(),
@@ -369,12 +371,12 @@ impl TileLayout {
         self.field("replica")
     }
 
-    pub fn offset(&self) -> Result<Map<Axis, Expr>> {
+    pub fn offset(&self) -> Result<Map<Axis, PrimExpr>> {
         self.field("offset")
     }
 
     /// Construct a tile layout through its native constructor.
-    pub fn new(shard: Vec<Iter>, replica: Vec<Iter>, offset: Map<Axis, Expr>) -> Result<Self> {
+    pub fn new(shard: Vec<Iter>, replica: Vec<Iter>, offset: Map<Axis, PrimExpr>) -> Result<Self> {
         tvm_ffi::cached_global_func!("tirx.TileLayout")
             .call_tuple((Array::new(shard), Array::new(replica), offset))?
             .try_into()
@@ -390,14 +392,21 @@ pub struct BufferTypeObj {
     base: TypeObj,
     pub dtype: PrimType,
     pub storage_scope: String,
-    pub shape: Array<Expr>,
-    pub strides: Array<Expr>,
-    pub elem_offset: Expr,
+    pub shape: Array<PrimExpr>,
+    pub strides: Array<PrimExpr>,
+    pub elem_offset: PrimExpr,
     pub data_alignment: i32,
     pub offset_factor: i32,
     pub layout: Option<Layout>,
-    pub allocated_addr: Array<Expr>,
+    pub allocated_addr: Array<PrimExpr>,
 }
+
+/// Checked variable view whose expression type is `BufferType`.
+pub type BufferVar = TypedVar<BufferType>;
+
+tvm_ffi::impl_try_from_any!(BufferVar);
+tvm_ffi::impl_arg_into_ref!(BufferVar);
+tvm_ffi::impl_into_arg_holder_default!(BufferVar);
 
 // These values mirror the build configuration used by this handwritten
 // target-code demo. Stubgen should emit them from the native build manifest.
@@ -511,7 +520,7 @@ impl BufferType {
                 } else {
                     PrimType::new(DEFAULT_INDEX_DTYPE)?
                 };
-                IntImm::from_complete_fields(None, index_type.into(), 0).into()
+                IntImm::from_complete_fields(None, index_type, 0).into()
             }
         };
         let data_alignment = if data_alignment <= 0 {
@@ -520,9 +529,25 @@ impl BufferType {
             data_alignment
         };
         let offset_factor = if offset_factor == 0 { 1 } else { offset_factor };
-        let shape = Array::new(shape);
-        let strides = Array::new(strides);
-        let allocated_addresses = Array::new(allocated_addresses);
+        let shape = Array::new(
+            shape
+                .into_iter()
+                .map(PrimExpr::try_from)
+                .collect::<Result<Vec<_>>>()?,
+        );
+        let strides = Array::new(
+            strides
+                .into_iter()
+                .map(PrimExpr::try_from)
+                .collect::<Result<Vec<_>>>()?,
+        );
+        let element_offset = PrimExpr::try_from(element_offset)?;
+        let allocated_addresses = Array::new(
+            allocated_addresses
+                .into_iter()
+                .map(PrimExpr::try_from)
+                .collect::<Result<Vec<_>>>()?,
+        );
         Ok(Self::from_complete_fields(
             span.cloned(),
             dtype,
@@ -543,13 +568,13 @@ impl BufferType {
         span: Option<Span>,
         dtype: PrimType,
         storage_scope: String,
-        shape: Array<Expr>,
-        strides: Array<Expr>,
-        elem_offset: Expr,
+        shape: Array<PrimExpr>,
+        strides: Array<PrimExpr>,
+        elem_offset: PrimExpr,
         data_alignment: i32,
         offset_factor: i32,
         layout: Option<Layout>,
-        allocated_addr: Array<Expr>,
+        allocated_addr: Array<PrimExpr>,
     ) -> Self {
         Self {
             data: ObjectArc::new(BufferTypeObj {
@@ -568,8 +593,8 @@ impl BufferType {
     }
 
     /// Construct a buffer variable.  Its runtime identity is an ordinary `ir.Var`.
-    pub fn new_var(&self, name: &str) -> Var {
-        Var::with_type(name, Type::from(self.clone()))
+    pub fn new_var(&self, name: &str) -> BufferVar {
+        unsafe { BufferVar::from_var_unchecked(Var::with_type(name, Type::from(self.clone()))) }
     }
 }
 
@@ -580,9 +605,9 @@ impl BufferType {
 #[type_final]
 pub struct BufferLoadObj {
     base: ExprObj,
-    pub buffer: Var,
-    pub indices: Array<Expr>,
-    pub predicate: Option<Expr>,
+    pub buffer: BufferVar,
+    pub indices: Array<PrimExpr>,
+    pub predicate: Option<PrimExpr>,
 }
 
 /// Reference-counted handle to a TIR buffer read.
@@ -639,9 +664,16 @@ impl BufferLoad {
             validate_load_predicate(&buffer_dtype, indices.last(), predicate)?;
         }
 
+        let buffer = BufferVar::try_from(buffer)?;
+        let indices = indices
+            .into_iter()
+            .map(PrimExpr::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        let predicate = predicate.map(PrimExpr::try_from).transpose()?;
+
         Ok(Self::from_complete_fields(
             span.cloned(),
-            result_type.into(),
+            result_type,
             buffer,
             Array::new(indices),
             predicate,
@@ -651,14 +683,14 @@ impl BufferLoad {
     /// Construct a buffer load from every physical field without re-deriving its result type.
     pub fn from_complete_fields(
         span: Option<Span>,
-        ty: Type,
-        buffer: Var,
-        indices: Array<Expr>,
-        predicate: Option<Expr>,
+        ty: PrimType,
+        buffer: BufferVar,
+        indices: Array<PrimExpr>,
+        predicate: Option<PrimExpr>,
     ) -> Self {
         Self {
             data: ObjectArc::new(BufferLoadObj {
-                base: ExprObj::new(span, ty),
+                base: ExprObj::new(span, ty.into()),
                 buffer,
                 indices,
                 predicate,
@@ -674,10 +706,10 @@ impl BufferLoad {
 #[type_final]
 pub struct BufferStoreObj {
     base: StmtObj,
-    pub buffer: Var,
-    pub value: Expr,
-    pub indices: Array<Expr>,
-    pub predicate: Option<Expr>,
+    pub buffer: BufferVar,
+    pub value: PrimExpr,
+    pub indices: Array<PrimExpr>,
+    pub predicate: Option<PrimExpr>,
 }
 
 /// Reference-counted handle to a TIR buffer write.
@@ -755,6 +787,14 @@ impl BufferStore {
             validate_store_predicate(&value_dtype, predicate)?;
         }
 
+        let buffer = BufferVar::try_from(buffer)?;
+        let value = PrimExpr::try_from(value)?;
+        let indices = indices
+            .into_iter()
+            .map(PrimExpr::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        let predicate = predicate.map(PrimExpr::try_from).transpose()?;
+
         Ok(Self::from_complete_fields(
             span.cloned(),
             buffer,
@@ -767,10 +807,10 @@ impl BufferStore {
     /// Construct a buffer write from every physical field after external validation.
     pub fn from_complete_fields(
         span: Option<Span>,
-        buffer: Var,
-        value: Expr,
-        indices: Array<Expr>,
-        predicate: Option<Expr>,
+        buffer: BufferVar,
+        value: PrimExpr,
+        indices: Array<PrimExpr>,
+        predicate: Option<PrimExpr>,
     ) -> Self {
         Self {
             data: ObjectArc::new(BufferStoreObj {
@@ -995,7 +1035,7 @@ impl BufferRegion {
         FieldGetter::new(BufferRegionObj::type_index(), name)?.get(&**self)
     }
 
-    pub fn buffer(&self) -> Result<Var> {
+    pub fn buffer(&self) -> Result<BufferVar> {
         self.field("buffer")
     }
 
@@ -1021,6 +1061,7 @@ impl BufferRegion {
                 "",
             ));
         }
+        let buffer = BufferVar::try_from(buffer)?;
         tvm_ffi::cached_global_func!("tirx.BufferRegion")
             .call_tuple((buffer, region))?
             .try_into()
@@ -1034,7 +1075,7 @@ impl BufferRegion {
 #[type_final]
 pub struct MatchBufferRegionObj {
     base: tvm_ffi::Object,
-    pub buffer: Var,
+    pub buffer: BufferVar,
     pub source: BufferRegion,
 }
 
@@ -1063,11 +1104,12 @@ impl MatchBufferRegion {
         let buffer = buffer.into();
         let source = source.into();
         validate_match_buffer_region(&buffer, &source)?;
+        let buffer = BufferVar::try_from(buffer)?;
         Ok(Self::from_complete_fields(buffer, source))
     }
 
     /// Allocate a match-buffer declaration directly after its invariants have been validated.
-    pub fn from_complete_fields(buffer: Var, source: BufferRegion) -> Self {
+    pub fn from_complete_fields(buffer: BufferVar, source: BufferRegion) -> Self {
         Self {
             data: ObjectArc::new(MatchBufferRegionObj {
                 base: tvm_ffi::Object::new(),
@@ -1113,7 +1155,12 @@ fn validate_match_buffer_region(buffer: &Var, source: &BufferRegion) -> Result<(
     let analyzer = Analyzer::new()?;
     let offset = region.len() - target.shape.len();
     for range in region.iter().take(offset) {
-        let one: Expr = IntImm::from_complete_fields(None, range.extent.ty.clone(), 1).into();
+        let one: PrimExpr = IntImm::from_complete_fields(
+            None,
+            primitive_type(&range.extent, "source-region extent")?,
+            1,
+        )
+        .into();
         if !analyzer.can_prove_equal(&range.extent, &one)? {
             return Err(Error::new(
                 VALUE_ERROR,
@@ -1141,6 +1188,7 @@ tvm_ffi::impl_object_upcast!(
     TileLayout => Layout,
     BufferType => Type,
     BufferLoad => Expr,
+    BufferLoad => PrimExpr,
     BufferStore => Stmt,
     BufferRegion => PrimExprConvertible,
 );

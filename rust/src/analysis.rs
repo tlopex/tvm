@@ -23,7 +23,7 @@ use tvm_ffi::{
     VisitCallbacks, VisitContext, VisitInterrupt, WalkOrder, WalkResult, VALUE_ERROR,
 };
 
-use crate::ir::{CallObj, Expr, ExprObj, IntImmObj, VarObj};
+use crate::ir::{CallObj, ExprObj, IntImmObj, PrimExpr, VarObj};
 use crate::relax::{BindingBlockObj, BindingObj, RelaxFunctionObj, SeqExprObj, VarBindingObj};
 use crate::tirx::{
     AddObj, AssertStmtObj, BufferLoadObj, BufferStoreObj, EvaluateObj, ForObj, IfThenElseObj,
@@ -67,19 +67,19 @@ impl Analyzer {
     }
 
     /// Simplify a primitive expression with TVM's standard two analysis steps.
-    pub fn simplify(&self, expression: &Expr) -> Result<Expr> {
+    pub fn simplify(&self, expression: &PrimExpr) -> Result<PrimExpr> {
         self.simplify_with_steps(expression, 2)
     }
 
     /// Simplify a primitive expression with an explicit analysis-step count.
-    pub fn simplify_with_steps(&self, expression: &Expr, steps: i32) -> Result<Expr> {
+    pub fn simplify_with_steps(&self, expression: &PrimExpr, steps: i32) -> Result<PrimExpr> {
         tvm_ffi::cached_global_func!("arith.AnalyzerSimplify")
             .call_tuple((self, expression, steps))?
             .try_into()
     }
 
     /// Prove that two primitive expressions are equal.
-    pub fn can_prove_equal(&self, lhs: &Expr, rhs: &Expr) -> Result<bool> {
+    pub fn can_prove_equal(&self, lhs: &PrimExpr, rhs: &PrimExpr) -> Result<bool> {
         tvm_ffi::cached_global_func!("arith.AnalyzerCanProveEqual")
             .call_tuple((self, lhs, rhs))?
             .try_into()
@@ -145,8 +145,8 @@ impl TryFrom<i64> for CallEffectKind {
     }
 }
 
-/// Classify whether evaluating an expression reads or updates external state.
-pub fn side_effect(expression: &Expr) -> Result<CallEffectKind> {
+/// Classify whether evaluating a primitive expression reads or updates external state.
+pub fn side_effect(expression: &PrimExpr) -> Result<CallEffectKind> {
     let value: i64 = tvm_ffi::cached_global_func!("tirx.analysis.SideEffect")
         .call_tuple((expression,))?
         .try_into()?;

@@ -24,8 +24,8 @@ use tvm_ffi::{
 };
 
 use crate::ir::{
-    BaseFuncObj, DictAttrs, Expr, ExprObj, IntImm, PointerType, PrimType, Span, TupleType, Type,
-    Var,
+    BaseFuncObj, DictAttrs, Expr, ExprObj, IntImm, PointerType, PrimExpr, PrimType, Span,
+    TupleType, Type, TypedVar, Var,
 };
 
 mod block;
@@ -36,9 +36,16 @@ pub use block::{
 };
 pub use buffer::{
     Axis, AxisObj, BufferLoad, BufferLoadObj, BufferRegion, BufferRegionObj, BufferStore,
-    BufferStoreObj, BufferType, BufferTypeObj, DataProducer, DataProducerObj, Iter, IterObj,
-    Layout, LayoutObj, MatchBufferRegion, MatchBufferRegionObj, TileLayout, TileLayoutObj,
+    BufferStoreObj, BufferType, BufferTypeObj, BufferVar, DataProducer, DataProducerObj, Iter,
+    IterObj, Layout, LayoutObj, MatchBufferRegion, MatchBufferRegionObj, TileLayout, TileLayoutObj,
 };
+
+/// Checked scalar view over a `Var` whose expression type is `PrimType`.
+pub type PrimVar = TypedVar<PrimType>;
+
+tvm_ffi::impl_try_from_any!(PrimVar);
+tvm_ffi::impl_arg_into_ref!(PrimVar);
+tvm_ffi::impl_into_arg_holder_default!(PrimVar);
 /// ABI-complete Rust representation of TVM's `AddNode`.
 #[repr(C)]
 #[derive(Object)]
@@ -46,8 +53,8 @@ pub use buffer::{
 #[type_final]
 pub struct AddObj {
     base: ExprObj,
-    pub a: Expr,
-    pub b: Expr,
+    pub a: PrimExpr,
+    pub b: PrimExpr,
 }
 
 /// Reference-counted handle to an addition expression.
@@ -92,6 +99,8 @@ impl Add {
         let lhs = lhs.into();
         let rhs = rhs.into();
         let result_type = matching_binary_type(&lhs, &rhs)?;
+        let lhs = PrimExpr::try_from(lhs)?;
+        let rhs = PrimExpr::try_from(rhs)?;
         Ok(Self::from_complete_fields(
             span.cloned(),
             result_type,
@@ -101,10 +110,15 @@ impl Add {
     }
 
     /// Construct an addition from every physical field without re-deriving its result type.
-    pub fn from_complete_fields(span: Option<Span>, ty: crate::ir::Type, a: Expr, b: Expr) -> Self {
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        ty: PrimType,
+        a: PrimExpr,
+        b: PrimExpr,
+    ) -> Self {
         Self {
             data: ObjectArc::new(AddObj {
-                base: ExprObj::new(span, ty),
+                base: ExprObj::new(span, ty.into()),
                 a,
                 b,
             }),
@@ -125,9 +139,9 @@ pub(crate) fn primitive_type(expr: &Expr, context: &str) -> Result<crate::ir::Pr
         })
 }
 
-fn matching_binary_type(lhs: &Expr, rhs: &Expr) -> Result<crate::ir::Type> {
-    let lhs_type = lhs.ty.clone();
-    let lhs_dtype = primitive_type(lhs, "left binary operand")?.dtype;
+fn matching_binary_type(lhs: &Expr, rhs: &Expr) -> Result<PrimType> {
+    let lhs_type = primitive_type(lhs, "left binary operand")?;
+    let lhs_dtype = lhs_type.dtype;
     let rhs_dtype = primitive_type(rhs, "right binary operand")?.dtype;
     if lhs_dtype != rhs_dtype {
         return Err(Error::new(
@@ -152,8 +166,8 @@ macro_rules! define_binary_expression {
         #[type_final]
         pub struct $object {
             base: ExprObj,
-            pub a: Expr,
-            pub b: Expr,
+            pub a: PrimExpr,
+            pub b: PrimExpr,
         }
 
         #[doc = concat!("Reference-counted handle to ", $description, ".")]
@@ -198,6 +212,8 @@ macro_rules! define_binary_expression {
                 let lhs = lhs.into();
                 let rhs = rhs.into();
                 let result_type = matching_binary_type(&lhs, &rhs)?;
+                let lhs = PrimExpr::try_from(lhs)?;
+                let rhs = PrimExpr::try_from(rhs)?;
                 Ok(Self::from_complete_fields(
                     span.cloned(),
                     result_type,
@@ -209,13 +225,13 @@ macro_rules! define_binary_expression {
             /// Construct the expression from every physical field without re-deriving its type.
             pub fn from_complete_fields(
                 span: Option<Span>,
-                ty: crate::ir::Type,
-                a: Expr,
-                b: Expr,
+                ty: PrimType,
+                a: PrimExpr,
+                b: PrimExpr,
             ) -> Self {
                 Self {
                     data: ObjectArc::new($object {
-                        base: ExprObj::new(span, ty),
+                        base: ExprObj::new(span, ty.into()),
                         a,
                         b,
                     }),
@@ -269,15 +285,15 @@ impl StringImm {
 
     /// Construct a string literal with optional source metadata.
     pub fn with_span(value: &str, span: Option<&Span>) -> Self {
-        let value_type: crate::ir::Type = crate::ir::PrimType::void().into();
+        let value_type = crate::ir::PrimType::void();
         Self::from_complete_fields(span.cloned(), value_type, String::from(value))
     }
 
     /// Construct a string literal from every physical field without re-deriving its type.
-    pub fn from_complete_fields(span: Option<Span>, ty: crate::ir::Type, value: String) -> Self {
+    pub fn from_complete_fields(span: Option<Span>, ty: PrimType, value: String) -> Self {
         Self {
             data: ObjectArc::new(StringImmObj {
-                base: ExprObj::new(span, ty),
+                base: ExprObj::new(span, ty.into()),
                 value,
             }),
         }
@@ -348,7 +364,7 @@ impl Stmt {
 #[type_final]
 pub struct AssertStmtObj {
     base: StmtObj,
-    pub condition: Expr,
+    pub condition: PrimExpr,
     pub error_kind: StringImm,
     pub message_parts: Array<StringImm>,
 }
@@ -518,7 +534,7 @@ fn is_evaluate_zero(statement: &Stmt) -> bool {
 #[type_final]
 pub struct IfThenElseObj {
     base: StmtObj,
-    pub condition: Expr,
+    pub condition: PrimExpr,
     pub then_case: Stmt,
     pub else_case: Option<Stmt>,
 }
@@ -569,6 +585,7 @@ impl IfThenElse {
     {
         let condition = condition.into();
         primitive_type(&condition, "IfThenElse condition")?;
+        let condition = PrimExpr::try_from(condition)?;
         Ok(Self::from_complete_fields(
             span.cloned(),
             condition,
@@ -580,7 +597,7 @@ impl IfThenElse {
     /// Construct a conditional statement from every physical field after external validation.
     pub fn from_complete_fields(
         span: Option<Span>,
-        condition: Expr,
+        condition: PrimExpr,
         then_case: Stmt,
         else_case: Option<Stmt>,
     ) -> Self {
@@ -642,14 +659,14 @@ impl TryFrom<i64> for ForKind {
 #[type_final]
 pub struct ForObj {
     base: StmtObj,
-    pub loop_var: Var,
-    pub min: Expr,
-    pub extent: Expr,
+    pub loop_var: PrimVar,
+    pub min: PrimExpr,
+    pub extent: PrimExpr,
     pub kind: ForKind,
     pub body: Stmt,
     pub thread_binding: Option<IterVar>,
     pub annotations: Map<String, Any>,
-    pub step: Option<Expr>,
+    pub step: Option<PrimExpr>,
 }
 
 /// Reference-counted handle to a TIR loop.
@@ -723,6 +740,7 @@ impl For {
                 normalize_loop_bound(step, loop_dtype, "step")
             })
             .transpose()?;
+        let loop_var = PrimVar::try_from(loop_var)?;
         Ok(Self::from_complete_fields(
             span.cloned(),
             loop_var,
@@ -740,14 +758,14 @@ impl For {
     #[allow(clippy::too_many_arguments)]
     pub fn from_complete_fields(
         span: Option<Span>,
-        loop_var: Var,
-        min: Expr,
-        extent: Expr,
+        loop_var: PrimVar,
+        min: PrimExpr,
+        extent: PrimExpr,
         kind: ForKind,
         body: Stmt,
         thread_binding: Option<IterVar>,
         annotations: Map<String, Any>,
-        step: Option<Expr>,
+        step: Option<PrimExpr>,
     ) -> Self {
         Self {
             data: ObjectArc::new(ForObj {
@@ -779,13 +797,13 @@ fn require_scalar_integer(value: &Expr, field: &str) -> Result<DLDataType> {
     Ok(dtype)
 }
 
-fn normalize_loop_bound(value: &Expr, loop_dtype: DLDataType, field: &str) -> Result<Expr> {
+fn normalize_loop_bound(value: &Expr, loop_dtype: DLDataType, field: &str) -> Result<PrimExpr> {
     let value_dtype = primitive_type(value, field)?.dtype;
     if value_dtype == loop_dtype {
-        return Ok(value.clone());
+        return PrimExpr::try_from(value);
     }
     if let Ok(literal) = value.clone().try_cast::<IntImm>() {
-        return Ok(IntImm::from_dtype(loop_dtype, literal.value)?.into());
+        return PrimExpr::try_from(Expr::from(IntImm::from_dtype(loop_dtype, literal.value)?));
     }
     if value_dtype.bits > loop_dtype.bits {
         return Err(Error::new(
@@ -870,6 +888,7 @@ impl AssertStmt {
                 "",
             ));
         }
+        let condition = PrimExpr::try_from(condition)?;
         Ok(Self::from_complete_fields(
             span.cloned(),
             condition,
@@ -881,7 +900,7 @@ impl AssertStmt {
     /// Construct an assertion from every physical field after external validation.
     pub fn from_complete_fields(
         span: Option<Span>,
-        condition: Expr,
+        condition: PrimExpr,
         error_kind: StringImm,
         message_parts: Array<StringImm>,
     ) -> Self {
@@ -1025,7 +1044,7 @@ fn derive_prim_func_types(
         let parameter_type = if let Ok(buffer) = parameter.ty.clone().try_cast::<BufferType>() {
             let mut shape = Vec::with_capacity(buffer.shape.len());
             for dimension in buffer.shape.iter() {
-                shape.push(cast_index_to_i64(dimension)?);
+                shape.push(cast_index_to_i64(dimension.into())?);
             }
             let shape = crate::relax::make_shape_expr(Array::new(shape))?;
             crate::relax::make_tensor_type(shape, buffer.dtype.clone())?
@@ -1071,12 +1090,9 @@ fn cast_index_to_i64(value: Expr) -> Result<Expr> {
         return Ok(value);
     }
     if let Ok(literal) = value.clone().try_cast::<IntImm>() {
-        return Ok(IntImm::from_complete_fields(
-            literal.span.clone(),
-            target.into(),
-            literal.value,
-        )
-        .into());
+        return Ok(
+            IntImm::from_complete_fields(literal.span.clone(), target, literal.value).into(),
+        );
     }
     tvm_ffi::cached_global_func!("tirx.Cast")
         .call_tuple((target, value, Option::<Span>::None))?
@@ -1085,9 +1101,13 @@ fn cast_index_to_i64(value: Expr) -> Result<Expr> {
 
 tvm_ffi::impl_object_upcast!(
     Add => Expr,
+    Add => PrimExpr,
     Sub => Expr,
+    Sub => PrimExpr,
     Mul => Expr,
+    Mul => PrimExpr,
     StringImm => Expr,
+    StringImm => PrimExpr,
     For => Stmt,
     AssertStmt => Stmt,
     Evaluate => Stmt,

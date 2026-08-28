@@ -22,9 +22,9 @@
 use tvm::ir::{
     Attrs, AttrsObj, BaseFunc, BaseFuncObj, Call, CallObj, DictAttrs, DictAttrsObj,
     DummyGlobalInfo, DummyGlobalInfoObj, Expr, ExprObj, GlobalInfo, GlobalInfoObj, GlobalVar,
-    GlobalVarObj, IRModule, IRModuleObj, IntImm, IntImmObj, PrimExprConvertibleObj, PrimType,
-    PrimTypeObj, Range, RangeObj, Source, SourceMap, SourceMapObj, SourceName, SourceNameObj,
-    SourceObj, Span, SpanObj, TupleType, TupleTypeObj, Type, TypeObj, Var, VarObj,
+    GlobalVarObj, IRModule, IRModuleObj, IntImm, IntImmObj, PrimExpr, PrimExprConvertibleObj,
+    PrimType, PrimTypeObj, Range, RangeObj, Source, SourceMap, SourceMapObj, SourceName,
+    SourceNameObj, SourceObj, Span, SpanObj, TupleType, TupleTypeObj, Type, TypeObj, Var, VarObj,
 };
 use tvm::relax::{
     Binding, BindingBlock, BindingBlockObj, BindingObj, If as RelaxIf, IfObj as RelaxIfObj,
@@ -33,14 +33,15 @@ use tvm::relax::{
 };
 use tvm::tirx::{
     Add, AddObj, AssertStmt, AssertStmtObj, Axis, AxisObj, BufferLoad, BufferLoadObj, BufferRegion,
-    BufferRegionObj, BufferStore, BufferStoreObj, BufferType, BufferTypeObj, DataProducerObj,
-    Evaluate, EvaluateObj, For, ForKind, ForObj, IfThenElse, IfThenElseObj, Iter, IterObj, IterVar,
-    IterVarObj, IterVarType, Layout, LayoutObj, MatchBufferRegion, MatchBufferRegionObj, Mul,
-    MulObj, PrimFunc, PrimFuncObj, SBlock, SBlockObj, SBlockRealize, SBlockRealizeObj, SeqStmt,
-    SeqStmtObj, Stmt, StmtObj, StringImm, StringImmObj, Sub, SubObj, TileLayoutObj,
+    BufferRegionObj, BufferStore, BufferStoreObj, BufferType, BufferTypeObj, BufferVar,
+    DataProducerObj, Evaluate, EvaluateObj, For, ForKind, ForObj, IfThenElse, IfThenElseObj, Iter,
+    IterObj, IterVar, IterVarObj, IterVarType, Layout, LayoutObj, MatchBufferRegion,
+    MatchBufferRegionObj, Mul, MulObj, PrimFunc, PrimFuncObj, PrimVar, SBlock, SBlockObj,
+    SBlockRealize, SBlockRealizeObj, SeqStmt, SeqStmtObj, Stmt, StmtObj, StringImm, StringImmObj,
+    Sub, SubObj, TileLayoutObj,
 };
 use tvm::tvm_ffi::tvm_ffi_sys::{TVMFFIFieldFlagBitMask, TVMFFISEqHashKind};
-use tvm::tvm_ffi::{Any, Array, DLDataType, Map, Object, ObjectCore, String};
+use tvm::tvm_ffi::{Any, Array, DLDataType, Map, Object, ObjectCore, ObjectRefCore, String};
 
 mod common;
 use common::{direct_fields, load_tvm_compiler, runtime_type_info};
@@ -292,7 +293,7 @@ fn all_handwritten_objects_match_runtime_metadata() {
     assert_contract::<IntImmObj, ExprObj>(true, Some(Tree), &[("value", 0, SCHEMA_INT)]);
     assert_contract::<AttrsObj, Object>(false, Some(Tree), &[]);
     assert_contract::<DictAttrsObj, AttrsObj>(true, Some(Tree), &[("__dict__", 0, SCHEMA_ANY_MAP)]);
-    assert_contract::<GlobalInfoObj, Object>(false, Some(Tree), &[]);
+    assert_contract::<GlobalInfoObj, Object>(false, None, &[]);
     assert_contract::<DummyGlobalInfoObj, GlobalInfoObj>(true, Some(Tree), &[]);
     assert_contract::<IRModuleObj, Object>(
         true,
@@ -541,10 +542,10 @@ fn complete_field_allocators_follow_owned_native_field_order() {
 
     assert_complete_allocator!(SourceMap::from_complete_fields: fn(Map<SourceName, Source>) -> SourceMap);
     assert_complete_allocator!(Span::from_complete_fields: fn(SourceName, i32, i32, i32, i32) -> Span);
-    assert_complete_allocator!(Range::from_complete_fields: fn(Expr, Expr, Option<Span>) -> Range);
+    assert_complete_allocator!(Range::from_complete_fields: fn(PrimExpr, PrimExpr, Option<Span>) -> Range);
     assert_complete_allocator!(TupleType::from_complete_fields: fn(Option<Span>, Array<Type>) -> TupleType);
     assert_complete_allocator!(DummyGlobalInfo::from_complete_fields: fn() -> DummyGlobalInfo);
-    assert_complete_allocator!(IntImm::from_complete_fields: fn(Option<Span>, Type, i64) -> IntImm);
+    assert_complete_allocator!(IntImm::from_complete_fields: fn(Option<Span>, PrimType, i64) -> IntImm);
     assert_complete_allocator!(PrimType::from_complete_fields: fn(Option<Span>, DLDataType) -> PrimType);
     assert_complete_allocator!(Var::from_complete_fields: fn(Option<Span>, Type, String) -> Var);
     assert_complete_allocator!(GlobalVar::from_complete_fields: fn(Option<Span>, Type, String) -> GlobalVar);
@@ -552,24 +553,24 @@ fn complete_field_allocators_follow_owned_native_field_order() {
     assert_complete_allocator!(IRModule::from_complete_fields: fn(Map<GlobalVar, BaseFunc>, SourceMap, DictAttrs, Map<String, Array<GlobalInfo>>, Map<String, GlobalVar>) -> IRModule);
     assert_complete_allocator!(DictAttrs::from_complete_fields: fn(Map<String, Any>) -> DictAttrs);
 
-    assert_complete_allocator!(Add::from_complete_fields: fn(Option<Span>, Type, Expr, Expr) -> Add);
-    assert_complete_allocator!(Sub::from_complete_fields: fn(Option<Span>, Type, Expr, Expr) -> Sub);
-    assert_complete_allocator!(Mul::from_complete_fields: fn(Option<Span>, Type, Expr, Expr) -> Mul);
-    assert_complete_allocator!(StringImm::from_complete_fields: fn(Option<Span>, Type, String) -> StringImm);
-    assert_complete_allocator!(AssertStmt::from_complete_fields: fn(Option<Span>, Expr, StringImm, Array<StringImm>) -> AssertStmt);
+    assert_complete_allocator!(Add::from_complete_fields: fn(Option<Span>, PrimType, PrimExpr, PrimExpr) -> Add);
+    assert_complete_allocator!(Sub::from_complete_fields: fn(Option<Span>, PrimType, PrimExpr, PrimExpr) -> Sub);
+    assert_complete_allocator!(Mul::from_complete_fields: fn(Option<Span>, PrimType, PrimExpr, PrimExpr) -> Mul);
+    assert_complete_allocator!(StringImm::from_complete_fields: fn(Option<Span>, PrimType, String) -> StringImm);
+    assert_complete_allocator!(AssertStmt::from_complete_fields: fn(Option<Span>, PrimExpr, StringImm, Array<StringImm>) -> AssertStmt);
     assert_complete_allocator!(Evaluate::from_complete_fields: fn(Option<Span>, Expr) -> Evaluate);
     assert_complete_allocator!(SeqStmt::from_complete_fields: fn(Option<Span>, Array<Stmt>) -> SeqStmt);
-    assert_complete_allocator!(IfThenElse::from_complete_fields: fn(Option<Span>, Expr, Stmt, Option<Stmt>) -> IfThenElse);
-    assert_complete_allocator!(For::from_complete_fields: fn(Option<Span>, Var, Expr, Expr, ForKind, Stmt, Option<IterVar>, Map<String, Any>, Option<Expr>) -> For);
+    assert_complete_allocator!(IfThenElse::from_complete_fields: fn(Option<Span>, PrimExpr, Stmt, Option<Stmt>) -> IfThenElse);
+    assert_complete_allocator!(For::from_complete_fields: fn(Option<Span>, PrimVar, PrimExpr, PrimExpr, ForKind, Stmt, Option<IterVar>, Map<String, Any>, Option<PrimExpr>) -> For);
     assert_complete_allocator!(PrimFunc::from_complete_fields: fn(Option<Span>, Type, DictAttrs, Array<Var>, Type, Stmt) -> PrimFunc);
 
-    assert_complete_allocator!(Iter::from_complete_fields: fn(Expr, Expr, Axis) -> Iter);
-    assert_complete_allocator!(BufferType::from_complete_fields: fn(Option<Span>, PrimType, String, Array<Expr>, Array<Expr>, Expr, i32, i32, Option<Layout>, Array<Expr>) -> BufferType);
-    assert_complete_allocator!(BufferLoad::from_complete_fields: fn(Option<Span>, Type, Var, Array<Expr>, Option<Expr>) -> BufferLoad);
-    assert_complete_allocator!(BufferStore::from_complete_fields: fn(Option<Span>, Var, Expr, Array<Expr>, Option<Expr>) -> BufferStore);
-    assert_complete_allocator!(MatchBufferRegion::from_complete_fields: fn(Var, BufferRegion) -> MatchBufferRegion);
-    assert_complete_allocator!(SBlock::from_complete_fields: fn(Option<Span>, Array<IterVar>, Array<BufferRegion>, Array<BufferRegion>, String, Array<Var>, Array<MatchBufferRegion>, Map<String, Any>, Option<Stmt>, Stmt) -> SBlock);
-    assert_complete_allocator!(SBlockRealize::from_complete_fields: fn(Option<Span>, Array<Expr>, Expr, SBlock) -> SBlockRealize);
+    assert_complete_allocator!(Iter::from_complete_fields: fn(PrimExpr, PrimExpr, Axis) -> Iter);
+    assert_complete_allocator!(BufferType::from_complete_fields: fn(Option<Span>, PrimType, String, Array<PrimExpr>, Array<PrimExpr>, PrimExpr, i32, i32, Option<Layout>, Array<PrimExpr>) -> BufferType);
+    assert_complete_allocator!(BufferLoad::from_complete_fields: fn(Option<Span>, PrimType, BufferVar, Array<PrimExpr>, Option<PrimExpr>) -> BufferLoad);
+    assert_complete_allocator!(BufferStore::from_complete_fields: fn(Option<Span>, BufferVar, PrimExpr, Array<PrimExpr>, Option<PrimExpr>) -> BufferStore);
+    assert_complete_allocator!(MatchBufferRegion::from_complete_fields: fn(BufferVar, BufferRegion) -> MatchBufferRegion);
+    assert_complete_allocator!(SBlock::from_complete_fields: fn(Option<Span>, Array<IterVar>, Array<BufferRegion>, Array<BufferRegion>, String, Array<BufferVar>, Array<MatchBufferRegion>, Map<String, Any>, Option<Stmt>, Stmt) -> SBlock);
+    assert_complete_allocator!(SBlockRealize::from_complete_fields: fn(Option<Span>, Array<PrimExpr>, PrimExpr, SBlock) -> SBlockRealize);
 
     assert_complete_allocator!(RelaxTuple::from_complete_fields: fn(Option<Span>, Type, Array<Expr>) -> RelaxTuple);
     assert_complete_allocator!(RelaxIf::from_complete_fields: fn(Option<Span>, Type, Expr, SeqExpr, SeqExpr) -> RelaxIf);
@@ -577,4 +578,26 @@ fn complete_field_allocators_follow_owned_native_field_order() {
     assert_complete_allocator!(BindingBlock::from_complete_fields: fn(Array<Binding>, Option<Span>) -> BindingBlock);
     assert_complete_allocator!(SeqExpr::from_complete_fields: fn(Option<Span>, Type, Array<BindingBlock>, Expr) -> SeqExpr);
     assert_complete_allocator!(RelaxFunction::from_complete_fields: fn(Option<Span>, Type, DictAttrs, Array<Var>, SeqExpr, Type, bool) -> RelaxFunction);
+}
+
+#[test]
+fn typed_expression_views_check_types_and_preserve_identity() {
+    load_tvm_compiler();
+
+    let integer: Expr = IntImm::new("int32", 1).unwrap().into();
+    let primitive = PrimExpr::try_from(&integer).unwrap();
+    assert!(primitive.same_as(&integer));
+
+    let tuple: Expr = RelaxTuple::new(Vec::new()).into();
+    assert!(PrimExpr::try_from(&tuple).is_err());
+
+    let scalar_var = Var::new("i", "int32").unwrap();
+    let primitive_var = PrimVar::try_from(&scalar_var).unwrap();
+    assert!(primitive_var.same_as(&scalar_var));
+    assert!(BufferVar::try_from(&scalar_var).is_err());
+
+    let buffer_type = BufferType::new("global", "float32", Vec::new()).unwrap();
+    let buffer_var = buffer_type.new_var("buffer");
+    assert!(buffer_var.same_as(buffer_var.as_var()));
+    assert!(PrimVar::try_from(buffer_var.as_var()).is_err());
 }

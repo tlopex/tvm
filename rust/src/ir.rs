@@ -19,8 +19,9 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, FieldGetter, Map,
-    ObjectArc, ObjectCore, ObjectRefCast, ObjectRefCore, Result, String, TYPE_ERROR, VALUE_ERROR,
+    Any, AnyCompatible, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error,
+    FieldGetter, Map, ObjectArc, ObjectCore, ObjectRefCast, ObjectRefCore, Result, String,
+    TVMFFIAny, TYPE_ERROR, VALUE_ERROR,
 };
 
 /// ABI-complete Rust representation of TVM's `ExprNode` prefix.
@@ -47,6 +48,173 @@ impl std::ops::Deref for Expr {
         &self.data
     }
 }
+
+/// Checked view over an expression whose result type is `T`.
+///
+/// This mirrors C++ `TypedExpr<T>`: it retains the same `ExprNode` allocation
+/// and adds a runtime check on the expression's `ty` field.
+#[repr(transparent)]
+pub struct TypedExpr<T> {
+    expr: Expr,
+    _expected_type: std::marker::PhantomData<T>,
+}
+
+impl<T> TypedExpr<T> {
+    #[inline]
+    pub(crate) unsafe fn from_expr_unchecked(expr: Expr) -> Self {
+        Self {
+            expr,
+            _expected_type: std::marker::PhantomData,
+        }
+    }
+
+    /// Return the general expression view over the same allocation.
+    #[inline]
+    pub fn as_expr(&self) -> &Expr {
+        &self.expr
+    }
+}
+
+impl<T> Clone for TypedExpr<T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            expr: self.expr.clone(),
+            _expected_type: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T> std::ops::Deref for TypedExpr<T> {
+    type Target = Expr;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.expr
+    }
+}
+
+unsafe impl<T: 'static> ObjectRefCore for TypedExpr<T> {
+    type ContainerType = ExprObj;
+
+    #[inline]
+    fn data(this: &Self) -> &ObjectArc<Self::ContainerType> {
+        <Expr as ObjectRefCore>::data(&this.expr)
+    }
+
+    #[inline]
+    fn into_data(this: Self) -> ObjectArc<Self::ContainerType> {
+        <Expr as ObjectRefCore>::into_data(this.expr)
+    }
+
+    #[inline]
+    unsafe fn from_data(data: ObjectArc<Self::ContainerType>) -> Self {
+        // SAFETY: The caller of this unsafe constructor has guaranteed that
+        // the expression's `ty` satisfies this typed view's invariant.
+        unsafe { Self::from_expr_unchecked(<Expr as ObjectRefCore>::from_data(data)) }
+    }
+}
+
+unsafe impl<T> AnyCompatible for TypedExpr<T>
+where
+    T: ObjectRefCore + AnyCompatible + 'static,
+{
+    #[inline]
+    unsafe fn copy_to_any_view(src: &Self, data: &mut TVMFFIAny) {
+        Expr::copy_to_any_view(&src.expr, data);
+    }
+
+    #[inline]
+    unsafe fn move_to_any(src: Self, data: &mut TVMFFIAny) {
+        Expr::move_to_any(src.expr, data);
+    }
+
+    #[inline]
+    unsafe fn check_any_strict(data: &TVMFFIAny) -> bool {
+        if !Expr::check_any_strict(data) {
+            return false;
+        }
+        let expr = &*data.data_union.v_obj.cast::<ExprObj>();
+        let mut type_data = TVMFFIAny::new();
+        Type::copy_to_any_view(&expr.ty, &mut type_data);
+        T::check_any_strict(&type_data)
+    }
+
+    #[inline]
+    unsafe fn copy_from_any_view_after_check(data: &TVMFFIAny) -> Self {
+        Self::from_expr_unchecked(Expr::copy_from_any_view_after_check(data))
+    }
+
+    #[inline]
+    unsafe fn move_from_any_after_check(data: &mut TVMFFIAny) -> Self {
+        Self::from_expr_unchecked(Expr::move_from_any_after_check(data))
+    }
+
+    #[inline]
+    unsafe fn try_cast_from_any_view(data: &TVMFFIAny) -> std::result::Result<Self, ()> {
+        if Self::check_any_strict(data) {
+            Ok(Self::copy_from_any_view_after_check(data))
+        } else {
+            Err(())
+        }
+    }
+
+    fn type_str() -> std::string::String {
+        format!("TypedExpr<{}>", T::type_str())
+    }
+}
+
+impl<T> From<TypedExpr<T>> for Expr {
+    #[inline]
+    fn from(value: TypedExpr<T>) -> Self {
+        value.expr
+    }
+}
+
+impl<T> From<&TypedExpr<T>> for Expr {
+    #[inline]
+    fn from(value: &TypedExpr<T>) -> Self {
+        value.expr.clone()
+    }
+}
+
+impl<T> From<&TypedExpr<T>> for TypedExpr<T> {
+    #[inline]
+    fn from(value: &TypedExpr<T>) -> Self {
+        value.clone()
+    }
+}
+
+impl<T> TryFrom<Expr> for TypedExpr<T>
+where
+    T: ObjectRefCore + AnyCompatible + 'static,
+{
+    type Error = Error;
+
+    #[inline]
+    fn try_from(value: Expr) -> Result<Self> {
+        value.try_cast()
+    }
+}
+
+impl<T> TryFrom<&Expr> for TypedExpr<T>
+where
+    T: ObjectRefCore + AnyCompatible + 'static,
+{
+    type Error = Error;
+
+    #[inline]
+    fn try_from(value: &Expr) -> Result<Self> {
+        value.clone().try_cast()
+    }
+}
+
+/// Checked view over an expression whose result is a primitive scalar or vector type.
+pub type PrimExpr = TypedExpr<PrimType>;
+
+tvm_ffi::impl_try_from_any!(PrimExpr);
+tvm_ffi::impl_arg_into_ref!(PrimExpr);
+tvm_ffi::impl_into_arg_holder_default!(PrimExpr);
 
 impl ExprObj {
     pub(crate) fn new(span: Option<Span>, ty: Type) -> Self {
@@ -161,6 +329,194 @@ impl std::ops::Deref for VarObj {
 
     fn deref(&self) -> &Self::Target {
         &self.base
+    }
+}
+
+/// Checked view over a `Var` whose expression type is `T`.
+///
+/// C++ uses zero-state views such as `PrimVar` and `BufferVar` over the same
+/// `VarNode`; this type gives generated Rust bindings the same representation.
+#[repr(transparent)]
+pub struct TypedVar<T> {
+    var: Var,
+    _expected_type: std::marker::PhantomData<T>,
+}
+
+impl<T> TypedVar<T> {
+    #[inline]
+    pub(crate) unsafe fn from_var_unchecked(var: Var) -> Self {
+        Self {
+            var,
+            _expected_type: std::marker::PhantomData,
+        }
+    }
+
+    /// Return the general variable view over the same allocation.
+    #[inline]
+    pub fn as_var(&self) -> &Var {
+        &self.var
+    }
+}
+
+impl<T> Clone for TypedVar<T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            var: self.var.clone(),
+            _expected_type: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T> std::ops::Deref for TypedVar<T> {
+    type Target = Var;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.var
+    }
+}
+
+unsafe impl<T: 'static> ObjectRefCore for TypedVar<T> {
+    type ContainerType = VarObj;
+
+    #[inline]
+    fn data(this: &Self) -> &ObjectArc<Self::ContainerType> {
+        <Var as ObjectRefCore>::data(&this.var)
+    }
+
+    #[inline]
+    fn into_data(this: Self) -> ObjectArc<Self::ContainerType> {
+        <Var as ObjectRefCore>::into_data(this.var)
+    }
+
+    #[inline]
+    unsafe fn from_data(data: ObjectArc<Self::ContainerType>) -> Self {
+        // SAFETY: The caller has guaranteed both the `Var` dynamic type and
+        // this typed variable view's `ty` invariant.
+        unsafe { Self::from_var_unchecked(<Var as ObjectRefCore>::from_data(data)) }
+    }
+}
+
+unsafe impl<T> AnyCompatible for TypedVar<T>
+where
+    T: ObjectRefCore + AnyCompatible + 'static,
+{
+    #[inline]
+    unsafe fn copy_to_any_view(src: &Self, data: &mut TVMFFIAny) {
+        Var::copy_to_any_view(&src.var, data);
+    }
+
+    #[inline]
+    unsafe fn move_to_any(src: Self, data: &mut TVMFFIAny) {
+        Var::move_to_any(src.var, data);
+    }
+
+    #[inline]
+    unsafe fn check_any_strict(data: &TVMFFIAny) -> bool {
+        Var::check_any_strict(data) && TypedExpr::<T>::check_any_strict(data)
+    }
+
+    #[inline]
+    unsafe fn copy_from_any_view_after_check(data: &TVMFFIAny) -> Self {
+        Self::from_var_unchecked(Var::copy_from_any_view_after_check(data))
+    }
+
+    #[inline]
+    unsafe fn move_from_any_after_check(data: &mut TVMFFIAny) -> Self {
+        Self::from_var_unchecked(Var::move_from_any_after_check(data))
+    }
+
+    #[inline]
+    unsafe fn try_cast_from_any_view(data: &TVMFFIAny) -> std::result::Result<Self, ()> {
+        if Self::check_any_strict(data) {
+            Ok(Self::copy_from_any_view_after_check(data))
+        } else {
+            Err(())
+        }
+    }
+
+    fn type_str() -> std::string::String {
+        format!("TypedVar<{}>", T::type_str())
+    }
+}
+
+impl<T> From<TypedVar<T>> for Var {
+    #[inline]
+    fn from(value: TypedVar<T>) -> Self {
+        value.var
+    }
+}
+
+impl<T> From<&TypedVar<T>> for Var {
+    #[inline]
+    fn from(value: &TypedVar<T>) -> Self {
+        value.var.clone()
+    }
+}
+
+impl<T> From<&TypedVar<T>> for TypedVar<T> {
+    #[inline]
+    fn from(value: &TypedVar<T>) -> Self {
+        value.clone()
+    }
+}
+
+impl<T> From<TypedVar<T>> for Expr {
+    #[inline]
+    fn from(value: TypedVar<T>) -> Self {
+        value.var.into()
+    }
+}
+
+impl<T> From<&TypedVar<T>> for Expr {
+    #[inline]
+    fn from(value: &TypedVar<T>) -> Self {
+        value.var.clone().into()
+    }
+}
+
+impl<T> From<TypedVar<T>> for TypedExpr<T>
+where
+    T: ObjectRefCore + AnyCompatible + 'static,
+{
+    #[inline]
+    fn from(value: TypedVar<T>) -> Self {
+        unsafe { TypedExpr::from_expr_unchecked(value.var.into()) }
+    }
+}
+
+impl<T> From<&TypedVar<T>> for TypedExpr<T>
+where
+    T: ObjectRefCore + AnyCompatible + 'static,
+{
+    #[inline]
+    fn from(value: &TypedVar<T>) -> Self {
+        value.clone().into()
+    }
+}
+
+impl<T> TryFrom<Var> for TypedVar<T>
+where
+    T: ObjectRefCore + AnyCompatible + 'static,
+{
+    type Error = Error;
+
+    #[inline]
+    fn try_from(value: Var) -> Result<Self> {
+        value.try_cast()
+    }
+}
+
+impl<T> TryFrom<&Var> for TypedVar<T>
+where
+    T: ObjectRefCore + AnyCompatible + 'static,
+{
+    type Error = Error;
+
+    #[inline]
+    fn try_from(value: &Var) -> Result<Self> {
+        value.clone().try_cast()
     }
 }
 
@@ -422,8 +778,8 @@ impl PrimExprConvertible {
 #[type_final]
 pub struct RangeObj {
     base: tvm_ffi::Object,
-    pub min: Expr,
-    pub extent: Expr,
+    pub min: PrimExpr,
+    pub extent: PrimExpr,
     pub span: Option<Span>,
 }
 
@@ -464,13 +820,13 @@ impl Range {
     {
         let minimum = minimum.into();
         let extent = extent.into();
-        require_primitive_expr(&minimum, "Range minimum")?;
-        require_primitive_expr(&extent, "Range extent")?;
+        let minimum = require_primitive_expr(minimum, "Range minimum")?;
+        let extent = require_primitive_expr(extent, "Range extent")?;
         Ok(Self::from_complete_fields(minimum, extent, span.cloned()))
     }
 
     /// Construct a range from every physical field after external validation.
-    pub fn from_complete_fields(min: Expr, extent: Expr, span: Option<Span>) -> Self {
+    pub fn from_complete_fields(min: PrimExpr, extent: PrimExpr, span: Option<Span>) -> Self {
         Self {
             data: ObjectArc::new(RangeObj {
                 base: tvm_ffi::Object::new(),
@@ -482,19 +838,14 @@ impl Range {
     }
 }
 
-fn require_primitive_expr(value: &Expr, context: &str) -> Result<()> {
-    value
-        .ty
-        .clone()
-        .try_cast::<PrimType>()
-        .map(|_| ())
-        .map_err(|_| {
-            Error::new(
-                TYPE_ERROR,
-                &format!("{context} must have a primitive type"),
-                "",
-            )
-        })
+fn require_primitive_expr(value: Expr, context: &str) -> Result<PrimExpr> {
+    PrimExpr::try_from(value).map_err(|_| {
+        Error::new(
+            TYPE_ERROR,
+            &format!("{context} must have a primitive type"),
+            "",
+        )
+    })
 }
 
 impl std::ops::Deref for Span {
@@ -920,18 +1271,14 @@ impl IntImm {
     ) -> Result<Self> {
         validate_integer_literal(dtype, value)?;
         let value_type = PrimType::from_dtype(dtype)?;
-        Ok(Self::from_complete_fields(
-            span.cloned(),
-            value_type.into(),
-            value,
-        ))
+        Ok(Self::from_complete_fields(span.cloned(), value_type, value))
     }
 
     /// Construct an integer literal from every physical field after external validation.
-    pub fn from_complete_fields(span: Option<Span>, ty: Type, value: i64) -> Self {
+    pub fn from_complete_fields(span: Option<Span>, ty: PrimType, value: i64) -> Self {
         Self {
             data: ObjectArc::new(IntImmObj {
-                base: ExprObj::new(span, ty),
+                base: ExprObj::new(span, ty.into()),
                 value,
             }),
         }
@@ -1171,6 +1518,7 @@ impl Call {
 tvm_ffi::impl_object_upcast!(
     BaseFunc => Expr,
     IntImm => Expr,
+    IntImm => PrimExpr,
     PointerType => Type,
     PrimType => Type,
     TupleType => Type,

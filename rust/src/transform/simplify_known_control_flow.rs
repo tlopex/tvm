@@ -22,7 +22,7 @@ use tvm_ffi::{structural_map, Any, ObjectRefCast, Result, WalkOrder};
 use super::utils::{int_value, LazyAnalyzer};
 use super::{create_prim_func_pass, Pass};
 use crate::analysis::side_effect;
-use crate::ir::Expr;
+use crate::ir::{Call, Expr, PrimExpr};
 use crate::tirx::{Evaluate, For as TirFor, IfThenElse, PrimFunc, SeqStmt, Stmt};
 
 /// Remove control flow proven inactive by literals or TVM's arithmetic analyzer.
@@ -48,15 +48,16 @@ struct KnownControlFlowSimplifier {
 }
 
 impl KnownControlFlowSimplifier {
-    fn known_integer(&mut self, expression: &Expr) -> Result<Option<i64>> {
+    fn known_integer(&mut self, expression: &PrimExpr) -> Result<Option<i64>> {
         if let Some(value) = int_value(expression) {
             return Ok(Some(value));
         }
-        Ok(int_value(&self.analyzer.get()?.simplify(expression)?))
+        let simplified = self.analyzer.get()?.simplify(expression)?;
+        Ok(int_value(&simplified))
     }
 
     fn preserve_update_or_no_op(&self, expression: &Expr) -> Result<Stmt> {
-        if side_effect(expression)?.may_update_state() {
+        if expression_may_update_state(expression)? {
             Ok(Evaluate::new(expression.clone())?.into())
         } else {
             no_op()
@@ -69,7 +70,7 @@ impl KnownControlFlowSimplifier {
     fn map_evaluation(&mut self, value: Evaluate) -> Result<Any> {
         if int_value(&value.value).is_some() {
             Ok(Any::from(no_op()?))
-        } else if side_effect(&value.value)?.may_update_state() {
+        } else if expression_may_update_state(&value.value)? {
             Ok(Any::from(value))
         } else {
             Ok(Any::from(no_op()?))
@@ -129,6 +130,14 @@ impl KnownControlFlowSimplifier {
             value.span.as_ref(),
         )?))
     }
+}
+
+/// Match C++ `RemoveNoOp` handling for the general `Expr` stored by `Evaluate`.
+fn expression_may_update_state(expression: &Expr) -> Result<bool> {
+    if let Ok(primitive) = PrimExpr::try_from(expression) {
+        return Ok(side_effect(&primitive)?.may_update_state());
+    }
+    Ok(expression.clone().try_cast::<Call>().is_ok())
 }
 
 fn no_op() -> Result<Stmt> {
