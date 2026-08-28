@@ -92,25 +92,22 @@ pub fn simplify_neutral_elements_in_loop_bodies(statement: Stmt) -> Result<Stmt>
 #[tvm_ffi::dispatch(mutate)]
 impl LoopBodyMutator {
     fn mutate_loop(&mut self, value: TirFor, region: DefRegionKind) -> Result<Any> {
-        let loop_var =
-            Var::try_from(self.mutate_child(&value.loop_var, DefRegionKind::Recursive)?)?;
-        let minimum = Expr::try_from(self.mutate_child(&value.min, region)?)?;
-        let extent = Expr::try_from(self.mutate_child(&value.extent, region)?)?;
+        let loop_var = Var::try_from(self.mutate(&value.loop_var, DefRegionKind::Recursive)?)?;
+        let minimum = Expr::try_from(self.mutate(&value.min, region)?)?;
+        let extent = Expr::try_from(self.mutate(&value.extent, region)?)?;
 
         self.depth += 1;
-        let body_result = self.mutate_child(&value.body, region);
+        let body_result = self.mutate(&value.body, region);
         self.depth -= 1;
         let body = Stmt::try_from(body_result?)?;
 
-        let thread_binding = Option::<crate::tirx::IterVar>::try_from(
-            self.mutate_child(&value.thread_binding, region)?,
-        )?;
-        let annotations =
-            Map::<String, Any>::try_from(self.mutate_child(&value.annotations, region)?)?;
+        let thread_binding =
+            Option::<crate::tirx::IterVar>::try_from(self.mutate(&value.thread_binding, region)?)?;
+        let annotations = Map::<String, Any>::try_from(self.mutate(&value.annotations, region)?)?;
         let step = value
             .step
             .as_ref()
-            .map(|step| self.mutate_child(step, region).and_then(Expr::try_from))
+            .map(|step| self.mutate(step, region).and_then(Expr::try_from))
             .transpose()?;
 
         Ok(Any::from(TirFor::with_metadata(

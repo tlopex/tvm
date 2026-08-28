@@ -58,8 +58,8 @@ pub fn eliminate_unit_loops() -> Result<Pass> {
 #[tvm_ffi::dispatch(mutate)]
 impl UnitLoopEliminator {
     fn mutate_loop(&mut self, value: TirFor, region: DefRegionKind) -> Result<Any> {
-        let minimum = Expr::try_from(self.mutate_child(&value.min, region)?)?;
-        let extent = Expr::try_from(self.mutate_child(&value.extent, region)?)?;
+        let minimum = Expr::try_from(self.mutate(&value.min, region)?)?;
+        let extent = Expr::try_from(self.mutate(&value.extent, region)?)?;
         let annotations = value.annotations.clone();
         let kind = value.kind;
         let should_eliminate = kind != crate::tirx::ForKind::ThreadBinding
@@ -69,7 +69,7 @@ impl UnitLoopEliminator {
         if should_eliminate {
             let key = ObjectIdentity::of(&value.loop_var);
             let previous = self.replacements.insert(key.clone(), minimum.clone());
-            let body_result = self.mutate_child(&value.body, region);
+            let body_result = self.mutate(&value.body, region);
             match previous {
                 Some(previous) => {
                     self.replacements.insert(key, previous);
@@ -81,17 +81,15 @@ impl UnitLoopEliminator {
             return body_result;
         }
 
-        let loop_var =
-            Var::try_from(self.mutate_child(&value.loop_var, DefRegionKind::Recursive)?)?;
-        let body = Stmt::try_from(self.mutate_child(&value.body, region)?)?;
-        let thread_binding = Option::<crate::tirx::IterVar>::try_from(
-            self.mutate_child(&value.thread_binding, region)?,
-        )?;
-        let annotations = Map::<String, Any>::try_from(self.mutate_child(&annotations, region)?)?;
+        let loop_var = Var::try_from(self.mutate(&value.loop_var, DefRegionKind::Recursive)?)?;
+        let body = Stmt::try_from(self.mutate(&value.body, region)?)?;
+        let thread_binding =
+            Option::<crate::tirx::IterVar>::try_from(self.mutate(&value.thread_binding, region)?)?;
+        let annotations = Map::<String, Any>::try_from(self.mutate(&annotations, region)?)?;
         let step = value
             .step
             .as_ref()
-            .map(|step| self.mutate_child(step, region).and_then(Expr::try_from))
+            .map(|step| self.mutate(step, region).and_then(Expr::try_from))
             .transpose()?;
 
         Ok(Any::from(TirFor::with_metadata(
