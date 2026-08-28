@@ -18,7 +18,7 @@
  */
 
 use tvm_ffi::derive::{Object, ObjectRef};
-use tvm_ffi::{AnyView, Array, ObjectArc, ObjectCore, ObjectRefCast, Result};
+use tvm_ffi::{Array, Error, Map, ObjectArc, ObjectRefCast, Result, TYPE_ERROR};
 
 use crate::ir::{BaseFunc, BaseFuncObj, DictAttrs, Expr, ExprObj, Span, TupleType, Type, Var};
 /// ABI-complete Rust representation of the common IR tuple used by Relax.
@@ -411,11 +411,6 @@ pub struct RelaxFunctionObj {
     pub is_pure: bool,
 }
 
-impl crate::abi::ConstructorRecipe for RelaxFunctionObj {
-    const INPUTS: &'static [&'static str] = &["params", "body", "ret_ty", "is_pure"];
-    const DERIVED_FIELDS: &'static [&'static str] = &["body", "ret_ty", "ty"];
-}
-
 /// Reference-counted handle to a Relax function.
 #[repr(C)]
 #[derive(ObjectRef, Clone)]
@@ -440,7 +435,7 @@ impl std::ops::Deref for RelaxFunctionObj {
 }
 
 impl RelaxFunction {
-    /// Construct a typed Relax function in Rust using its reflected preparation method.
+    /// Construct a typed Relax function using Rust-controlled normalization.
     pub fn new<B, T>(params: Vec<Var>, body: B, return_type: T, is_pure: bool) -> Result<Self>
     where
         B: Into<Expr>,
@@ -456,7 +451,7 @@ impl RelaxFunction {
         )
     }
 
-    /// Construct a Relax function in Rust using its reflected preparation method.
+    /// Construct a Relax function using the same native analysis services as C++.
     pub fn with_metadata(
         params: Vec<Var>,
         body: Expr,
@@ -466,17 +461,8 @@ impl RelaxFunction {
         span: Option<&Span>,
     ) -> Result<Self> {
         let params = Array::new(params);
-        let prepared = crate::abi::prepare_constructor::<RelaxFunctionObj>(&[
-            AnyView::from(&params),
-            AnyView::from(&body),
-            AnyView::from(&return_type),
-            AnyView::from(&is_pure),
-        ])?;
-        let body = crate::abi::prepared_field(&prepared, RelaxFunctionObj::TYPE_KEY, "body")?;
-        let return_type =
-            crate::abi::prepared_field(&prepared, RelaxFunctionObj::TYPE_KEY, "ret_ty")?;
-        let function_type =
-            crate::abi::prepared_field(&prepared, RelaxFunctionObj::TYPE_KEY, "ty")?;
+        let (body, return_type, function_type) =
+            derive_function_fields(&params, body, return_type, is_pure)?;
         Ok(Self::from_complete_fields(
             span.cloned(),
             function_type,
@@ -513,6 +499,93 @@ impl RelaxFunction {
             }),
         }
     }
+}
+
+fn derive_function_fields(
+    params: &Array<Var>,
+    body: Expr,
+    mut return_type: Option<Type>,
+    is_pure: bool,
+) -> Result<(SeqExpr, Type, Type)> {
+    let mut parameter_types = Vec::with_capacity(params.len());
+    for parameter in params.iter() {
+        if parameter.ty.is_missing() {
+            return Err(Error::new(
+                TYPE_ERROR,
+                "relax.Function requires every parameter to have a type",
+                "",
+            ));
+        }
+        parameter_types.push(parameter.ty.clone());
+    }
+    let parameter_types = Array::new(parameter_types);
+    let body_type = (!body.ty.is_missing()).then(|| body.ty.clone());
+    if body_type.is_none() && return_type.is_none() {
+        return Err(Error::new(
+            TYPE_ERROR,
+            "Relax function needs an explicit return type or a typed body",
+            "",
+        ));
+    }
+
+    let use_body_type = match (&return_type, &body_type) {
+        (None, Some(_)) => true,
+        (Some(explicit), Some(inferred)) => type_is_base_of(explicit, inferred)?,
+        _ => false,
+    };
+    if use_body_type {
+        let body_type = body_type.expect("use_body_type requires a typed body");
+        let parameter_tuple: Type = TupleType::new(parameter_types.iter().collect()).into();
+        let definable: Array<Var> =
+            tvm_ffi::cached_global_func!("relax.analysis.DefinableTIRVarsInType")
+                .call_tuple((&parameter_tuple,))?
+                .try_into()?;
+        let shape_variables = Map::from_iter(
+            definable
+                .iter()
+                .map(|variable| (variable.clone(), Expr::from(variable))),
+        );
+        let relax_variables = Map::<Var, Expr>::new();
+        return_type = Some(
+            tvm_ffi::cached_global_func!("relax.analysis.EraseToWellDefined")
+                .call_tuple((&body_type, &shape_variables, &relax_variables))?
+                .try_into()?,
+        );
+    }
+
+    let return_type = return_type.expect("a return type was established above");
+    let function_type = make_func_type(parameter_types, return_type.clone(), is_pure)?;
+    Ok((SeqExpr::from_expr(body), return_type, function_type))
+}
+
+fn type_is_base_of(base: &Type, derived: &Type) -> Result<bool> {
+    tvm_ffi::cached_global_func!("relax.TypeIsBaseOf")
+        .call_tuple((base, derived))?
+        .try_into()
+}
+
+pub(crate) fn make_func_type(params: Array<Type>, ret: Type, purity: bool) -> Result<Type> {
+    tvm_ffi::cached_global_func!("relax.FuncType")
+        .call_tuple((params, ret, purity, Option::<Span>::None))?
+        .try_into()
+}
+
+pub(crate) fn make_any_type() -> Result<Type> {
+    tvm_ffi::cached_global_func!("relax.AnyType")
+        .call_tuple((Option::<Span>::None,))?
+        .try_into()
+}
+
+pub(crate) fn make_shape_expr(values: Array<Expr>) -> Result<Expr> {
+    tvm_ffi::cached_global_func!("relax.ShapeExpr")
+        .call_tuple((values, Option::<Span>::None))?
+        .try_into()
+}
+
+pub(crate) fn make_tensor_type(shape: Expr, dtype: crate::ir::PrimType) -> Result<Type> {
+    tvm_ffi::cached_global_func!("relax.TensorType")
+        .call_tuple((Some(shape), Some(dtype), -1_i32, (), Option::<Span>::None))?
+        .try_into()
 }
 
 tvm_ffi::impl_object_upcast!(

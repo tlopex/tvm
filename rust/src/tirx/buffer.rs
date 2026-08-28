@@ -19,14 +19,15 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, FieldGetter, Map,
-    ObjectArc, ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
+    Any, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, FieldGetter, Map, ObjectArc,
+    ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
 use super::{primitive_type, Stmt, StmtObj};
+use crate::analysis::Analyzer;
 use crate::ir::{
-    Expr, ExprObj, PrimExprConvertible, PrimExprConvertibleObj, PrimType, Range, Span, Type,
-    TypeObj, Var,
+    Expr, ExprObj, IntImm, PrimExprConvertible, PrimExprConvertibleObj, PrimType, Range, Span,
+    Type, TypeObj, Var,
 };
 
 /// Opaque prefix for native objects that expose tensor-like producer behavior.
@@ -398,21 +399,10 @@ pub struct BufferTypeObj {
     pub allocated_addr: Array<Expr>,
 }
 
-impl crate::abi::ConstructorRecipe for BufferTypeObj {
-    const INPUTS: &'static [&'static str] = &[
-        "storage_scope",
-        "shape",
-        "elem_offset",
-        "data_alignment",
-        "offset_factor",
-    ];
-    const DERIVED_FIELDS: &'static [&'static str] = &[
-        "storage_scope",
-        "elem_offset",
-        "data_alignment",
-        "offset_factor",
-    ];
-}
+// These values mirror the build configuration used by this handwritten
+// target-code demo. Stubgen should emit them from the native build manifest.
+const DEFAULT_INDEX_DTYPE: &str = "int64";
+const DEFAULT_ALLOC_ALIGNMENT: i32 = 64;
 
 /// Reference-counted buffer type carried by an ordinary `ir.Var`.
 #[repr(C)]
@@ -441,7 +431,7 @@ impl BufferType {
     /// Construct a compact buffer type directly in Rust.
     pub fn new(storage_scope: &str, dtype: &str, shape: Vec<Expr>) -> Result<Self> {
         let dtype = PrimType::new(dtype)?;
-        Self::prepare_and_allocate(
+        Self::normalize_and_allocate(
             storage_scope,
             dtype,
             shape,
@@ -469,7 +459,7 @@ impl BufferType {
         allocated_addresses: Vec<Expr>,
         span: Option<&Span>,
     ) -> Result<Self> {
-        Self::prepare_and_allocate(
+        Self::normalize_and_allocate(
             storage_scope,
             dtype,
             shape,
@@ -484,7 +474,7 @@ impl BufferType {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn prepare_and_allocate(
+    fn normalize_and_allocate(
         storage_scope: &str,
         dtype: PrimType,
         shape: Vec<Expr>,
@@ -508,29 +498,31 @@ impl BufferType {
         for address in &allocated_addresses {
             primitive_type(address, "buffer allocated address")?;
         }
-        let storage_scope = String::from(storage_scope);
+        let storage_scope = String::from(if storage_scope.is_empty() {
+            "global"
+        } else {
+            storage_scope
+        });
+        let element_offset = match element_offset {
+            Some(value) => value,
+            None => {
+                let index_type = if let Some(first) = shape.first() {
+                    primitive_type(first, "buffer shape extent")?
+                } else {
+                    PrimType::new(DEFAULT_INDEX_DTYPE)?
+                };
+                IntImm::from_complete_fields(None, index_type.into(), 0).into()
+            }
+        };
+        let data_alignment = if data_alignment <= 0 {
+            DEFAULT_ALLOC_ALIGNMENT
+        } else {
+            data_alignment
+        };
+        let offset_factor = if offset_factor == 0 { 1 } else { offset_factor };
         let shape = Array::new(shape);
         let strides = Array::new(strides);
         let allocated_addresses = Array::new(allocated_addresses);
-        let prepared = crate::abi::prepare_constructor::<BufferTypeObj>(&[
-            AnyView::from(&storage_scope),
-            AnyView::from(&shape),
-            AnyView::from(&element_offset),
-            AnyView::from(&data_alignment),
-            AnyView::from(&offset_factor),
-        ])?;
-        let storage_scope: String =
-            crate::abi::prepared_field(&prepared, BufferTypeObj::TYPE_KEY, "storage_scope")?;
-        let element_offset: Expr =
-            crate::abi::prepared_field(&prepared, BufferTypeObj::TYPE_KEY, "elem_offset")?;
-        let data_alignment: i64 =
-            crate::abi::prepared_field(&prepared, BufferTypeObj::TYPE_KEY, "data_alignment")?;
-        let offset_factor: i64 =
-            crate::abi::prepared_field(&prepared, BufferTypeObj::TYPE_KEY, "offset_factor")?;
-        let data_alignment =
-            i32::try_from(data_alignment).map_err(|_| integer_overflow("data_alignment"))?;
-        let offset_factor =
-            i32::try_from(offset_factor).map_err(|_| integer_overflow("offset_factor"))?;
         Ok(Self::from_complete_fields(
             span.cloned(),
             dtype,
@@ -579,14 +571,6 @@ impl BufferType {
     pub fn new_var(&self, name: &str) -> Var {
         Var::with_type(name, Type::from(self.clone()))
     }
-}
-
-fn integer_overflow(field: &str) -> Error {
-    Error::new(
-        VALUE_ERROR,
-        &format!("{field} does not fit TVM's 32-bit integer field"),
-        "",
-    )
 }
 
 /// ABI-complete Rust representation of a buffer read.
@@ -1054,11 +1038,6 @@ pub struct MatchBufferRegionObj {
     pub source: BufferRegion,
 }
 
-impl crate::abi::ConstructorRecipe for MatchBufferRegionObj {
-    const INPUTS: &'static [&'static str] = &["buffer", "source"];
-    const DERIVED_FIELDS: &'static [&'static str] = &[];
-}
-
 /// Reference-counted handle to a match-buffer declaration.
 #[repr(C)]
 #[derive(ObjectRef, Clone)]
@@ -1076,9 +1055,6 @@ impl std::ops::Deref for MatchBufferRegion {
 
 impl MatchBufferRegion {
     /// Validate the declaration and allocate the object directly in Rust.
-    ///
-    /// Analyzer-backed validation runs through the type's reflected static
-    /// preparation method; it never allocates the final node.
     pub fn new<B, S>(buffer: B, source: S) -> Result<Self>
     where
         B: Into<Var>,
@@ -1086,10 +1062,7 @@ impl MatchBufferRegion {
     {
         let buffer = buffer.into();
         let source = source.into();
-        let _ = crate::abi::prepare_constructor::<MatchBufferRegionObj>(&[
-            AnyView::from(&buffer),
-            AnyView::from(&source),
-        ])?;
+        validate_match_buffer_region(&buffer, &source)?;
         Ok(Self::from_complete_fields(buffer, source))
     }
 
@@ -1103,6 +1076,64 @@ impl MatchBufferRegion {
             }),
         }
     }
+}
+
+fn validate_match_buffer_region(buffer: &Var, source: &BufferRegion) -> Result<()> {
+    let target = buffer_type(buffer)?;
+    let source_buffer = source.buffer()?;
+    let source_type = buffer_type(&source_buffer)?;
+    if target.storage_scope != source_type.storage_scope {
+        return Err(Error::new(
+            TYPE_ERROR,
+            "match-buffer storage scopes differ",
+            "",
+        ));
+    }
+    if target.dtype.dtype != source_type.dtype.dtype {
+        return Err(Error::new(TYPE_ERROR, "match-buffer data types differ", ""));
+    }
+    if target.data_alignment == 0
+        || source_type.data_alignment.rem_euclid(target.data_alignment) != 0
+    {
+        return Err(Error::new(
+            VALUE_ERROR,
+            "source buffer does not satisfy the required alignment",
+            "",
+        ));
+    }
+
+    let region = source.region()?;
+    if region.len() < target.shape.len() {
+        return Err(Error::new(
+            VALUE_ERROR,
+            "source region has fewer dimensions than the target buffer",
+            "",
+        ));
+    }
+    let analyzer = Analyzer::new()?;
+    let offset = region.len() - target.shape.len();
+    for range in region.iter().take(offset) {
+        let one: Expr = IntImm::from_complete_fields(None, range.extent.ty.clone(), 1).into();
+        if !analyzer.can_prove_equal(&range.extent, &one)? {
+            return Err(Error::new(
+                VALUE_ERROR,
+                "a leading source-region dimension is not provably one",
+                "",
+            ));
+        }
+    }
+    for (range, expected) in region.iter().skip(offset).zip(target.shape.iter()) {
+        let is_primitive_variable = expected.clone().try_cast::<Var>().is_ok()
+            && primitive_type(&expected, "match-buffer shape").is_ok();
+        if !is_primitive_variable && !analyzer.can_prove_equal(&range.extent, &expected)? {
+            return Err(Error::new(
+                VALUE_ERROR,
+                "source-region extent does not match the target buffer shape",
+                "",
+            ));
+        }
+    }
+    Ok(())
 }
 
 tvm_ffi::impl_object_upcast!(

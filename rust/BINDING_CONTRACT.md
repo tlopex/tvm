@@ -53,13 +53,15 @@ bindings. Stubgen must instead distinguish two generated APIs:
   contain registry identity or another invariant callers cannot validate
   locally; and
 - a semantic convenience constructor whose defaults, validation,
-  normalization, and derived fields come from a machine-readable recipe.
+  normalization, and derived fields are either generated from authoritative
+  metadata or supplied as reviewed handwritten Rust code.
 
-If either the physical layout or semantic recipe is unavailable, stubgen must
-omit that API and report a named blocker. It must not silently route `new()`
-through a registered global. Interning tables and other shared runtime
-services may still cross the ABI, but they are runtime capabilities rather than
-per-node C++ allocation.
+If the physical layout is unavailable, stubgen must omit direct allocation and
+report a named blocker. If semantic constructor logic cannot be generated, its
+Rust implementation is maintained manually instead of adding a constructor-only
+FFI protocol. It must not silently route `new()` through a registered global.
+Interning tables and other shared runtime services may still cross the ABI, but
+they are runtime capabilities rather than per-node C++ allocation.
 
 ## Sources of truth
 
@@ -110,7 +112,7 @@ A binding is accepted only when every applicable check passes:
 | Complete allocator API | exact stored types by value, direct `Self` return, no hidden clone/conversion work, and visibility that preserves external invariants |
 | Constructor parity | matching defaults, rejection cases, normalization, and derived state |
 | Cross-language ABI | a C++ registered field getter can read a Rust allocation |
-| Native behavior boundary | reuse an existing registered FFI operation when one exists; add a reflected type method only for genuinely type-owned behavior such as constructor preparation |
+| Native behavior boundary | reuse an existing registered FFI operation when one exists; do not add a constructor-only FFI protocol |
 | Cross-language semantics | C++ structural equality accepts Rust- and C++-created equivalents |
 | Ownership | Rust and C++ may clone/drop the handle without leaks, double drops, or dangling fields |
 | Walk/map behavior | exact callback selection, order, definition regions, identity remapping, and COW behavior |
@@ -137,12 +139,12 @@ Broader pass behavior is in
 | Direct scalar/object/optional/array/map fields | `IntImm`, `Call`, `For`, `SBlock`, Relax bindings | **GENERATE / verified** |
 | Heterogeneous `Array<Any>` / `Map<K, Any>` | schedule values, `DictAttrs`, annotations | **RUNTIME / verified via shared container-element support** |
 | Direct construction with validation | `IntImm`, binary arithmetic, `SeqStmt`, `SBlockRealize` | **GENERATE or reviewed template** |
-| Complete layout, build-dependent defaults | `BufferType` | **reflected static prepare method + Rust allocation / verified** |
+| Complete layout, build-dependent defaults | `BufferType` | **handwritten Rust semantics + Rust allocation / verified** |
 | Native registry identity | `Axis` | **opaque wrapper + existing `tirx.AxisGet` singleton lookup / verified** |
 | Native interned identity | `SourceName` | **opaque wrapper + existing `ir.SourceName` lookup / verified** |
 | Native polymorphic behavior | `Layout`, `PrimExprConvertible`, `DataProducer`, `IterVar`, `BufferRegion` | **opaque wrapper + native allocation + reflected Rust access / verified** |
 | Native STL storage | `Source` | **opaque wrapper + existing `SourceMapAdd` construction / verified** |
-| Complex semantic constructor | `BufferType`, `PrimFunc`, Relax `Function`, match buffer | **reflected static preparation + complete-field Rust allocation / verified** |
+| Complex semantic constructor | `BufferType`, `PrimFunc`, Relax `Function`, match buffer | **handwritten Rust semantics + complete-field Rust allocation / verified** |
 | Derived mutable indexes | `IRModule` construction/update | **GENERATE rebuild logic / verified** |
 | Consuming `RValueRef<T>` packed argument | pass boundaries | **RUNTIME / verified without an extra reference-count increment** |
 | Pass examples and analyses | `analysis`, `transform/*` | **PROTOTYPE ONLY** |
@@ -159,8 +161,8 @@ a separately reviewed C++ ABI migration removes that blocker.
 - Do not infer a field's optionality from the referenced C++ `ObjectRef`
   class's `_type_is_nullable` flag.  Most C++ handles support an undefined
   value even when a particular node field is required.  Stubgen maps an
-  explicit `ffi::Optional<T>` field schema to `Option<T>` and uses the
-  constructor recipe to reject a missing required handle.
+  explicit `ffi::Optional<T>` field schema to `Option<T>`; a reviewed semantic
+  constructor must reject a missing required handle.
 - C++ `int` and `enum class ... : int` use an `i32` representation, not `i64`.
 - Native enum fields use a `#[repr(transparent)]` integer newtype with named
   constants, not a closed Rust `enum`; this keeps unknown values from a newer
@@ -190,11 +192,9 @@ a separately reviewed C++ ABI migration removes that blocker.
   reviewed semantic constructor already owns `new(...)`, the mechanical path
   is named `from_complete_fields(...)` because Rust has no function
   overloading; both forms still perform the same direct Rust allocation.
-- A preparation-backed constructor has a generated `ConstructorRecipe`
-  contract containing its exact ordered input names and complete derived-field
-  key set. Runtime calls compare that contract with the native
-  `__ffi_constructor_recipe__` attribute and reject a stale binding or a
-  returned map whose shape differs.
+- Constructor semantics that are not mechanically derivable remain explicit,
+  reviewed Rust code. Differential tests against the C++ constructor detect
+  drift in defaults, validation, normalization, and derived fields.
 - A native layout certificate proves physical compatibility; it does not by
   itself authorize construction. Registry identity, interning, sentinels, and
   native resource ownership are constructor semantics. `Axis`, `SourceName`,
@@ -228,11 +228,8 @@ a separately reviewed C++ ABI migration removes that blocker.
 - A complete-field allocator and any convenience constructor that only fills
   Rust fields return the object directly. `Result<Self>` is reserved for a
   real failure source: parsing, checked narrowing, semantic validation, a
-  fallible cast, or a reflected preparation method. Generated callers must not need
+  fallible cast, or a compiler-service call. Generated callers must not need
   `?` or `unwrap()` around plain `ObjectArc::new` allocation.
-- A `.cc` file may implement a reflected preparation method because the
-  underlying compiler algorithm lives in C++, but it must return only the
-  validation or derived fields needed before Rust performs the final allocation.
 - Existing registered functions take precedence over adding duplicate methods.
   Existing C++ virtual dispatch remains internal to C++ and Rust crosses the
   standard packed-function ABI.
@@ -244,9 +241,9 @@ a separately reviewed C++ ABI migration removes that blocker.
   constructor bodies whose semantics are fully available.
 - **RUNTIME:** `ObjectArc`, heterogeneous `Array<Any>`/`Map<K, Any>` support,
   `RValueRef<T>` packed argument holders, safe object identity,
-  `Function::from_type_method`, and reflected constructor-preparation calls.
-- **RECIPE:** reviewed constructor semantics that generate Rust validation,
-  defaults, normalization, and derived fields.
+  and `Function::from_type_method`.
+- **HANDWRITTEN:** reviewed Rust constructor semantics that stubgen cannot yet
+  generate, including validation, defaults, normalization, and derived fields.
 - **ABI BLOCKER:** native vptrs, unreflected members, or non-ABI-shareable
   storage. They expose no Rust allocator until the shared ABI is made
   constructible.
@@ -265,8 +262,8 @@ when all of the following are true:
    only Rust allocation, takes exact field types by value without hidden
    conversions or clones, and returns `Self`; identity-bound allocators remain
    private behind their validated or registry-backed constructor;
-3. semantic constructors either contain reviewed Rust validation or call a
-   registered reflected preparation method before delegating to that allocator;
+3. semantic constructors contain generated or reviewed handwritten Rust logic
+   before delegating to that allocator;
 4. no ABI-complete ordinary IR constructor calls a packed global; an explicitly
    opaque blocker may call its existing native constructor, and no generated
    wrapper exposes unconditional `DerefMut`;
@@ -281,20 +278,20 @@ when all of the following are true:
 9. the complete C++, Rust, and Python suites pass against one build.
 
 This freezes the expected generated Rust surface, not the handwritten files.
-The actual stubgen is complete only when one invocation emits that surface from
-layout and constructor-recipe inputs and the handwritten definitions can be
-deleted without changing the acceptance tests.
+The actual stubgen is complete only when one invocation emits the mechanical
+surface from layout input and the remaining handwritten semantic layer composes
+with it without changing the acceptance tests.
 
 The current prototype is **not yet frozen**: the runtime now publishes explicit
-layout certificates and constructor input/output recipes, but stubgen does not
-yet consume them, and enum declarations plus full semantic validation/default
-recipes still need generator input. Passing the handwritten conformance tests
-proves the current selected build and surface; the next gate is reproducing it
-from generated code.
+layout certificates, but stubgen does not yet consume them, and enum declarations
+plus full semantic validation/default logic still need either generator support
+or a reviewed handwritten implementation. Passing the handwritten conformance
+tests proves the current selected build and surface; the next gate is reproducing
+the mechanical portion from generated code.
 
 The acceptance slice is ready to replace only when stubgen can generate the
-same complete layouts, complete-field allocators, and semantic preparation
-recipes;
+same complete layouts and complete-field allocators while preserving the
+handwritten semantic constructors;
 the handwritten definitions can then be deleted and the acceptance tests must
 pass unchanged against the exact workspace `tvm-ffi` revision. A generated
 `new()` that invokes `__ffi_init__` or another packed global does not pass this

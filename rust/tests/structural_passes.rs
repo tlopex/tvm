@@ -503,7 +503,7 @@ fn statement_sequence_normalizes_empty_single_and_nested_inputs() {
 }
 
 #[test]
-fn buffer_defaults_match_the_registered_constructor_recipe() {
+fn buffer_defaults_match_the_cpp_constructor() {
     load_tvm_compiler();
     let extent = typed_int_expression("int32", 8);
     let buffer_type = BufferType::new("", "float32", vec![extent.clone()]).unwrap();

@@ -28,7 +28,6 @@
 //! structural traversal.
 
 #[doc(hidden)]
-pub mod abi;
 pub mod analysis;
 pub mod ir;
 pub mod relax;

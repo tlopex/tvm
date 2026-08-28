@@ -77,6 +77,13 @@ impl Analyzer {
             .call_tuple((self, expression, steps))?
             .try_into()
     }
+
+    /// Prove that two primitive expressions are equal.
+    pub fn can_prove_equal(&self, lhs: &Expr, rhs: &Expr) -> Result<bool> {
+        tvm_ffi::cached_global_func!("arith.AnalyzerCanProveEqual")
+            .call_tuple((self, lhs, rhs))?
+            .try_into()
+    }
 }
 
 /// ABI-compatible Rust representation of TVM's `tirx::CallEffectKind`.

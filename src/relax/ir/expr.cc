@@ -346,19 +346,7 @@ FunctionDerivedFields DeriveFunctionFields(const ffi::Array<Var>& params, const 
   return {SeqExpr(body), normalized_ret_ty, FuncType(param_ty, normalized_ret_ty, is_pure)};
 }
 
-ffi::Map<ffi::String, ffi::Any> PrepareFunctionFields(const ffi::Array<Var>& params,
-                                                      const Expr& body, ffi::Optional<Type> ret_ty,
-                                                      bool is_pure) {
-  FunctionDerivedFields fields = DeriveFunctionFields(params, body, std::move(ret_ty), is_pure);
-  return {{"body", fields.body}, {"ret_ty", fields.ret_ty}, {"ty", fields.function_ty}};
-}
-
 }  // namespace
-
-ffi::Map<ffi::String, ffi::Any> FunctionNode::PrepareFFI(ffi::Array<Var> params, Expr body,
-                                                         ffi::Optional<Type> ret_ty, bool is_pure) {
-  return PrepareFunctionFields(params, body, std::move(ret_ty), is_pure);
-}
 
 Function::Function(ffi::Array<Var> params, Expr body, ffi::Optional<Type> ret_ty, bool is_pure,
                    DictAttrs attrs, Span span) {

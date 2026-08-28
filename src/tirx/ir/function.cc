@@ -94,12 +94,6 @@ PrimFuncDerivedFields DerivePrimFuncTypes(const ffi::Array<tirx::Var>& params, c
 
 }  // namespace
 
-ffi::Map<ffi::String, ffi::Any> PrimFuncNode::PrepareFFI(ffi::Array<tirx::Var> params, Stmt body,
-                                                         Type ret_type) {
-  PrimFuncDerivedFields derived = DerivePrimFuncTypes(params, body, std::move(ret_type));
-  return {{"ret_type", derived.ret_type}, {"ty", derived.function_type}};
-}
-
 // Get the function type of a PrimFunc
 PrimFunc::PrimFunc(ffi::Array<tirx::Var> params, Stmt body, Type ret_type, DictAttrs attrs,
                    Span span) {

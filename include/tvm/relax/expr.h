@@ -459,9 +459,6 @@ class FunctionNode : public BaseFuncNode {
   /*! \brief Whether the function is annotated as pure or not. */
   bool is_pure;
 
-  static ffi::Map<ffi::String, ffi::Any> PrepareFFI(ffi::Array<Var> params, Expr body,
-                                                    ffi::Optional<Type> ret_ty, bool is_pure);
-
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<FunctionNode>()
@@ -469,8 +466,6 @@ class FunctionNode : public BaseFuncNode {
         .def_ro("body", &FunctionNode::body)
         .def_ro("ret_ty", &FunctionNode::ret_ty)
         .def_ro("is_pure", &FunctionNode::is_pure)
-        .def_static(refl::type_attr::kPrepare, &FunctionNode::PrepareFFI)
-        .def_constructor_recipe({"params", "body", "ret_ty", "is_pure"}, {"body", "ret_ty", "ty"})
         .def_complete_layout();
   }
 

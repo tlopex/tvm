@@ -138,11 +138,7 @@ For a directly constructible node, generate:
 - finality and structural metadata used by typed walk/map dispatch.
 - direct `ObjectArc::new` allocation only for concrete types that stubgen has
   classified as complete and constructible; opaque wrappers and layout-only
-  base prefixes receive no generated allocator;
-- a generated `ConstructorRecipe` contract for each preparation-backed
-  constructor. It records ordered input names and the complete returned
-  field-key set, and the runtime helper compares it with the native type
-  attribute before calling the preparation method.
+  base prefixes receive no generated allocator.
 
 The generator cannot recover complete physical layout from reflection alone.
 It needs a layout source derived from C++ declarations or an explicitly curated
@@ -151,7 +147,7 @@ language-independent structural protocol.
 
 ## One-invocation input and output contract
 
-One-command generation must consume a merged manifest with four independently
+One-command generation must consume a merged manifest with three independently
 auditable sources.  No source is allowed to fill in another source's missing
 facts by guessing:
 
@@ -160,7 +156,6 @@ facts by guessing:
 | Runtime type | type key, parent chain, reflected field names/schemas/flags, structural attributes | TVM FFI registry |
 | Native layout | finality, total size/alignment, ordered physical fields, exact C++ widths/offsets, explicit vptr/STL/unreflected blockers, and a stable per-type fingerprint | C++ build-generated layout data plus a matching runtime-published fingerprint |
 | Rust mapping | object/reference names, module path, exact Rust type for every physical field, nullable/container mapping, and upcasts | reviewed mapping rules |
-| Constructor recipe | public name, ordered inputs, defaults, failure conditions, normalized/derived fields, and either a Rust template or a named reflected preparation method | reviewed constructor semantics |
 
 For each type the generator first joins these sections by type key, verifies
 that the parent layout and every reflected field agree, and chooses exactly one
@@ -169,10 +164,11 @@ outcome:
 1. **complete:** emit the `#[repr(C)]` object, reference wrapper, read-only
    `Deref`, casts, and one owned complete-field constructor after validating
    the layout inside stubgen;
-2. **complete plus semantic:** additionally emit reviewed convenience
-   constructors that validate/prepare and delegate to the owned allocator; or
+2. **complete plus semantic:** additionally emit generated convenience
+   constructors whose semantics are fully described by authoritative metadata;
+   semantic constructors outside that set remain reviewed handwritten Rust; or
 3. **blocked:** emit only a safe opaque reference wrapper and a diagnostic that
-   names the missing layout fact, recipe fact, or ABI blocker.
+   names the missing layout fact or ABI blocker.
 
 The generated complete-field signature is mechanical: flatten the stored
 fields from the rootmost supported base to the concrete node and keep each
@@ -187,8 +183,8 @@ Field nullability belongs to the field/constructor contract, not to the C++
 reference wrapper in isolation.  C++ commonly gives an `ObjectRef` type a
 default undefined state, while nodes still require a defined value in a field
 of that type.  An explicit `ffi::Optional<T>` schema maps to Rust `Option<T>`;
-a plain object field stays non-optional and its semantic constructor recipe
-must enforce any required-value invariant.
+a plain object field stays non-optional and its semantic constructor must
+enforce any required-value invariant.
 
 The invocation is successful only if every requested type reaches one of those
 three explicit outcomes, generated files are deterministic, and the emitted
@@ -220,21 +216,20 @@ language-neutral object model must be extended rather than bypassed: current
 `ObjectInfo` keeps field schemas but drops offsets, sizes, alignments, flags,
 defaults, and total size that are already available on runtime `TypeInfo`.
 Rust generation needs those facts plus the independently generated native
-layout/finality/blocker section and constructor recipes described above.
+layout/finality/blocker section described above.
 
 The intended command shape is therefore one existing stubgen invocation, for
 example:
 
 ```text
 tvm-ffi-stubgen rust/src --dlls build/libtvm_compiler.so --target rust \
-  --native-layout build/rust_native_layout.json \
-  --constructor-recipes rust/constructor_recipes.json
+  --native-layout build/rust_native_layout.json
 ```
 
 The exact option names can follow the upstream CLI review, but the ownership is
-fixed: runtime registry collection remains shared, native layout and semantic
-recipes are merged before rendering, and `RustGenerator` only emits code. It
-must not rediscover C++ layout or constructor semantics while formatting Rust.
+fixed: runtime registry collection remains shared, native layout is merged
+before rendering, and `RustGenerator` only emits code. It must not rediscover
+C++ layout or guess constructor semantics while formatting Rust.
 
 ## Constructor classification
 
@@ -250,8 +245,8 @@ existing TVM operation:
 | Native interned identity | `SourceName` | emit an opaque wrapper and call the existing `ir.SourceName` lookup |
 | C++ polymorphic hierarchy | `Layout`, `PrimExprConvertible`, `DataProducer`, `IterVar`, `BufferRegion` | preserve the virtual ABI, emit opaque Rust wrappers, and allocate concrete objects through existing native constructors |
 | Native STL storage | `Source` | keep the node opaque and construct it through the existing `SourceMapAdd` operation |
-| Complex semantic constructor | `PrimFunc`, Relax `Function`, match buffer | call a reflected static preparation method for analysis/validation, then allocate complete fields in Rust |
-| Build-dependent defaults | `BufferType` | read normalized physical fields through its reflected static preparation method, then allocate in Rust |
+| Complex semantic constructor | `PrimFunc`, Relax `Function`, match buffer | use reviewed handwritten Rust analysis/validation, then allocate complete fields in Rust |
+| Build-dependent defaults | `BufferType` | use reviewed handwritten Rust defaults and validation, then allocate in Rust |
 | Derived mutable state | `IRModule` | rebuild and validate derived indexes in generated Rust code |
 
 `PrimType`, `TupleType`, `For`, `BufferType`, buffer load/store, Relax `Tuple`,
@@ -259,24 +254,15 @@ and `IRModule` demonstrate that many former exceptions can be Rust-native once
 their semantics are made explicit. `Type::Missing` deliberately remains the
 native singleton.
 
-## Language-neutral behavior and constructor preparation
+## Language-neutral behavior and handwritten constructors
 
 Ordinary ABI-complete constructors do not call packed global constructors or
 maintain custom raw vtables. Registry, interning, STL, and polymorphic blockers
-reuse existing native operations. A new per-type method is introduced only for
-constructor preparation that has no equivalent registered operation:
-
-| Reflected method | Purpose | Final allocation |
-| --- | --- | --- |
-| static `__ffi_prepare__` | validate inputs and return a uniform `Map<String, Any>` of derived physical fields for `BufferType`, `PrimFunc`, Relax `Function`, and `MatchBufferRegion` | Rust |
-
-C++ registers these methods with `ObjectDef::def_static`. Rust looks them up
-with `Function::from_type_method`, so tvm-ffi owns method storage, argument
-conversion, result ownership, and error propagation. A constructor preparation
-method is not an allocator: it returns validation/derived data and Rust performs
-the final node allocation. Generated recipes publish ordered input names and
-derived-field names in a type attribute, which detects stale bindings when
-native constructor semantics change.
+reuse existing native operations. Constructor-specific behavior that stubgen
+cannot derive is written directly in Rust and checked against the C++ constructor
+with differential tests. It may call an existing language-neutral analysis or
+runtime service, but it does not add a new constructor-only method or metadata
+protocol. Rust still performs final allocation for ABI-complete objects.
 
 Other opaque behavior uses APIs that TVM already registers. `tirx.convert`
 performs `PrimExprConvertible` fallback conversion, and the existing
@@ -284,8 +270,8 @@ performs `PrimExprConvertible` fallback conversion, and the existing
 The Rust binding must not duplicate either surface in every concrete type's
 method table.
 
-The tests exercise both directions: Rust calls registered native operations and
-constructor preparation methods, while C++ entry points inspect and transform Rust-created
+The tests exercise both directions: Rust calls existing registered native
+operations where needed, while C++ entry points inspect and transform Rust-created
 ordinary nodes through the same tvm-ffi object ABI. Identity- and
 resource-owning blockers are separately checked to remain native objects.
 
@@ -341,15 +327,16 @@ The current experiment still needs explicit decisions for:
 - consuming `__ffi_native_object_layout__` certificates and explicit opaque
   blockers while deciding what Rust code to emit;
 - constructor parameter type schemas, nullability/defaults, and validation
-  semantics; ordered input names and derived keys are now machine-readable;
+  semantics that should eventually be generated rather than handwritten;
 - build-configuration values used by constructor defaults;
 - enum names and values, including their underlying C++ width; generated
   bindings represent these as open integer newtypes rather than closed Rust
   enums;
 - `RValueRef<T>` code generation (the reusable runtime holder already exists).
 
-These gaps require metadata, reviewed recipes, or an ABI refactor. They are not
-permission for stubgen to guess or to hide allocation behind a packed global.
+These gaps require metadata, reviewed handwritten implementations, or an ABI
+refactor. They are not permission for stubgen to guess or to hide allocation
+behind a packed global.
 
 ## Layout evidence
 
@@ -400,16 +387,16 @@ IR surface they consume, not generate those transformations.
 1. Add a reliable C++-layout input and generate the minimal complete structs.
 2. Generate a lossless complete-field Rust allocator only for ABI-complete
    nodes whose constructor classification permits Rust ownership.
-3. Generate semantic recipes first for `PrimType`, `Var`, `IntImm`, `Add`,
-   `Evaluate`, `For`, buffers, tuples, and modules; emit native-operation
+3. Generate mechanical semantic constructors first for `PrimType`, `Var`,
+   `IntImm`, `Add`, `Evaluate`, `For`, buffers, tuples, and modules; keep
+   non-mechanical constructor logic in reviewed Rust and emit native-operation
    wrappers for `Type::Missing`, `Axis`, `SourceName`, and `Source`.
 4. Run `tests/stubgen_acceptance.rs` unchanged, including the C++-getter-on-Rust
    allocation test.
 5. Generate heterogeneous fields as `Map<K, Any>` and other container fields
    with the normal typed `Array`/`Map` wrappers.
-6. Generate reflected preparation-method calls for reviewed recipes, reuse
-   existing registered operations for opaque behavior, and reject unrefactored
-   vptr/STL-backed nodes.
+6. Reuse existing registered operations for opaque behavior and compiler
+   services, and reject unrefactored vptr/STL-backed nodes.
 7. Generate pass boundaries with the standard `RValueRef<T>` holder.
 8. Expand the type slice only after each new layout/constructor pattern has a
    focused test and a named owner.
@@ -421,5 +408,5 @@ run compiler services and passes; they must not be the hidden implementation of
 ordinary generated IR constructors. The handwritten slice demonstrates the
 intended Rust surface and cross-language behavior. It does not yet supply every
 one-command generator input listed in the metadata gaps; the next stubgen step
-is to emit the same code from an authoritative native-layout and
-constructor-recipe manifest rather than preserve the handwritten files.
+is to emit the same mechanical code from an authoritative native-layout
+manifest while retaining reviewed handwritten semantics where needed.

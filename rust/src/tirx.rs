@@ -19,11 +19,14 @@
 
 use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{
-    Any, AnyView, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Map, ObjectArc,
-    ObjectCore, ObjectRefCast, Result, String, TYPE_ERROR, VALUE_ERROR,
+    Any, Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Error, Map, ObjectArc, ObjectRefCast,
+    Result, String, TYPE_ERROR, VALUE_ERROR,
 };
 
-use crate::ir::{BaseFuncObj, DictAttrs, Expr, ExprObj, IntImm, Span, Var};
+use crate::ir::{
+    BaseFuncObj, DictAttrs, Expr, ExprObj, IntImm, PointerType, PrimType, Span, TupleType, Type,
+    Var,
+};
 
 mod block;
 mod buffer;
@@ -810,11 +813,6 @@ pub struct PrimFuncObj {
     pub body: Stmt,
 }
 
-impl crate::abi::ConstructorRecipe for PrimFuncObj {
-    const INPUTS: &'static [&'static str] = &["params", "body", "ret_type"];
-    const DERIVED_FIELDS: &'static [&'static str] = &["ret_type", "ty"];
-}
-
 /// Reference-counted handle to a TIR primitive function.
 #[repr(C)]
 #[derive(ObjectRef, Clone)]
@@ -950,7 +948,7 @@ impl PrimFunc {
         Self::new(Vec::new(), body)
     }
 
-    /// Construct a PrimFunc in Rust after deriving type metadata through its reflected method.
+    /// Construct a PrimFunc after deriving its complete type metadata in Rust.
     pub fn new<S>(params: Vec<Var>, body: S) -> Result<Self>
     where
         S: Into<Stmt>,
@@ -960,7 +958,7 @@ impl PrimFunc {
         Self::with_metadata(params, body, ret_type, attrs, None)
     }
 
-    /// Construct a PrimFunc in Rust after deriving type metadata through its reflected method.
+    /// Construct a PrimFunc using Rust control flow and existing analysis services.
     pub fn with_metadata<S, T, A>(
         params: Vec<Var>,
         body: S,
@@ -977,13 +975,7 @@ impl PrimFunc {
         let ret_type = ret_type.into();
         let attrs = attrs.into();
         let params = Array::new(params);
-        let prepared = crate::abi::prepare_constructor::<PrimFuncObj>(&[
-            AnyView::from(&params),
-            AnyView::from(&body),
-            AnyView::from(&ret_type),
-        ])?;
-        let ret_type = crate::abi::prepared_field(&prepared, PrimFuncObj::TYPE_KEY, "ret_type")?;
-        let function_type = crate::abi::prepared_field(&prepared, PrimFuncObj::TYPE_KEY, "ty")?;
+        let (ret_type, function_type) = derive_prim_func_types(&params, &body, ret_type)?;
         Ok(Self::from_complete_fields(
             span.cloned(),
             function_type,
@@ -997,9 +989,8 @@ impl PrimFunc {
     /// Construct a PrimFunc allocation entirely in Rust from its complete state.
     ///
     /// `function_type` is the derived Relax-facing function type stored in the
-    /// inherited `ExprObj::ty` field.  Supplying it explicitly keeps this raw
-    /// constructor lossless; [`PrimFunc::new`] obtains exactly these derived
-    /// fields from the language-independent reflected preparation method.
+    /// inherited `ExprObj::ty` field. Supplying it explicitly keeps this raw
+    /// constructor lossless; [`PrimFunc::new`] derives it before allocation.
     #[allow(clippy::too_many_arguments)]
     pub fn from_complete_fields(
         span: Option<Span>,
@@ -1018,6 +1009,78 @@ impl PrimFunc {
             }),
         }
     }
+}
+
+fn derive_prim_func_types(
+    params: &Array<Var>,
+    body: &Stmt,
+    mut ret_type: Type,
+) -> Result<(Type, Type)> {
+    if ret_type.is_missing() {
+        ret_type = TupleType::empty().into();
+    }
+
+    let mut parameter_types = Vec::with_capacity(params.len());
+    for parameter in params.iter() {
+        let parameter_type = if let Ok(buffer) = parameter.ty.clone().try_cast::<BufferType>() {
+            let mut shape = Vec::with_capacity(buffer.shape.len());
+            for dimension in buffer.shape.iter() {
+                shape.push(cast_index_to_i64(dimension)?);
+            }
+            let shape = crate::relax::make_shape_expr(Array::new(shape))?;
+            crate::relax::make_tensor_type(shape, buffer.dtype.clone())?
+        } else if parameter.ty.clone().try_cast::<PointerType>().is_ok() {
+            crate::relax::make_any_type()?
+        } else {
+            parameter.ty.clone()
+        };
+        parameter_types.push(parameter_type);
+    }
+
+    let relax_return_type = if ret_type.clone().try_cast::<PrimType>().is_ok() {
+        ret_type.clone()
+    } else if ret_type
+        .clone()
+        .try_cast::<TupleType>()
+        .is_ok_and(|tuple| tuple.fields.is_empty())
+    {
+        TupleType::empty().into()
+    } else {
+        crate::relax::make_any_type()?
+    };
+
+    let provisional = PrimFunc::from_complete_fields(
+        None,
+        Type::missing(),
+        DictAttrs::empty(),
+        params.clone(),
+        ret_type.clone(),
+        body.clone(),
+    );
+    let purity: bool = tvm_ffi::cached_global_func!("s_tir.analysis.is_pure_function")
+        .call_tuple((&provisional, false))?
+        .try_into()?;
+    let function_type =
+        crate::relax::make_func_type(Array::new(parameter_types), relax_return_type, purity)?;
+    Ok((ret_type, function_type))
+}
+
+fn cast_index_to_i64(value: Expr) -> Result<Expr> {
+    let target = PrimType::new("int64")?;
+    if primitive_type(&value, "buffer shape")?.dtype == target.dtype {
+        return Ok(value);
+    }
+    if let Ok(literal) = value.clone().try_cast::<IntImm>() {
+        return Ok(IntImm::from_complete_fields(
+            literal.span.clone(),
+            target.into(),
+            literal.value,
+        )
+        .into());
+    }
+    tvm_ffi::cached_global_func!("tirx.Cast")
+        .call_tuple((target, value, Option::<Span>::None))?
+        .try_into()
 }
 
 tvm_ffi::impl_object_upcast!(

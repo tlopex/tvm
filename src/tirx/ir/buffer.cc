@@ -31,7 +31,6 @@
 #include <tvm/tirx/op.h>
 
 #include <iterator>
-#include <limits>
 #include <list>
 #include <stack>
 
@@ -72,30 +71,7 @@ BufferTypeDerivedFields DeriveBufferTypeFields(ffi::String storage_scope,
   return {std::move(storage_scope), elem_offset.value(), data_alignment, offset_factor};
 }
 
-int CheckedNativeInt(int64_t raw, const char* field_name) {
-  TVM_FFI_CHECK_GE(raw, std::numeric_limits<int>::min(), ValueError)
-      << field_name << " is below the native int range";
-  TVM_FFI_CHECK_LE(raw, std::numeric_limits<int>::max(), ValueError)
-      << field_name << " is above the native int range";
-  return static_cast<int>(raw);
-}
-
 }  // namespace
-
-ffi::Map<ffi::String, ffi::Any> BufferTypeNode::PrepareFFI(ffi::String storage_scope,
-                                                           ffi::Array<PrimExpr> shape,
-                                                           ffi::Optional<PrimExpr> elem_offset,
-                                                           int64_t data_alignment,
-                                                           int64_t offset_factor) {
-  BufferTypeDerivedFields fields =
-      DeriveBufferTypeFields(std::move(storage_scope), shape, std::move(elem_offset),
-                             CheckedNativeInt(data_alignment, "data_alignment"),
-                             CheckedNativeInt(offset_factor, "offset_factor"));
-  return {{"storage_scope", fields.storage_scope},
-          {"elem_offset", fields.elem_offset},
-          {"data_alignment", fields.data_alignment},
-          {"offset_factor", fields.offset_factor}};
-}
 
 TVM_FFI_STATIC_INIT_BLOCK() { BufferTypeNode::RegisterReflection(); }
 

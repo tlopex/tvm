@@ -34,18 +34,16 @@ offsets, and layout fingerprint before it emits that code; those checks are not
 repeated as per-object boilerplate in the generated Rust surface. C++ can consume those allocations
 because the object header, field layout, reference counting, and deleter all
 follow the shared TVM FFI ABI. Complete-field Rust allocation is separate from
-a convenience `new()`: the latter additionally needs generated validation,
-defaults, normalization, and derived-field recipes. A packed C++ constructor is
+a convenience `new()`: the latter additionally needs validation, defaults,
+normalization, and derived-field logic. A packed C++ constructor is
 not considered a final stubgen implementation. Polymorphic `Layout`,
 `PrimExprConvertible`, and `DataProducer` objects remain opaque, preserving
 their native virtual ABI; registry-owned `Axis`, interned `SourceName`, the
 STL-backed `Source`, and the `Type::Missing` singleton likewise reuse their
 existing native operations. Reflected fields and existing registered functions provide Rust
-access without changing those C++ semantics. Semantic constructors use a reflected static
-preparation method that never allocates the final node. C++ registers these
-preparation methods with `ObjectDef::def_static`, while Rust finds them with
-`Function::from_type_method`; argument conversion, result ownership, and error
-propagation therefore use the existing tvm-ffi function ABI. Public direct-layout fields are borrowed
+access without changing those C++ semantics. Semantic constructors whose logic
+stubgen cannot derive are maintained as reviewed Rust code; they may reuse existing
+registered compiler services and then allocate the final node in Rust. Public direct-layout fields are borrowed
 through each reference wrapper's read-only `Deref`; callers write `.clone()` explicitly
 when they need an owning handle. Recursion and rebuilding use `tvm-ffi`'s
 language-independent structural protocol.
@@ -53,7 +51,7 @@ language-independent structural protocol.
 Constructor signatures also expose where work can actually fail. Lossless
 complete-field allocation takes exact stored field types by value, moves them
 without hidden clone/conversion work, and returns the object directly. Parsing,
-validation, checked casts, and reflected preparation return `Result`. Convenience
+validation, checked casts, and compiler-service calls return `Result`. Convenience
 constructors may borrow inputs and explicitly clone only while delegating to
 the owned complete-field path. This keeps generated call sites free of
 meaningless `unwrap()` calls while preserving errors at genuine semantic
@@ -124,15 +122,15 @@ and metadata requirements found by the experiment.
 
 For the exact TVM/tvm-ffi build used to generate and test it, the handwritten
 surface is now a suitable golden Rust API: certified complete nodes allocate in
-Rust, fields borrow directly, semantic constructors use machine-readable
-preparation recipes, and native semantic blockers retain their identity,
+Rust, fields borrow directly, non-mechanical semantic constructors are reviewed
+Rust implementations, and native semantic blockers retain their identity,
 resource ownership, or virtual ABI behind opaque wrappers. The acceptance tests cover both object origins and all four structural
 APIs.
 
 This repository is not yet the one-command generator itself.  Reaching that
-state still requires `RustGenerator` in `tvm-ffi-stubgen`, extraction of the
-new native layout and constructor-recipe attributes into generated Rust, enum
-metadata, and reviewed semantic recipe templates. Reusable `RValueRef<T>`
+state still requires `RustGenerator` in `tvm-ffi-stubgen`, extraction of native
+layout attributes into generated Rust, enum metadata, and a maintained set of
+reviewed Rust semantic-constructor templates. Reusable `RValueRef<T>`
 support is already implemented and tested.
 
 Build TVM first, ensure `tvm-ffi-config` resolves that build, and run:

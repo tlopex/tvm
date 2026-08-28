@@ -574,6 +574,41 @@ impl TypeObj {
     }
 }
 
+/// Checked Rust view of TVM's low-level pointer type.
+///
+/// The constructor logic only needs to distinguish pointer parameters from
+/// ordinary types; stubgen will eventually replace this minimal view with the
+/// complete generated binding.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "ir.PointerType"]
+#[type_final]
+pub struct PointerTypeObj {
+    base: TypeObj,
+}
+
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct PointerType {
+    data: ObjectArc<PointerTypeObj>,
+}
+
+impl std::ops::Deref for PointerType {
+    type Target = PointerTypeObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for PointerTypeObj {
+    type Target = TypeObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
 /// ABI-complete Rust representation of TVM's `PrimTypeNode`.
 #[repr(C)]
 #[derive(Object)]
@@ -1136,6 +1171,7 @@ impl Call {
 tvm_ffi::impl_object_upcast!(
     BaseFunc => Expr,
     IntImm => Expr,
+    PointerType => Type,
     PrimType => Type,
     TupleType => Type,
     Var => Expr,

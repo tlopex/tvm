@@ -150,8 +150,8 @@ fn direct_and_semantic_constructors_round_trip() {
         .unwrap();
     assert!(bool::try_from(cpp_recognizes_missing).unwrap());
 
-    // PrimFunc's ergonomic constructor derives fields through its direct C ABI
-    // table, while both it and the lossless path allocate the final node in Rust.
+    // PrimFunc's handwritten semantic constructor derives its fields, while
+    // both it and the lossless path allocate the final node in Rust.
     let function = sample_function();
     let cpp_function: PrimFunc = Function::get_global("tirx.PrimFunc")
         .expect("missing reference semantic constructor")

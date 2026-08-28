@@ -610,12 +610,6 @@ void ValidateMatchBufferRegion(const BufferVar& buffer, const BufferRegion& sour
 
 }  // namespace
 
-ffi::Map<ffi::String, ffi::Any> MatchBufferRegionNode::PrepareFFI(BufferVar buffer,
-                                                                  BufferRegion source) {
-  ValidateMatchBufferRegion(buffer, source);
-  return {};
-}
-
 MatchBufferRegion::MatchBufferRegion(BufferVar buffer, BufferRegion source) {
   ValidateMatchBufferRegion(buffer, source);
 

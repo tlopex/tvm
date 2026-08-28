@@ -841,16 +841,12 @@ class MatchBufferRegionNode : public ffi::Object {
   /*! \brief The source buffer region. */
   BufferRegion source;
 
-  static ffi::Map<ffi::String, ffi::Any> PrepareFFI(BufferVar buffer, BufferRegion source);
-
   static void RegisterReflection() {
     namespace refl = tvm::ffi::reflection;
     refl::ObjectDef<MatchBufferRegionNode>()
         .def_ro("buffer", &MatchBufferRegionNode::buffer,
                 refl::AttachFieldFlag::SEqHashDefRecursive())
         .def_ro("source", &MatchBufferRegionNode::source)
-        .def_static(refl::type_attr::kPrepare, &MatchBufferRegionNode::PrepareFFI)
-        .def_constructor_recipe({"buffer", "source"}, {})
         .def_complete_layout();
   }
 
