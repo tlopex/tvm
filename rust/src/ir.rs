@@ -900,7 +900,7 @@ pub struct CallObj {
     pub ty_args: Array<Type>,
 }
 
-/// Reference-counted handle to a call expression shared by TIR and Relax.
+/// Reference-counted handle to a generic call expression.
 #[repr(C)]
 #[derive(ObjectRef, Clone)]
 pub struct Call {

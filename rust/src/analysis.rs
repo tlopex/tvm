@@ -24,7 +24,6 @@ use tvm_ffi::{
 };
 
 use crate::ir::{CallObj, ExprObj, IntImmObj, PrimExpr, VarObj};
-use crate::relax::{BindingBlockObj, BindingObj, RelaxFunctionObj, SeqExprObj, VarBindingObj};
 use crate::tirx::{
     AddObj, AssertStmtObj, BufferLoadObj, BufferStoreObj, EvaluateObj, ForObj, IfThenElseObj,
     MulObj, SBlockObj, SBlockRealizeObj, SeqStmtObj, StmtObj, SubObj,
@@ -245,10 +244,6 @@ pub struct NodeStatistics {
     pub buffer_stores: usize,
     pub blocks: usize,
     pub block_realizations: usize,
-    pub bindings: usize,
-    pub binding_blocks: usize,
-    pub sequence_expressions: usize,
-    pub relax_functions: usize,
 }
 
 #[tvm_ffi::dispatch(walk)]
@@ -339,33 +334,6 @@ impl NodeStatistics {
     fn walk_buffer_load(&mut self, _node: &BufferLoadObj) -> WalkResult {
         self.expressions += 1;
         self.buffer_loads += 1;
-        WalkResult::Advance
-    }
-
-    fn walk_var_binding(&mut self, _node: &VarBindingObj) -> WalkResult {
-        self.bindings += 1;
-        WalkResult::Advance
-    }
-
-    fn walk_other_binding(&mut self, _node: &BindingObj) -> WalkResult {
-        self.bindings += 1;
-        WalkResult::Advance
-    }
-
-    fn walk_binding_block(&mut self, _node: &BindingBlockObj) -> WalkResult {
-        self.binding_blocks += 1;
-        WalkResult::Advance
-    }
-
-    fn walk_sequence_expression(&mut self, _node: &SeqExprObj) -> WalkResult {
-        self.expressions += 1;
-        self.sequence_expressions += 1;
-        WalkResult::Advance
-    }
-
-    fn walk_relax_function(&mut self, _node: &RelaxFunctionObj) -> WalkResult {
-        self.expressions += 1;
-        self.relax_functions += 1;
         WalkResult::Advance
     }
 

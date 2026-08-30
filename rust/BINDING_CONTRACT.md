@@ -134,7 +134,7 @@ Broader pass behavior is in
 | --- | --- | --- |
 | Complete ordinary data layout | `Expr`, `Var`, `IntImm`, `Add`, `Stmt`, `Evaluate`, `Span`, `Range` | **GENERATE / verified** |
 | Owning object reference and checked casts | all reference wrappers | **GENERATE / verified** |
-| Direct scalar/object/optional/array/map fields | `IntImm`, `Call`, `For`, `SBlock`, Relax bindings | **GENERATE / verified** |
+| Direct scalar/object/optional/array/map fields | `IntImm`, `Call`, `For`, `SBlock` | **GENERATE / verified** |
 | Heterogeneous `Array<Any>` / `Map<K, Any>` | schedule values, `DictAttrs`, annotations | **RUNTIME / verified via shared container-element support** |
 | Direct construction with validation | `IntImm`, binary arithmetic, `SeqStmt`, `SBlockRealize` | **GENERATE or reviewed template** |
 | Complete layout, build-dependent defaults | `BufferType` | **handwritten Rust semantics + Rust allocation / verified** |
@@ -142,7 +142,7 @@ Broader pass behavior is in
 | Native interned identity | `SourceName` | **opaque wrapper + existing `ir.SourceName` lookup / verified** |
 | Native polymorphic behavior | `Layout`, `PrimExprConvertible`, `IterVar`, `BufferRegion` | **opaque wrapper + native allocation + reflected Rust access / verified** |
 | Native STL storage | `Source` | **opaque wrapper + existing `SourceMapAdd` construction / verified** |
-| Complex semantic constructor | `BufferType`, `PrimFunc`, Relax `Function`, match buffer | **handwritten Rust semantics + complete-field Rust allocation / verified** |
+| Complex semantic constructor | `BufferType`, `PrimFunc`, match buffer | **handwritten Rust semantics + complete-field Rust allocation / verified** |
 | Derived mutable indexes | `IRModule` construction/update | **GENERATE rebuild logic / verified** |
 | Consuming `RValueRef<T>` packed argument | pass boundaries | **RUNTIME / verified without an extra reference-count increment** |
 | Pass examples and analyses | `analysis`, `transform/*` | **PROTOTYPE ONLY** |

@@ -108,7 +108,7 @@ pub fn prune_unreachable_functions_from_main(module: IRModule) -> Result<IRModul
 /// Build conservative function reachability pruning as a normal module pass.
 pub fn prune_unreachable_functions_pass(entry_names: Vec<std::string::String>) -> Result<Pass> {
     create_module_pass(
-        "relax.RustPruneUnreachableFunctions",
+        "transform.RustPruneUnreachableFunctions",
         0,
         Vec::new(),
         false,

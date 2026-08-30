@@ -23,10 +23,7 @@ use tvm::analysis::{
 };
 use tvm::ir::{
     Call, DictAttrs, DummyGlobalInfo, Expr, GlobalVar, IRModule, IntImm, OpaqueExpr, PrimExpr,
-    PrimExprConvertible, PrimType, Range, SourceMap, SourceName, Span, TupleType, Type, Var,
-};
-use tvm::relax::{
-    BindingBlock, If as RelaxIf, RelaxFunction, SeqExpr, Tuple as RelaxTuple, VarBinding,
+    PrimExprConvertible, PrimType, Range, SourceMap, SourceName, Span, Type, Var,
 };
 use tvm::tirx::{
     Add, AddObj, AssertStmt, AssertStmtObj, Axis, BufferLoad, BufferRegion, BufferStore,
@@ -399,10 +396,6 @@ fn full_direct_constructors_preserve_source_spans() {
         Some(&span),
     )
     .unwrap();
-    let binding = VarBinding::with_span(&variable, addition.clone(), Some(&span));
-    let block = BindingBlock::with_span(vec![binding.clone().into()], Some(&span));
-    let seq_expr = SeqExpr::with_span(vec![block.clone()], &variable, Some(&span));
-
     for actual in [
         variable.span.as_ref(),
         literal.span.as_ref(),
@@ -410,18 +403,9 @@ fn full_direct_constructors_preserve_source_spans() {
         call.span.as_ref(),
         evaluation.span.as_ref(),
         sequence.span.as_ref(),
-        seq_expr.span.as_ref(),
     ] {
         assert_eq!(object_pointer(actual.unwrap()), object_pointer(&span));
     }
-    assert_eq!(
-        object_pointer(binding.span.as_ref().unwrap()),
-        object_pointer(&span)
-    );
-    assert_eq!(
-        object_pointer(block.span.as_ref().unwrap()),
-        object_pointer(&span)
-    );
     assert_eq!(
         object_pointer(iter_var.span().unwrap().as_ref().unwrap()),
         object_pointer(&span)
@@ -431,7 +415,6 @@ fn full_direct_constructors_preserve_source_spans() {
 #[test]
 fn complete_field_allocators_preserve_supplied_inherited_fields() {
     load_tvm_compiler();
-    let int_type: Type = PrimType::new("int32").unwrap().into();
     let missing = Type::missing();
     let lhs = typed_int_expression("int32", 1);
     let rhs = typed_int_expression("int32", 2);
@@ -453,24 +436,6 @@ fn complete_field_allocators_preserve_supplied_inherited_fields() {
         object_pointer(&addition.ty),
         object_pointer(&explicit_add_type)
     );
-
-    let tuple_type: Type = TupleType::new(vec![int_type.clone()]).into();
-    let tuple =
-        RelaxTuple::from_complete_fields(None, tuple_type.clone(), Array::new(vec![lhs.clone()]));
-    assert_eq!(object_pointer(&tuple.ty), object_pointer(&tuple_type));
-
-    let sequence =
-        SeqExpr::from_complete_fields(None, int_type.clone(), Array::new(Vec::new()), lhs.clone());
-    assert_eq!(object_pointer(&sequence.ty), object_pointer(&int_type));
-
-    let conditional = RelaxIf::from_complete_fields(
-        None,
-        int_type.clone(),
-        typed_int_expression("bool", 1),
-        sequence.clone(),
-        sequence,
-    );
-    assert_eq!(object_pointer(&conditional.ty), object_pointer(&int_type));
 }
 
 #[test]
@@ -838,66 +803,6 @@ fn structural_map_reuses_a_uniquely_owned_array_container() {
     );
 }
 
-#[derive(Default)]
-struct DagProbe {
-    calls: usize,
-}
-
-#[dispatch(map)]
-impl DagProbe {
-    fn map_conditional(&mut self, value: RelaxIf) -> Any {
-        self.calls += 1;
-        Any::from(value)
-    }
-}
-
-#[test]
-fn structural_map_memoizes_shared_relax_dag_nodes() {
-    load_tvm_compiler();
-    let shared = RelaxIf::new(
-        typed_int_expression("bool", 1),
-        int_expression(1),
-        int_expression(2),
-    );
-    assert_eq!(shared.cond.clone().try_cast::<IntImm>().unwrap().value, 1);
-    assert_eq!(
-        shared
-            .true_branch
-            .clone()
-            .body
-            .clone()
-            .try_cast::<IntImm>()
-            .unwrap()
-            .value,
-        1
-    );
-    assert_eq!(
-        shared
-            .false_branch
-            .clone()
-            .body
-            .clone()
-            .try_cast::<IntImm>()
-            .unwrap()
-            .value,
-        2
-    );
-    let shared_pointer = object_pointer(&shared);
-    let root = RelaxTuple::new(vec![shared.clone().into(), shared.into()]);
-    let mut mapper = DagProbe::default();
-    let mapped = structural_map(root, &mut mapper, WalkOrder::PostOrder)
-        .and_then(RelaxTuple::try_from)
-        .unwrap();
-
-    let fields = mapped.fields.clone();
-    assert_eq!(mapper.calls, 1);
-    assert_eq!(object_pointer(&fields.get(0).unwrap()), shared_pointer);
-    assert_eq!(
-        object_pointer(&fields.get(0).unwrap()),
-        object_pointer(&fields.get(1).unwrap())
-    );
-}
-
 #[test]
 fn rust_add_zero_pass_matches_cpp_stmt_simplify() {
     load_tvm_compiler();
@@ -1086,94 +991,6 @@ fn neutral_element_map_matches_cpp_stmt_simplify() {
         .unwrap();
     let rust_module = IRModule::from_expr(&rust_function).unwrap();
     assert_structural_equal(&rust_module, &cpp_module);
-}
-
-#[test]
-fn map_renames_relax_definitions_and_preserves_identity_links() {
-    load_tvm_compiler();
-    let int_type: Type = PrimType::new("int32").unwrap().into();
-    let parameter = Var::with_type("x", &int_type);
-    let bound = Var::with_type("result", &int_type);
-    let callee: Expr = GlobalVar::new("callee").into();
-    let call: Expr = Call::new(&int_type, &callee, vec![parameter.clone().into()]).into();
-    let binding = VarBinding::new(&bound, &call);
-    assert!(binding.span.is_none());
-    let block = BindingBlock::new(vec![binding.into()]);
-    assert!(block.span.is_none());
-    let sequence = SeqExpr::new(vec![block], &bound);
-    let sequence_expr: Expr = sequence.clone().into();
-    let function =
-        RelaxFunction::new(vec![parameter.clone()], &sequence_expr, &int_type, true).unwrap();
-    let cpp_params = Array::new(vec![parameter]);
-    let cpp_return_type = Some(int_type.clone());
-    let cpp_function: RelaxFunction = Function::get_global("relax.Function")
-        .unwrap()
-        .call_packed(&[
-            AnyView::from(&cpp_params),
-            AnyView::from(&sequence_expr),
-            AnyView::from(&cpp_return_type),
-            AnyView::from(&true),
-            AnyView::from(&function.attrs),
-            AnyView::from(&()),
-        ])
-        .unwrap()
-        .try_into()
-        .unwrap();
-    assert_structural_equal(&function, &cpp_function);
-
-    let statistics = node_statistics(&function).unwrap();
-    assert_eq!(statistics.relax_functions, 1);
-    assert_eq!(statistics.sequence_expressions, 1);
-    assert_eq!(statistics.binding_blocks, 1);
-    assert_eq!(statistics.bindings, 1);
-    assert_eq!(statistics.calls, 1);
-    assert_eq!(statistics.variable_definitions, 2);
-    assert_eq!(statistics.variable_uses, 2);
-
-    let module = IRModule::from_expr(&function).unwrap();
-    let mapped = transform::rename_bound_variables(function.clone().into(), "_rust")
-        .and_then(|expr| expr.try_cast::<RelaxFunction>())
-        .unwrap();
-    let mapped_parameter = mapped.params.get(0).unwrap();
-    assert_eq!(mapped_parameter.name.as_str(), "x_rust");
-
-    let mapped_sequence = mapped.body.clone();
-    let mapped_binding = mapped_sequence
-        .blocks
-        .get(0)
-        .unwrap()
-        .bindings
-        .get(0)
-        .unwrap()
-        .try_cast::<VarBinding>()
-        .unwrap();
-    let mapped_bound = mapped_binding.var.clone();
-    assert_eq!(mapped_bound.name.as_str(), "result_rust");
-
-    let mapped_call = mapped_binding.value.clone().try_cast::<Call>().unwrap();
-    let mapped_argument = mapped_call.args.get(0).unwrap();
-    assert_eq!(
-        object_pointer(&mapped_argument),
-        object_pointer(&mapped_parameter)
-    );
-    assert_eq!(
-        object_pointer(&mapped_sequence.body),
-        object_pointer(&mapped_bound)
-    );
-
-    let pass_result = transform::rename_bound_variables_pass("_pass")
-        .unwrap()
-        .run(module)
-        .unwrap();
-    let pass_function = pass_result
-        .functions
-        .iter()
-        .next()
-        .unwrap()
-        .1
-        .try_cast::<RelaxFunction>()
-        .unwrap();
-    assert_eq!(pass_function.params.get(0).unwrap().name.as_str(), "x_pass");
 }
 
 #[test]

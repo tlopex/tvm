@@ -1007,8 +1007,8 @@ impl PrimFunc {
 
     /// Construct a PrimFunc allocation entirely in Rust from its complete state.
     ///
-    /// `function_type` is the derived Relax-facing function type stored in the
-    /// inherited `ExprObj::ty` field. Supplying it explicitly keeps this raw
+    /// `function_type` is the native function type stored in the inherited
+    /// `ExprObj::ty` field. Supplying it explicitly keeps this raw
     /// constructor lossless; [`PrimFunc::new`] derives it before allocation.
     #[allow(clippy::too_many_arguments)]
     pub fn from_complete_fields(
@@ -1046,10 +1046,10 @@ fn derive_prim_func_types(
             for dimension in buffer.shape.iter() {
                 shape.push(cast_index_to_i64(dimension.into())?);
             }
-            let shape = crate::relax::make_shape_expr(Array::new(shape))?;
-            crate::relax::make_tensor_type(shape, buffer.dtype.clone())?
+            let shape = make_native_shape_expr(Array::new(shape))?;
+            make_native_tensor_type(shape, buffer.dtype.clone())?
         } else if parameter.ty.clone().try_cast::<PointerType>().is_ok() {
-            crate::relax::make_any_type()?
+            make_native_any_type()?
         } else {
             parameter.ty.clone()
         };
@@ -1065,7 +1065,7 @@ fn derive_prim_func_types(
     {
         TupleType::empty().into()
     } else {
-        crate::relax::make_any_type()?
+        make_native_any_type()?
     };
 
     let provisional = PrimFunc::from_complete_fields(
@@ -1080,8 +1080,35 @@ fn derive_prim_func_types(
         .call_tuple((&provisional, false))?
         .try_into()?;
     let function_type =
-        crate::relax::make_func_type(Array::new(parameter_types), relax_return_type, purity)?;
+        make_native_func_type(Array::new(parameter_types), relax_return_type, purity)?;
     Ok((ret_type, function_type))
+}
+
+// TVM stores a Relax FuncType in PrimFuncNode::ty even when no Relax IR
+// bindings are exposed.  Keep that native implementation detail behind
+// generic Type/Expr handles so the public Rust surface can remain TIR-only.
+fn make_native_func_type(params: Array<Type>, ret: Type, purity: bool) -> Result<Type> {
+    tvm_ffi::cached_global_func!("relax.FuncType")
+        .call_tuple((params, ret, purity, Option::<Span>::None))?
+        .try_into()
+}
+
+fn make_native_any_type() -> Result<Type> {
+    tvm_ffi::cached_global_func!("relax.AnyType")
+        .call_tuple((Option::<Span>::None,))?
+        .try_into()
+}
+
+fn make_native_shape_expr(values: Array<Expr>) -> Result<Expr> {
+    tvm_ffi::cached_global_func!("relax.ShapeExpr")
+        .call_tuple((values, Option::<Span>::None))?
+        .try_into()
+}
+
+fn make_native_tensor_type(shape: Expr, dtype: PrimType) -> Result<Type> {
+    tvm_ffi::cached_global_func!("relax.TensorType")
+        .call_tuple((Some(shape), Some(dtype), -1_i32, (), Option::<Span>::None))?
+        .try_into()
 }
 
 fn cast_index_to_i64(value: Expr) -> Result<Expr> {

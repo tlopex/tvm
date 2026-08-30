@@ -70,15 +70,13 @@ stubgen milestone so it can answer additional pass-authoring questions:
   spans, functions, and modules.
 - TIR includes arithmetic, statements, conditionals, loops, buffers,
   load/store accesses, scheduling blocks, block realizations, and PrimFuncs.
-- Relax includes tuples, conditionals, variable bindings, binding blocks,
-  sequence expressions, and functions.
 
 The main stubgen acceptance path uses the two framework-controlled APIs:
 
 - `structural_walk` collects typed node, definition/use, and concrete buffer
   access statistics.
-- `structural_map` simplifies arithmetic and alpha-renames Relax definitions
-  while TVM maintains identity remaps for their uses.
+- `structural_map` simplifies arithmetic while TVM preserves definition/use
+  identity remaps.
 
 The larger evidence suite also uses the callback-controlled APIs where their
 different recursion semantics matter:
@@ -88,8 +86,8 @@ different recursion semantics matter:
 - `structural_mutate` limits neutral-arithmetic simplification to loop bodies
   by manually controlling recursion through loop fields.
 
-The crate also adapts Rust closures into TVM PrimFunc, Relax FunctionPass, and
-module passes. `SkipAssert`, arithmetic and analyzer-backed control-flow
+The crate also adapts Rust closures into TVM PrimFunc and module passes.
+`SkipAssert`, arithmetic and analyzer-backed control-flow
 simplification, and buffer-index-aware unit-loop elimination are compared with
 the corresponding C++ passes using structural equality. Arithmetic passes
 reuse an opaque handle to TVM's existing `arith.Analyzer` instead of copying
@@ -98,8 +96,8 @@ effects with `structural_walk` and reuses the existing `ir.OpGetAttr` registry
 lookup for each operator's `TCallEffectKind`. A two-phase module pass builds a
 call graph with `structural_walk`,
 treats `global_symbol` functions as external roots, and then prunes unreachable
-functions. Additional tests check definition/use identity, DAG memoization,
-ownership, annotations, and scope-sensitive recursion.
+functions. Additional tests check definition/use identity, ownership,
+annotations, and scope-sensitive recursion.
 
 The focused acceptance tests are in
 [`tests/stubgen_acceptance.rs`](tests/stubgen_acceptance.rs).  They use only

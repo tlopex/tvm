@@ -239,18 +239,18 @@ existing TVM operation:
 
 | Class | Examples | Generated behavior |
 | --- | --- | --- |
-| Plain data node | `Span`, `Range`, `Var`, `IntImm`, `Add`, `Evaluate`, `VarBinding`, `SBlock` | complete layout and direct Rust allocation |
+| Plain data node | `Span`, `Range`, `Var`, `IntImm`, `Add`, `Evaluate`, `SBlock` | complete layout and direct Rust allocation |
 | Plain node with local validation | integer literals, binary ops, `SeqStmt`, `SBlockRealize` | direct allocation plus equivalent Rust validation |
 | Native registry identity | `Axis` | emit an opaque wrapper and call the existing `tirx.AxisGet` singleton lookup |
 | Native interned identity | `SourceName` | emit an opaque wrapper and call the existing `ir.SourceName` lookup |
 | C++ polymorphic hierarchy | `Layout`, `PrimExprConvertible`, `IterVar`, `BufferRegion` | preserve the virtual ABI, emit opaque Rust wrappers, and allocate concrete objects through existing native constructors |
 | Native STL storage | `Source` | keep the node opaque and construct it through the existing `SourceMapAdd` operation |
-| Complex semantic constructor | `PrimFunc`, Relax `Function`, match buffer | use reviewed handwritten Rust analysis/validation, then allocate complete fields in Rust |
+| Complex semantic constructor | `PrimFunc`, match buffer | use reviewed handwritten Rust analysis/validation, then allocate complete fields in Rust |
 | Build-dependent defaults | `BufferType` | use reviewed handwritten Rust defaults and validation, then allocate in Rust |
 | Derived mutable state | `IRModule` | rebuild and validate derived indexes in generated Rust code |
 
-`PrimType`, `TupleType`, `For`, `BufferType`, buffer load/store, Relax `Tuple`,
-and `IRModule` demonstrate that many former exceptions can be Rust-native once
+`PrimType`, `TupleType`, `For`, `BufferType`, buffer load/store, and `IRModule`
+demonstrate that many former exceptions can be Rust-native once
 their semantics are made explicit. `Type::Missing` deliberately remains the
 native singleton.
 
@@ -368,12 +368,12 @@ Rust-allocated IR node. Control-flow removal can now recognize values
 simplified by that analyzer. The Rust side-effect classifier walks the bound IR
 and queries the existing `ir.OpGetAttr` service for each operator's
 `TCallEffectKind`, allowing Rust to discard pure evaluations while preserving
-opaque or state-updating calls. Function reachability can combine a
-walk-built call graph, `global_symbol` linkage roots, and an `IRModule` rebuild,
-but full dead-code elimination additionally needs exact callee semantics and
-Relax binding-effect analysis. These are reusable compiler services, not facts
-stubgen can derive from object layout or structural metadata. Stubgen should
-generate typed wrappers only after such a service has a language-neutral entry.
+opaque or state-updating calls. Function reachability can combine a walk-built
+call graph, `global_symbol` linkage roots, and an `IRModule` rebuild, but full
+dead-code elimination still needs exact callee and effect semantics. These are
+reusable compiler services, not facts stubgen can derive from object layout or
+structural metadata. Stubgen should generate typed wrappers only after such a
+service has a language-neutral entry.
 
 The example Rust passes remain prototype evidence. Stubgen should generate the
 IR surface they consume, not generate those transformations.

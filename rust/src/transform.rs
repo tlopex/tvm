@@ -21,14 +21,12 @@ use tvm_ffi::derive::{Object, ObjectRef};
 use tvm_ffi::{Any, Array, Function, ObjectArc, RValueRef, Result, String};
 
 use crate::ir::IRModule;
-use crate::relax::RelaxFunction;
 use crate::tirx::PrimFunc;
 
 mod eliminate_unit_loops;
 mod fold_integer_constants;
 mod increment_int_immediates;
 mod prune_unreachable_functions;
-mod rename_bound_variables;
 mod simplify_add_zero;
 mod simplify_known_control_flow;
 mod simplify_neutral_elements;
@@ -43,9 +41,6 @@ pub use increment_int_immediates::increment_int_immediates;
 pub use prune_unreachable_functions::{
     prune_unreachable_functions, prune_unreachable_functions_from_main,
     prune_unreachable_functions_pass,
-};
-pub use rename_bound_variables::{
-    rename_bound_variables, rename_bound_variables_function, rename_bound_variables_pass,
 };
 pub use simplify_add_zero::{
     simplify_add_zero, simplify_add_zero_expr, simplify_add_zero_module,
@@ -142,29 +137,6 @@ where
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
     tvm_ffi::cached_global_func!("tirx.transform.CreatePrimFuncPass")
-        .call_tuple((pass_func, pass_info))?
-        .try_into()
-}
-
-/// Construct a TVM Relax FunctionPass backed by a Rust callback.
-pub fn create_relax_function_pass<F>(
-    name: &str,
-    opt_level: i64,
-    required: Vec<&str>,
-    traceable: bool,
-    pass_func: F,
-) -> Result<Pass>
-where
-    F: Fn(RelaxFunction, IRModule, PassContext) -> Result<RelaxFunction> + 'static,
-{
-    let pass_func = Function::from_typed(
-        move |function: RValueRef<RelaxFunction>, module: IRModule, context: PassContext| {
-            pass_func(function.into_inner(), module, context)
-        },
-    );
-    let pass_info = create_pass_info(name, opt_level, required, traceable)?;
-
-    tvm_ffi::cached_global_func!("relax.transform.MakeFunctionPass")
         .call_tuple((pass_func, pass_info))?
         .try_into()
 }

@@ -30,7 +30,6 @@
 #[doc(hidden)]
 pub mod analysis;
 pub mod ir;
-pub mod relax;
 pub mod tirx;
 pub mod transform;
 

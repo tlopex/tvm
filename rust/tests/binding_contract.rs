@@ -27,11 +27,6 @@ use tvm::ir::{
     SourceMapObj, SourceName, SourceNameObj, SourceObj, Span, SpanObj, TupleType, TupleTypeObj,
     Type, TypeObj, Var, VarObj,
 };
-use tvm::relax::{
-    Binding, BindingBlock, BindingBlockObj, BindingObj, If as RelaxIf, IfObj as RelaxIfObj,
-    RelaxFunction, RelaxFunctionObj, SeqExpr, SeqExprObj, Tuple as RelaxTuple, TupleObj,
-    VarBinding, VarBindingObj,
-};
 use tvm::tirx::{
     Add, AddObj, AssertStmt, AssertStmtObj, Axis, AxisObj, BufferLoad, BufferLoadObj, BufferRegion,
     BufferRegionObj, BufferStore, BufferStoreObj, BufferType, BufferTypeObj, BufferVar, Evaluate,
@@ -52,9 +47,6 @@ const DEF_RECURSIVE: i64 =
     TVMFFIFieldFlagBitMask::kTVMFFIFieldFlagBitMaskSEqHashDefRecursive as i64;
 
 const SCHEMA_ANY_MAP: &str = r#"{"type":"ffi.Map","args":[{"type":"ffi.String"},{"type":"Any"}]}"#;
-const SCHEMA_ARRAY_BINDING: &str = r#"{"type":"ffi.Array","args":[{"type":"relax.expr.Binding"}]}"#;
-const SCHEMA_ARRAY_BINDING_BLOCK: &str =
-    r#"{"type":"ffi.Array","args":[{"type":"relax.expr.BindingBlock"}]}"#;
 const SCHEMA_ARRAY_BUFFER_REGION: &str =
     r#"{"type":"ffi.Array","args":[{"type":"tirx.BufferRegion"}]}"#;
 const SCHEMA_ARRAY_EXPR: &str = r#"{"type":"ffi.Array","args":[{"type":"ir.Expr"}]}"#;
@@ -70,7 +62,6 @@ const SCHEMA_ARRAY_TYPE: &str = r#"{"type":"ffi.Array","args":[{"type":"ir.Type"
 const SCHEMA_ARRAY_VAR: &str = r#"{"type":"ffi.Array","args":[{"type":"ir.Var"}]}"#;
 const SCHEMA_ATTRS: &str = r#"{"type":"ir.Attrs"}"#;
 const SCHEMA_AXIS: &str = r#"{"type":"tirx.Axis"}"#;
-const SCHEMA_BOOL: &str = r#"{"type":"bool"}"#;
 const SCHEMA_BUFFER_REGION: &str = r#"{"type":"tirx.BufferRegion"}"#;
 const SCHEMA_DICT_ATTRS: &str = r#"{"type":"ir.DictAttrs"}"#;
 const SCHEMA_DTYPE: &str = r#"{"type":"DataType"}"#;
@@ -91,7 +82,6 @@ const SCHEMA_OPTIONAL_STMT: &str = r#"{"type":"Optional","args":[{"type":"tirx.S
 const SCHEMA_PRIM_TYPE: &str = r#"{"type":"ir.PrimType"}"#;
 const SCHEMA_RANGE: &str = r#"{"type":"ir.Range"}"#;
 const SCHEMA_SBLOCK: &str = r#"{"type":"tirx.SBlock"}"#;
-const SCHEMA_SEQ_EXPR: &str = r#"{"type":"relax.expr.SeqExpr"}"#;
 const SCHEMA_SOURCE_MAP: &str = r#"{"type":"ir.SourceMap"}"#;
 const SCHEMA_SOURCE_NAME: &str = r#"{"type":"ir.SourceName"}"#;
 const SCHEMA_SPAN: &str = r#"{"type":"ir.Span"}"#;
@@ -218,8 +208,8 @@ fn assert_contract<N: ObjectCore, P: ObjectCore>(
 fn all_handwritten_objects_match_runtime_metadata() {
     load_tvm_compiler();
     use TVMFFISEqHashKind::{
-        kTVMFFISEqHashKindDAGNode as Dag, kTVMFFISEqHashKindFreeVar as FreeVar,
-        kTVMFFISEqHashKindTreeNode as Tree, kTVMFFISEqHashKindUnsupported as Unsupported,
+        kTVMFFISEqHashKindFreeVar as FreeVar, kTVMFFISEqHashKindTreeNode as Tree,
+        kTVMFFISEqHashKindUnsupported as Unsupported,
     };
 
     assert_contract::<ExprObj, Object>(
@@ -473,52 +463,6 @@ fn all_handwritten_objects_match_runtime_metadata() {
             ("block", 0, SCHEMA_SBLOCK),
         ],
     );
-
-    assert_contract::<TupleObj, ExprObj>(true, Some(Tree), &[("fields", 0, SCHEMA_ARRAY_EXPR)]);
-    assert_contract::<RelaxIfObj, ExprObj>(
-        true,
-        Some(Dag),
-        &[
-            ("cond", 0, SCHEMA_EXPR),
-            ("true_branch", 0, SCHEMA_SEQ_EXPR),
-            ("false_branch", 0, SCHEMA_SEQ_EXPR),
-        ],
-    );
-    assert_contract::<BindingObj, Object>(
-        false,
-        Some(Tree),
-        &[
-            ("span", IGNORE, SCHEMA_SPAN),
-            ("var", DEF_RECURSIVE, SCHEMA_VAR),
-        ],
-    );
-    assert_contract::<VarBindingObj, BindingObj>(true, Some(Tree), &[("value", 0, SCHEMA_EXPR)]);
-    assert_contract::<BindingBlockObj, Object>(
-        false,
-        Some(Tree),
-        &[
-            ("bindings", 0, SCHEMA_ARRAY_BINDING),
-            ("span", DEFAULT | IGNORE, SCHEMA_SPAN),
-        ],
-    );
-    assert_contract::<SeqExprObj, ExprObj>(
-        true,
-        Some(Tree),
-        &[
-            ("blocks", 0, SCHEMA_ARRAY_BINDING_BLOCK),
-            ("body", 0, SCHEMA_EXPR),
-        ],
-    );
-    assert_contract::<RelaxFunctionObj, BaseFuncObj>(
-        true,
-        Some(Dag),
-        &[
-            ("params", DEF_RECURSIVE, SCHEMA_ARRAY_VAR),
-            ("body", 0, SCHEMA_SEQ_EXPR),
-            ("ret_ty", 0, SCHEMA_TYPE),
-            ("is_pure", 0, SCHEMA_BOOL),
-        ],
-    );
 }
 
 macro_rules! assert_complete_allocator {
@@ -572,13 +516,6 @@ fn complete_field_allocators_follow_owned_native_field_order() {
     assert_complete_allocator!(MatchBufferRegion::from_complete_fields: fn(BufferVar, BufferRegion) -> MatchBufferRegion);
     assert_complete_allocator!(SBlock::from_complete_fields: fn(Option<Span>, Array<IterVar>, Array<BufferRegion>, Array<BufferRegion>, String, Array<BufferVar>, Array<MatchBufferRegion>, Map<String, Any>, Option<Stmt>, Stmt) -> SBlock);
     assert_complete_allocator!(SBlockRealize::from_complete_fields: fn(Option<Span>, Array<PrimExpr>, PrimExpr, SBlock) -> SBlockRealize);
-
-    assert_complete_allocator!(RelaxTuple::from_complete_fields: fn(Option<Span>, Type, Array<Expr>) -> RelaxTuple);
-    assert_complete_allocator!(RelaxIf::from_complete_fields: fn(Option<Span>, Type, Expr, SeqExpr, SeqExpr) -> RelaxIf);
-    assert_complete_allocator!(VarBinding::from_complete_fields: fn(Option<Span>, Var, Expr) -> VarBinding);
-    assert_complete_allocator!(BindingBlock::from_complete_fields: fn(Array<Binding>, Option<Span>) -> BindingBlock);
-    assert_complete_allocator!(SeqExpr::from_complete_fields: fn(Option<Span>, Type, Array<BindingBlock>, Expr) -> SeqExpr);
-    assert_complete_allocator!(RelaxFunction::from_complete_fields: fn(Option<Span>, Type, DictAttrs, Array<Var>, SeqExpr, Type, bool) -> RelaxFunction);
 }
 
 #[test]
@@ -589,8 +526,8 @@ fn typed_expression_views_check_types_and_preserve_identity() {
     let primitive = PrimExpr::try_from(&integer).unwrap();
     assert!(primitive.same_as(&integer));
 
-    let tuple: Expr = RelaxTuple::new(Vec::new()).into();
-    assert!(PrimExpr::try_from(&tuple).is_err());
+    let tuple_typed: Expr = Var::with_type("tuple", TupleType::empty()).into();
+    assert!(PrimExpr::try_from(&tuple_typed).is_err());
 
     let scalar_var = Var::new("i", "int32").unwrap();
     let primitive_var = PrimVar::try_from(&scalar_var).unwrap();
