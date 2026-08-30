@@ -22,7 +22,7 @@ use tvm::analysis::{
     node_statistics, side_effect, CallEffectKind, ExprTraceEvent,
 };
 use tvm::ir::{
-    Call, DictAttrs, DummyGlobalInfo, Expr, GlobalVar, IRModule, IntImm, PrimExpr,
+    Call, DictAttrs, DummyGlobalInfo, Expr, GlobalVar, IRModule, IntImm, OpaqueExpr, PrimExpr,
     PrimExprConvertible, PrimType, Range, SourceMap, SourceName, Span, TupleType, Type, Var,
 };
 use tvm::relax::{
@@ -30,9 +30,9 @@ use tvm::relax::{
 };
 use tvm::tirx::{
     Add, AddObj, AssertStmt, AssertStmtObj, Axis, BufferLoad, BufferRegion, BufferStore,
-    BufferType, DataProducer, Evaluate, EvaluateObj, For as TirFor, IfThenElse, Iter, IterVar,
-    IterVarType, Layout, MatchBufferRegion, Mul, PrimFunc, SBlock, SBlockRealize, SeqStmt, Stmt,
-    Sub, TileLayout,
+    BufferType, Evaluate, EvaluateObj, For as TirFor, IfThenElse, Iter, IterVar, IterVarType,
+    Layout, MatchBufferRegion, Mul, PrimFunc, SBlock, SBlockRealize, SeqStmt, Stmt, Sub,
+    TileLayout,
 };
 use tvm::transform;
 use tvm::tvm_ffi::{
@@ -1245,12 +1245,10 @@ fn mutate_can_limit_a_rewrite_to_loop_bodies() {
 fn buffer_and_block_bindings_round_trip_cpp_objects() {
     load_tvm_compiler();
 
-    // A C++-created Tensor is consumed through the Rust DataProducer base.
-    // This exercises every entry in the language-neutral data-producer table,
-    // plus Tensor's PrimExpr-conversion entry, without binding Tensor's
-    // concrete storage layout in this acceptance slice.
+    // A C++-created Tensor is consumed through its OpaqueExpr base, then used
+    // as the callee of TVM's standard tensor-load operation.
     let tensor_dtype = PrimType::new("float32").unwrap();
-    let tensor: DataProducer = Function::get_global("te.Placeholder")
+    let tensor: OpaqueExpr = Function::get_global("te.Placeholder")
         .unwrap()
         .call_packed(&[
             AnyView::from(&Array::<Expr>::new(Vec::new())),
@@ -1260,7 +1258,12 @@ fn buffer_and_block_bindings_round_trip_cpp_objects() {
         .unwrap()
         .try_into()
         .unwrap();
-    let tensor_expr = PrimExprConvertible::from(tensor).to_prim_expr().unwrap();
+    let tensor_expr: PrimExpr = Function::get_global("te.TensorLoad")
+        .unwrap()
+        .call_tuple((&tensor, Array::<PrimExpr>::new(Vec::new())))
+        .unwrap()
+        .try_into()
+        .unwrap();
     assert_eq!(
         tensor_expr.ty.clone().try_cast::<PrimType>().unwrap().dtype,
         tensor_dtype.dtype

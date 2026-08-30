@@ -36,8 +36,8 @@ pub use block::{
 };
 pub use buffer::{
     Axis, AxisObj, BufferLoad, BufferLoadObj, BufferRegion, BufferRegionObj, BufferStore,
-    BufferStoreObj, BufferType, BufferTypeObj, BufferVar, DataProducer, DataProducerObj, Iter,
-    IterObj, Layout, LayoutObj, MatchBufferRegion, MatchBufferRegionObj, TileLayout, TileLayoutObj,
+    BufferStoreObj, BufferType, BufferTypeObj, BufferVar, Iter, IterObj, Layout, LayoutObj,
+    MatchBufferRegion, MatchBufferRegionObj, TileLayout, TileLayoutObj,
 };
 
 /// Checked scalar view over a `Var` whose expression type is `PrimType`.

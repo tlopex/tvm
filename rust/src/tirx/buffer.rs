@@ -30,36 +30,6 @@ use crate::ir::{
     Span, Type, TypeObj, TypedVar, Var,
 };
 
-/// Opaque prefix for native objects that expose tensor-like producer behavior.
-#[repr(C)]
-#[derive(Object)]
-#[type_key = "tirx.DataProducer"]
-pub struct DataProducerObj {
-    base: PrimExprConvertibleObj,
-}
-/// Reference-counted handle to any concrete data producer.
-#[repr(C)]
-#[derive(ObjectRef, Clone)]
-pub struct DataProducer {
-    data: ObjectArc<DataProducerObj>,
-}
-
-impl std::ops::Deref for DataProducer {
-    type Target = DataProducerObj;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
-}
-
-impl std::ops::Deref for DataProducerObj {
-    type Target = PrimExprConvertibleObj;
-
-    fn deref(&self) -> &Self::Target {
-        &self.base
-    }
-}
-
 /// Opaque Rust representation of TVM's polymorphic layout base class.
 #[repr(C)]
 #[derive(Object)]
@@ -1184,7 +1154,6 @@ fn validate_match_buffer_region(buffer: &Var, source: &BufferRegion) -> Result<(
 }
 
 tvm_ffi::impl_object_upcast!(
-    DataProducer => PrimExprConvertible,
     TileLayout => Layout,
     BufferType => Type,
     BufferLoad => Expr,

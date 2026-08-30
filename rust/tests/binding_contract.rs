@@ -22,9 +22,10 @@
 use tvm::ir::{
     Attrs, AttrsObj, BaseFunc, BaseFuncObj, Call, CallObj, DictAttrs, DictAttrsObj,
     DummyGlobalInfo, DummyGlobalInfoObj, Expr, ExprObj, GlobalInfo, GlobalInfoObj, GlobalVar,
-    GlobalVarObj, IRModule, IRModuleObj, IntImm, IntImmObj, PrimExpr, PrimExprConvertibleObj,
-    PrimType, PrimTypeObj, Range, RangeObj, Source, SourceMap, SourceMapObj, SourceName,
-    SourceNameObj, SourceObj, Span, SpanObj, TupleType, TupleTypeObj, Type, TypeObj, Var, VarObj,
+    GlobalVarObj, IRModule, IRModuleObj, IntImm, IntImmObj, OpaqueExprObj, OpaqueTypeObj, PrimExpr,
+    PrimExprConvertibleObj, PrimType, PrimTypeObj, Range, RangeObj, Source, SourceMap,
+    SourceMapObj, SourceName, SourceNameObj, SourceObj, Span, SpanObj, TupleType, TupleTypeObj,
+    Type, TypeObj, Var, VarObj,
 };
 use tvm::relax::{
     Binding, BindingBlock, BindingBlockObj, BindingObj, If as RelaxIf, IfObj as RelaxIfObj,
@@ -33,12 +34,11 @@ use tvm::relax::{
 };
 use tvm::tirx::{
     Add, AddObj, AssertStmt, AssertStmtObj, Axis, AxisObj, BufferLoad, BufferLoadObj, BufferRegion,
-    BufferRegionObj, BufferStore, BufferStoreObj, BufferType, BufferTypeObj, BufferVar,
-    DataProducerObj, Evaluate, EvaluateObj, For, ForKind, ForObj, IfThenElse, IfThenElseObj, Iter,
-    IterObj, IterVar, IterVarObj, IterVarType, Layout, LayoutObj, MatchBufferRegion,
-    MatchBufferRegionObj, Mul, MulObj, PrimFunc, PrimFuncObj, PrimVar, SBlock, SBlockObj,
-    SBlockRealize, SBlockRealizeObj, SeqStmt, SeqStmtObj, Stmt, StmtObj, StringImm, StringImmObj,
-    Sub, SubObj, TileLayoutObj,
+    BufferRegionObj, BufferStore, BufferStoreObj, BufferType, BufferTypeObj, BufferVar, Evaluate,
+    EvaluateObj, For, ForKind, ForObj, IfThenElse, IfThenElseObj, Iter, IterObj, IterVar,
+    IterVarObj, IterVarType, Layout, LayoutObj, MatchBufferRegion, MatchBufferRegionObj, Mul,
+    MulObj, PrimFunc, PrimFuncObj, PrimVar, SBlock, SBlockObj, SBlockRealize, SBlockRealizeObj,
+    SeqStmt, SeqStmtObj, Stmt, StmtObj, StringImm, StringImmObj, Sub, SubObj, TileLayoutObj,
 };
 use tvm::tvm_ffi::tvm_ffi_sys::{TVMFFIFieldFlagBitMask, TVMFFISEqHashKind};
 use tvm::tvm_ffi::{Any, Array, DLDataType, Map, Object, ObjectCore, ObjectRefCore, String};
@@ -230,6 +230,7 @@ fn all_handwritten_objects_match_runtime_metadata() {
             ("ty", DEFAULT, SCHEMA_TYPE),
         ],
     );
+    assert_contract::<OpaqueExprObj, ExprObj>(false, Some(Tree), &[]);
     assert_contract::<BaseFuncObj, ExprObj>(false, Some(Tree), &[("attrs", 0, SCHEMA_DICT_ATTRS)]);
     assert_contract::<GlobalVarObj, ExprObj>(
         true,
@@ -263,7 +264,6 @@ fn all_handwritten_objects_match_runtime_metadata() {
         ],
     );
     assert_contract::<PrimExprConvertibleObj, Object>(false, None, &[]);
-    assert_contract::<DataProducerObj, PrimExprConvertibleObj>(false, None, &[]);
     assert_contract::<RangeObj, Object>(
         true,
         Some(Tree),
@@ -288,6 +288,7 @@ fn all_handwritten_objects_match_runtime_metadata() {
         Some(Tree),
         &[("span", DEFAULT | IGNORE, SCHEMA_SPAN)],
     );
+    assert_contract::<OpaqueTypeObj, TypeObj>(true, Some(Tree), &[]);
     assert_contract::<PrimTypeObj, TypeObj>(true, Some(Tree), &[("dtype", 0, SCHEMA_DTYPE)]);
     assert_contract::<TupleTypeObj, TypeObj>(true, Some(Tree), &[("fields", 0, SCHEMA_ARRAY_TYPE)]);
     assert_contract::<IntImmObj, ExprObj>(true, Some(Tree), &[("value", 0, SCHEMA_INT)]);

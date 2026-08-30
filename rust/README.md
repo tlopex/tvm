@@ -36,8 +36,8 @@ because the object header, field layout, reference counting, and deleter all
 follow the shared TVM FFI ABI. Complete-field Rust allocation is separate from
 a convenience `new()`: the latter additionally needs validation, defaults,
 normalization, and derived-field logic. A packed C++ constructor is
-not considered a final stubgen implementation. Polymorphic `Layout`,
-`PrimExprConvertible`, and `DataProducer` objects remain opaque, preserving
+not considered a final stubgen implementation. Polymorphic `Layout` and
+`PrimExprConvertible` objects remain opaque, preserving
 their native virtual ABI; registry-owned `Axis`, interned `SourceName`, the
 STL-backed `Source`, and the `Type::Missing` singleton likewise reuse their
 existing native operations. Reflected fields and existing registered functions provide Rust

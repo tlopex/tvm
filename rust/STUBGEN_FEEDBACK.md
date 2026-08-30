@@ -243,7 +243,7 @@ existing TVM operation:
 | Plain node with local validation | integer literals, binary ops, `SeqStmt`, `SBlockRealize` | direct allocation plus equivalent Rust validation |
 | Native registry identity | `Axis` | emit an opaque wrapper and call the existing `tirx.AxisGet` singleton lookup |
 | Native interned identity | `SourceName` | emit an opaque wrapper and call the existing `ir.SourceName` lookup |
-| C++ polymorphic hierarchy | `Layout`, `PrimExprConvertible`, `DataProducer`, `IterVar`, `BufferRegion` | preserve the virtual ABI, emit opaque Rust wrappers, and allocate concrete objects through existing native constructors |
+| C++ polymorphic hierarchy | `Layout`, `PrimExprConvertible`, `IterVar`, `BufferRegion` | preserve the virtual ABI, emit opaque Rust wrappers, and allocate concrete objects through existing native constructors |
 | Native STL storage | `Source` | keep the node opaque and construct it through the existing `SourceMapAdd` operation |
 | Complex semantic constructor | `PrimFunc`, Relax `Function`, match buffer | use reviewed handwritten Rust analysis/validation, then allocate complete fields in Rust |
 | Build-dependent defaults | `BufferType` | use reviewed handwritten Rust defaults and validation, then allocate in Rust |

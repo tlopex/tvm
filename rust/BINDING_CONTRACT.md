@@ -140,7 +140,7 @@ Broader pass behavior is in
 | Complete layout, build-dependent defaults | `BufferType` | **handwritten Rust semantics + Rust allocation / verified** |
 | Native registry identity | `Axis` | **opaque wrapper + existing `tirx.AxisGet` singleton lookup / verified** |
 | Native interned identity | `SourceName` | **opaque wrapper + existing `ir.SourceName` lookup / verified** |
-| Native polymorphic behavior | `Layout`, `PrimExprConvertible`, `DataProducer`, `IterVar`, `BufferRegion` | **opaque wrapper + native allocation + reflected Rust access / verified** |
+| Native polymorphic behavior | `Layout`, `PrimExprConvertible`, `IterVar`, `BufferRegion` | **opaque wrapper + native allocation + reflected Rust access / verified** |
 | Native STL storage | `Source` | **opaque wrapper + existing `SourceMapAdd` construction / verified** |
 | Complex semantic constructor | `BufferType`, `PrimFunc`, Relax `Function`, match buffer | **handwritten Rust semantics + complete-field Rust allocation / verified** |
 | Derived mutable indexes | `IRModule` construction/update | **GENERATE rebuild logic / verified** |

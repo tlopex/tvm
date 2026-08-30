@@ -49,6 +49,37 @@ impl std::ops::Deref for Expr {
     }
 }
 
+/// ABI-complete Rust representation of TVM's opaque construction-time expression base.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "ir.OpaqueExpr"]
+pub struct OpaqueExprObj {
+    base: ExprObj,
+}
+
+/// Reference-counted handle to an opaque construction-time expression.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct OpaqueExpr {
+    data: ObjectArc<OpaqueExprObj>,
+}
+
+impl std::ops::Deref for OpaqueExpr {
+    type Target = OpaqueExprObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for OpaqueExprObj {
+    type Target = ExprObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
 /// Checked view over an expression whose result type is `T`.
 ///
 /// This mirrors C++ `TypedExpr<T>`: it retains the same `ExprNode` allocation
@@ -916,6 +947,38 @@ impl std::ops::Deref for Type {
     }
 }
 
+/// ABI-complete Rust representation of TVM's opaque construction-time type marker.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "ir.OpaqueType"]
+#[type_final]
+pub struct OpaqueTypeObj {
+    base: TypeObj,
+}
+
+/// Reference-counted handle to TVM's opaque construction-time type marker.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct OpaqueType {
+    data: ObjectArc<OpaqueTypeObj>,
+}
+
+impl std::ops::Deref for OpaqueType {
+    type Target = OpaqueTypeObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for OpaqueTypeObj {
+    type Target = TypeObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
 impl TypeObj {
     pub(crate) fn new(span: Option<Span>) -> Self {
         Self {
@@ -1519,6 +1582,8 @@ tvm_ffi::impl_object_upcast!(
     BaseFunc => Expr,
     IntImm => Expr,
     IntImm => PrimExpr,
+    OpaqueExpr => Expr,
+    OpaqueType => Type,
     PointerType => Type,
     PrimType => Type,
     TupleType => Type,
