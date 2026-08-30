@@ -99,6 +99,11 @@ treats `global_symbol` functions as external roots, and then prunes unreachable
 functions. Additional tests check definition/use identity, ownership,
 annotations, and scope-sensitive recursion.
 
+`AnnotateEntryFunc` and `Filter` are direct Rust translations of the two C++
+passes in `src/tirx/transform/primfunc_utils.cc`. Differential tests exercise
+the same branch decisions and compare the resulting modules with the native
+passes using structural equality.
+
 The focused acceptance tests are in
 [`tests/stubgen_acceptance.rs`](tests/stubgen_acceptance.rs).  They use only
 `Expr`, `Var`, `IntImm`, `Add`, `Evaluate`, and `PrimFunc` plus their base

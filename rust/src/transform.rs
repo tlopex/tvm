@@ -23,9 +23,10 @@ use tvm_ffi::{Any, Array, Function, ObjectArc, RValueRef, Result, String};
 use crate::ir::IRModule;
 use crate::tirx::PrimFunc;
 
+mod annotate_entry_func;
 mod eliminate_unit_loops;
+mod filter;
 mod fold_integer_constants;
-mod increment_int_immediates;
 mod prune_unreachable_functions;
 mod simplify_add_zero;
 mod simplify_known_control_flow;
@@ -33,11 +34,12 @@ mod simplify_neutral_elements;
 mod skip_assert;
 mod utils;
 
+pub use annotate_entry_func::annotate_entry_func;
 pub use eliminate_unit_loops::{eliminate_unit_loops, eliminate_unit_loops_prim_func};
+pub use filter::filter;
 pub use fold_integer_constants::{
     fold_integer_constants, fold_integer_constants_expr, fold_integer_constants_prim_func,
 };
-pub use increment_int_immediates::increment_int_immediates;
 pub use prune_unreachable_functions::{
     prune_unreachable_functions, prune_unreachable_functions_from_main,
     prune_unreachable_functions_pass,
@@ -134,6 +136,32 @@ where
         },
     );
 
+    let pass_info = create_pass_info(name, opt_level, required, traceable)?;
+
+    tvm_ffi::cached_global_func!("tirx.transform.CreatePrimFuncPass")
+        .call_tuple((pass_func, pass_info))?
+        .try_into()
+}
+
+/// Construct a TVM PrimFunc pass whose callback may remove the current function.
+///
+/// A `None` result has the same meaning as a null `PrimFunc` returned by C++:
+/// the native PrimFunc pass removes that function from its module.
+pub(super) fn create_optional_prim_func_pass<F>(
+    name: &str,
+    opt_level: i64,
+    required: Vec<&str>,
+    traceable: bool,
+    pass_func: F,
+) -> Result<Pass>
+where
+    F: Fn(PrimFunc, IRModule, PassContext) -> Result<Option<PrimFunc>> + 'static,
+{
+    let pass_func = Function::from_typed(
+        move |func: RValueRef<PrimFunc>, module: IRModule, context: PassContext| {
+            pass_func(func.into_inner(), module, context)
+        },
+    );
     let pass_info = create_pass_info(name, opt_level, required, traceable)?;
 
     tvm_ffi::cached_global_func!("tirx.transform.CreatePrimFuncPass")

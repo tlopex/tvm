@@ -22,8 +22,8 @@ use tvm::analysis::{
     node_statistics, side_effect, CallEffectKind, ExprTraceEvent,
 };
 use tvm::ir::{
-    Call, DictAttrs, DummyGlobalInfo, Expr, GlobalVar, IRModule, IntImm, OpaqueExpr, PrimExpr,
-    PrimExprConvertible, PrimType, Range, SourceMap, SourceName, Span, Type, Var,
+    BaseFunc, Call, DictAttrs, DummyGlobalInfo, Expr, GlobalVar, IRModule, IntImm, OpaqueExpr,
+    PrimExpr, PrimExprConvertible, PrimType, Range, SourceMap, SourceName, Span, Type, Var,
 };
 use tvm::tirx::{
     Add, AddObj, AssertStmt, AssertStmtObj, Axis, BufferLoad, BufferRegion, BufferStore,
@@ -98,6 +98,62 @@ fn cpp_pass(name: &str) -> transform::Pass {
         .unwrap()
         .try_into()
         .unwrap()
+}
+
+fn has_nonzero_function_attr(function: &BaseFunc, key: &str) -> bool {
+    function
+        .attrs
+        .dict
+        .get(&tvm::tvm_ffi::String::from(key))
+        .unwrap()
+        .map(i64::try_from)
+        .transpose()
+        .unwrap()
+        .unwrap_or(0)
+        != 0
+}
+
+fn module_from_named_prim_funcs(functions: Vec<(&str, PrimFunc)>) -> IRModule {
+    IRModule::with_metadata(
+        functions
+            .into_iter()
+            .map(|(name, function)| (GlobalVar::new(name), BaseFunc::from(function)))
+            .collect(),
+        SourceMap::new(),
+        DictAttrs::empty(),
+        Map::new(),
+    )
+    .unwrap()
+}
+
+fn prim_func_with_global_symbol(value: i64, symbol: Option<&str>) -> PrimFunc {
+    let attrs = symbol
+        .map(|symbol| {
+            DictAttrs::from_dictionary(Map::from_iter([(
+                tvm::tvm_ffi::String::from("global_symbol"),
+                Any::from(tvm::tvm_ffi::String::from(symbol)),
+            )]))
+        })
+        .unwrap_or_else(DictAttrs::empty);
+    PrimFunc::with_metadata(
+        Vec::new(),
+        Evaluate::from_i64(value).unwrap(),
+        Type::missing(),
+        attrs,
+        None,
+    )
+    .unwrap()
+}
+
+fn prim_func_body_integer(function: PrimFunc) -> Result<i64> {
+    Ok(function
+        .body
+        .clone()
+        .try_cast::<Evaluate>()?
+        .value
+        .clone()
+        .try_cast::<IntImm>()?
+        .value)
 }
 
 #[test]
@@ -1455,20 +1511,6 @@ fn integer_constant_folding_matches_cpp_on_fast_and_analyzer_paths() {
 }
 
 #[test]
-fn integer_increment_reports_overflow_without_panicking() {
-    load_tvm_compiler();
-
-    let incremented = transform::increment_int_immediates(typed_int_expression("int64", 41))
-        .unwrap()
-        .try_cast::<IntImm>()
-        .unwrap();
-    assert_eq!(incremented.value, 42);
-
-    let result = transform::increment_int_immediates(typed_int_expression("int64", i64::MAX));
-    assert!(result.is_err());
-}
-
-#[test]
 fn call_effect_kind_preserves_future_native_values() {
     let future_value = CallEffectKind::from_raw(17);
     assert_eq!(future_value.as_raw(), 17);
@@ -1567,6 +1609,124 @@ fn known_control_flow_simplification_matches_cpp_on_analyzed_constants() {
         .unwrap();
     assert_structural_equal(&rust_effects, &cpp_effects);
     assert_eq!(node_statistics(&rust_effects).unwrap().evaluations, 1);
+}
+
+#[test]
+fn annotate_entry_func_matches_cpp_branch_for_branch() {
+    load_tvm_compiler();
+
+    let single =
+        module_from_named_prim_funcs(vec![("only", prim_func_with_global_symbol(1, None))]);
+    let rust_single = transform::annotate_entry_func()
+        .unwrap()
+        .run(single.clone())
+        .unwrap();
+    let cpp_single = cpp_pass("tirx.transform.AnnotateEntryFunc")
+        .run(single)
+        .unwrap();
+    assert_structural_equal(&rust_single, &cpp_single);
+    assert!(has_nonzero_function_attr(
+        &rust_single.functions.iter().next().unwrap().1,
+        "tirx.is_entry_func"
+    ));
+
+    let unique_external = module_from_named_prim_funcs(vec![
+        ("internal", prim_func_with_global_symbol(2, None)),
+        (
+            "exported",
+            prim_func_with_global_symbol(3, Some("exported_symbol")),
+        ),
+    ]);
+    let rust_unique = transform::annotate_entry_func()
+        .unwrap()
+        .run(unique_external.clone())
+        .unwrap();
+    let cpp_unique = cpp_pass("tirx.transform.AnnotateEntryFunc")
+        .run(unique_external)
+        .unwrap();
+    assert_structural_equal(&rust_unique, &cpp_unique);
+    for (global, function) in rust_unique.functions.iter() {
+        assert_eq!(
+            has_nonzero_function_attr(&function, "tirx.is_entry_func"),
+            global.name_hint.as_str() == "exported"
+        );
+    }
+
+    let ambiguous = module_from_named_prim_funcs(vec![
+        (
+            "first",
+            prim_func_with_global_symbol(4, Some("first_symbol")),
+        ),
+        (
+            "second",
+            prim_func_with_global_symbol(5, Some("second_symbol")),
+        ),
+    ]);
+    let rust_ambiguous = transform::annotate_entry_func()
+        .unwrap()
+        .run(ambiguous.clone())
+        .unwrap();
+    let cpp_ambiguous = cpp_pass("tirx.transform.AnnotateEntryFunc")
+        .run(ambiguous)
+        .unwrap();
+    assert_structural_equal(&rust_ambiguous, &cpp_ambiguous);
+    assert!(rust_ambiguous
+        .functions
+        .iter()
+        .all(|(_, function)| !has_nonzero_function_attr(&function, "tirx.is_entry_func")));
+}
+
+#[test]
+fn filter_matches_cpp_and_removes_rejected_prim_funcs() {
+    load_tvm_compiler();
+    let module = module_from_named_prim_funcs(vec![
+        ("one", prim_func_with_global_symbol(1, None)),
+        ("two", prim_func_with_global_symbol(2, None)),
+        ("three", prim_func_with_global_symbol(3, None)),
+    ]);
+
+    let rust_result = transform::filter(|function| Ok(prim_func_body_integer(function)? % 2 == 1))
+        .unwrap()
+        .run(module.clone())
+        .unwrap();
+
+    let cpp_condition = Function::from_typed(|function: PrimFunc| -> Result<bool> {
+        Ok(prim_func_body_integer(function)? % 2 == 1)
+    });
+    let cpp_filter: transform::Pass = Function::get_global("tirx.transform.Filter")
+        .unwrap()
+        .call_tuple((cpp_condition,))
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let cpp_result = cpp_filter.run(module.clone()).unwrap();
+
+    assert_structural_equal(&rust_result, &cpp_result);
+    let mut names = rust_result
+        .functions
+        .iter()
+        .map(|(global, _)| global.name_hint.as_str().to_owned())
+        .collect::<Vec<_>>();
+    names.sort();
+    assert_eq!(names, vec!["one", "three"]);
+
+    // Mirror TVM's native regression case: removing every PrimFunc must also
+    // clear IRModule's derived global-name index.
+    let rust_empty = transform::filter(|_function| Ok(false))
+        .unwrap()
+        .run(module.clone())
+        .unwrap();
+    let cpp_reject_all = Function::from_typed(|_function: PrimFunc| -> Result<bool> { Ok(false) });
+    let cpp_empty_pass: transform::Pass = Function::get_global("tirx.transform.Filter")
+        .unwrap()
+        .call_tuple((cpp_reject_all,))
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let cpp_empty = cpp_empty_pass.run(module).unwrap();
+    assert_structural_equal(&rust_empty, &cpp_empty);
+    assert!(rust_empty.functions.is_empty());
+    assert!(rust_empty.global_var_map.is_empty());
 }
 
 #[test]
