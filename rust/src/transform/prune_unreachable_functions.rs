@@ -23,7 +23,6 @@ use tvm_ffi::{
     structural_walk, Map, Result, String as FfiString, WalkOrder, WalkResult, VALUE_ERROR,
 };
 
-use super::{create_module_pass, Pass};
 use crate::ir::{BaseFunc, GlobalVar, GlobalVarObj, IRModule};
 
 /// Keep functions reachable from explicit entry names or external linkage.
@@ -103,20 +102,6 @@ pub fn prune_unreachable_functions(module: IRModule, entry_names: &[&str]) -> Re
 /// Keep functions reachable from `main` together with all external roots.
 pub fn prune_unreachable_functions_from_main(module: IRModule) -> Result<IRModule> {
     prune_unreachable_functions(module, &["main"])
-}
-
-/// Build conservative function reachability pruning as a normal module pass.
-pub fn prune_unreachable_functions_pass(entry_names: Vec<std::string::String>) -> Result<Pass> {
-    create_module_pass(
-        "transform.RustPruneUnreachableFunctions",
-        0,
-        Vec::new(),
-        false,
-        move |module, _context| {
-            let entries = entry_names.iter().map(String::as_str).collect::<Vec<_>>();
-            prune_unreachable_functions(module, &entries)
-        },
-    )
 }
 
 fn has_external_linkage(function: &BaseFunc) -> Result<bool> {

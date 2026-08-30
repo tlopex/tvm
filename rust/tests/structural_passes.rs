@@ -26,10 +26,10 @@ use tvm::ir::{
     PrimExpr, PrimExprConvertible, PrimType, Range, SourceMap, SourceName, Span, Type, Var,
 };
 use tvm::tirx::{
-    Add, AddObj, AssertStmt, AssertStmtObj, Axis, BufferLoad, BufferRegion, BufferStore,
-    BufferType, Evaluate, EvaluateObj, For as TirFor, IfThenElse, Iter, IterVar, IterVarType,
-    Layout, MatchBufferRegion, Mul, PrimFunc, SBlock, SBlockRealize, SeqStmt, Stmt, Sub,
-    TileLayout,
+    Add, AddObj, And, AssertStmt, AssertStmtObj, AttrStmt, Axis, BufferLoad, BufferRegion,
+    BufferStore, BufferType, Evaluate, EvaluateObj, For as TirFor, IfThenElse, Iter, IterVar,
+    IterVarType, Layout, MatchBufferRegion, Mul, PrimFunc, SBlock, SBlockRealize, SeqStmt, Stmt,
+    Sub, TileLayout, EQ,
 };
 use tvm::transform;
 use tvm::tvm_ffi::{
@@ -817,6 +817,264 @@ fn rust_skip_assert_rebuilds_conditional_branches_like_cpp() {
 }
 
 #[test]
+fn decorate_device_scope_matches_cpp() {
+    load_tvm_compiler();
+    let function = PrimFunc::from_body(Evaluate::from_i64(7).unwrap()).unwrap();
+    let module = IRModule::from_expr(&function).unwrap();
+
+    let rust_result = transform::decorate_device_scope()
+        .unwrap()
+        .run(module.clone())
+        .unwrap();
+    let cpp_result = cpp_pass("s_tir.transform.DecorateDeviceScope")
+        .run(module)
+        .unwrap();
+    assert_structural_equal(&rust_result, &cpp_result);
+
+    let mapped_function = rust_result
+        .functions
+        .iter()
+        .next()
+        .unwrap()
+        .1
+        .try_cast::<PrimFunc>()
+        .unwrap();
+    let attribute = mapped_function.body.clone().try_cast::<AttrStmt>().unwrap();
+    assert_eq!(attribute.attr_key.as_str(), "device_scope");
+    assert_eq!(i64::try_from(attribute.node.clone()).unwrap(), 0);
+    assert_eq!(
+        attribute.value.clone().try_cast::<IntImm>().unwrap().value,
+        0
+    );
+}
+
+#[test]
+fn lower_init_block_matches_cpp() {
+    load_tvm_compiler();
+    let first_axis = Var::new("k", "int64").unwrap();
+    let first_domain = Range::from_min_extent(
+        typed_int_expression("int64", 0),
+        typed_int_expression("int64", 8),
+    )
+    .unwrap();
+    let second_axis = Var::new("l", "int64").unwrap();
+    let second_domain = Range::from_min_extent(
+        typed_int_expression("int64", 2),
+        typed_int_expression("int64", 4),
+    )
+    .unwrap();
+    let reduction_block = SBlock::with_metadata(
+        vec![
+            IterVar::new(
+                &first_domain,
+                &first_axis,
+                IterVarType::CommutativeReduction,
+            )
+            .unwrap(),
+            IterVar::new(
+                &second_domain,
+                &second_axis,
+                IterVarType::CommutativeReduction,
+            )
+            .unwrap(),
+        ],
+        Vec::new(),
+        Vec::new(),
+        "reduction",
+        Evaluate::from_i64(2).unwrap().into(),
+        Some(Evaluate::from_i64(1).unwrap().into()),
+        Vec::new(),
+        Vec::new(),
+        Map::new(),
+        None,
+    );
+    let reduction_realize = SBlockRealize::new(
+        vec![
+            typed_int_expression("int64", 3),
+            typed_int_expression("int64", 4),
+        ],
+        typed_int_expression("bool", 1),
+        reduction_block,
+    )
+    .unwrap();
+
+    let data_axis = Var::new("i", "int64").unwrap();
+    let data_domain = Range::from_min_extent(
+        typed_int_expression("int64", 0),
+        typed_int_expression("int64", 8),
+    )
+    .unwrap();
+    let data_block = SBlock::with_metadata(
+        vec![IterVar::new(&data_domain, &data_axis, IterVarType::DataParallel).unwrap()],
+        Vec::new(),
+        Vec::new(),
+        "data_parallel",
+        Evaluate::from_i64(4).unwrap().into(),
+        Some(Evaluate::from_i64(3).unwrap().into()),
+        Vec::new(),
+        Vec::new(),
+        Map::new(),
+        None,
+    );
+    let data_realize = SBlockRealize::new(
+        vec![typed_int_expression("int64", 5)],
+        typed_int_expression("bool", 1),
+        data_block,
+    )
+    .unwrap();
+    let no_init_realize = SBlockRealize::new(
+        Vec::new(),
+        typed_int_expression("bool", 1),
+        SBlock::new("no_init", Evaluate::from_i64(6).unwrap()),
+    )
+    .unwrap();
+    let module = module_from_named_prim_funcs(vec![
+        (
+            "reduction",
+            PrimFunc::from_body(&reduction_realize).unwrap(),
+        ),
+        ("data_parallel", PrimFunc::from_body(&data_realize).unwrap()),
+        ("no_init", PrimFunc::from_body(&no_init_realize).unwrap()),
+    ]);
+
+    let rust_result = transform::lower_init_block()
+        .unwrap()
+        .run(module.clone())
+        .unwrap();
+    let cpp_result = cpp_pass("s_tir.transform.LowerInitBlock")
+        .run(module)
+        .unwrap();
+    assert_structural_equal(&rust_result, &cpp_result);
+
+    let mapped_function = rust_result
+        .functions
+        .iter()
+        .find(|(global, _)| global.name_hint.as_str() == "reduction")
+        .unwrap()
+        .1
+        .try_cast::<PrimFunc>()
+        .unwrap();
+    let mapped_realize = mapped_function
+        .body
+        .clone()
+        .try_cast::<SBlockRealize>()
+        .unwrap();
+    assert!(mapped_realize.block.init.is_none());
+    let sequence = mapped_realize
+        .block
+        .body
+        .clone()
+        .try_cast::<SeqStmt>()
+        .unwrap();
+    let conditional = sequence
+        .seq
+        .get(0)
+        .unwrap()
+        .try_cast::<IfThenElse>()
+        .unwrap();
+    let condition = conditional.condition.clone().try_cast::<And>().unwrap();
+    assert!(condition.a.clone().try_cast::<EQ>().is_ok());
+    assert!(condition.b.clone().try_cast::<EQ>().is_ok());
+}
+
+#[test]
+fn convert_blocks_to_opaque_matches_cpp() {
+    load_tvm_compiler();
+    let buffer_type =
+        BufferType::new("global", "int32", vec![typed_int_expression("int64", 8)]).unwrap();
+    let buffer = buffer_type.new_var("A");
+    let axis = Var::new("vi", "int64").unwrap();
+    let domain = Range::from_min_extent(
+        typed_int_expression("int64", 0),
+        typed_int_expression("int64", 8),
+    )
+    .unwrap();
+    let iter_var = IterVar::new(&domain, &axis, IterVarType::DataParallel).unwrap();
+    let load = BufferLoad::new(&buffer, vec![axis.clone().into()], None).unwrap();
+    let store = BufferStore::new(&buffer, load, vec![axis.clone().into()], None).unwrap();
+    let region = BufferRegion::new(
+        &buffer,
+        vec![Range::from_min_extent(axis.clone(), typed_int_expression("int64", 1)).unwrap()],
+    )
+    .unwrap();
+    let block = SBlock::with_metadata(
+        vec![iter_var],
+        vec![region.clone()],
+        vec![region],
+        "elementwise",
+        store.into(),
+        None,
+        Vec::new(),
+        Vec::new(),
+        Map::new(),
+        None,
+    );
+    let realize = SBlockRealize::new(
+        vec![typed_int_expression("int64", 4)],
+        typed_int_expression("bool", 1),
+        block,
+    )
+    .unwrap();
+    let function = PrimFunc::new(vec![buffer.into()], &realize).unwrap();
+    let module = IRModule::from_expr(&function).unwrap();
+
+    let rust_result = transform::convert_blocks_to_opaque()
+        .unwrap()
+        .run(module.clone())
+        .unwrap();
+    let cpp_result = cpp_pass("s_tir.transform.ConvertBlocksToOpaque")
+        .run(module)
+        .unwrap();
+    assert_structural_equal(&rust_result, &cpp_result);
+
+    let mapped_function = rust_result
+        .functions
+        .iter()
+        .next()
+        .unwrap()
+        .1
+        .try_cast::<PrimFunc>()
+        .unwrap();
+    let mapped_realize = mapped_function
+        .body
+        .clone()
+        .try_cast::<SBlockRealize>()
+        .unwrap();
+    assert!(mapped_realize.iter_values.is_empty());
+    assert!(mapped_realize.block.iter_vars.is_empty());
+    let store = mapped_realize
+        .block
+        .body
+        .clone()
+        .try_cast::<BufferStore>()
+        .unwrap();
+    assert_eq!(
+        store
+            .indices
+            .get(0)
+            .unwrap()
+            .try_cast::<IntImm>()
+            .unwrap()
+            .value,
+        4
+    );
+    let read_region = mapped_realize.block.reads.get(0).unwrap();
+    assert_eq!(
+        read_region
+            .region()
+            .unwrap()
+            .get(0)
+            .unwrap()
+            .min
+            .clone()
+            .try_cast::<IntImm>()
+            .unwrap()
+            .value,
+        4
+    );
+}
+
+#[test]
 fn structural_map_preserves_map_keys_and_maps_only_values() {
     load_tvm_compiler();
     let key = GlobalVar::new("main");
@@ -860,7 +1118,7 @@ fn structural_map_reuses_a_uniquely_owned_array_container() {
 }
 
 #[test]
-fn rust_add_zero_pass_matches_cpp_stmt_simplify() {
+fn rust_add_zero_transformation_matches_cpp_stmt_simplify() {
     load_tvm_compiler();
     let one = int_expression(1);
     let zero = int_expression(0);
@@ -868,16 +1126,14 @@ fn rust_add_zero_pass_matches_cpp_stmt_simplify() {
     let expression = add_expression(&inner, int_expression(0));
     let expected = int_expression(1);
     assert_structural_equal(
-        &transform::simplify_add_zero_expr(expression.clone()).unwrap(),
+        &transform::examples::simplify_add_zero_expr(expression.clone()).unwrap(),
         &expected,
     );
 
     let function = PrimFunc::from_body(Evaluate::new(&expression).unwrap()).unwrap();
     let module = IRModule::from_expr(&function).unwrap();
-    let rust_result = transform::simplify_add_zero()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
+    let rust_function = transform::examples::simplify_add_zero_prim_func(function).unwrap();
+    let rust_result = IRModule::from_expr(&rust_function).unwrap();
     assert_eq!(node_statistics(&module).unwrap().additions, 2);
     assert_eq!(node_statistics(&rust_result).unwrap().additions, 0);
     let cpp_result = cpp_pass("tirx.transform.StmtSimplify").run(module).unwrap();
@@ -885,7 +1141,7 @@ fn rust_add_zero_pass_matches_cpp_stmt_simplify() {
 }
 
 #[test]
-fn rust_module_pass_maps_function_values_like_cpp() {
+fn rust_module_transformation_maps_function_values_like_cpp() {
     load_tvm_compiler();
     let expression = add_expression(
         add_expression(int_expression(0), int_expression(4)),
@@ -905,10 +1161,7 @@ fn rust_module_pass_maps_function_values_like_cpp() {
     assert_eq!(main_module.functions.len(), 1);
     assert_eq!(module.functions.len(), 2);
 
-    let rust_result = transform::simplify_add_zero_module_pass()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
+    let rust_result = transform::examples::simplify_add_zero_module(module.clone()).unwrap();
     assert_eq!(node_statistics(&module).unwrap().additions, 3);
     assert_eq!(node_statistics(&rust_result).unwrap().additions, 0);
     let cpp_result = cpp_pass("tirx.transform.StmtSimplify").run(module).unwrap();
@@ -1037,11 +1290,12 @@ fn neutral_element_map_matches_cpp_stmt_simplify() {
     let multiply = Mul::new(add, int_expression(1)).unwrap();
     let expression: Expr = Sub::new(multiply, int_expression(0)).unwrap().into();
 
-    let mapped = transform::simplify_neutral_elements_expr(expression.clone()).unwrap();
+    let mapped = transform::examples::simplify_neutral_elements_expr(expression.clone()).unwrap();
     assert_structural_equal(&mapped, &Expr::from(variable.clone()));
 
     let function = PrimFunc::new(vec![variable], Evaluate::new(&expression).unwrap()).unwrap();
-    let rust_function = transform::simplify_neutral_elements_prim_func(function.clone()).unwrap();
+    let rust_function =
+        transform::examples::simplify_neutral_elements_prim_func(function.clone()).unwrap();
     let cpp_module = cpp_pass("tirx.transform.StmtSimplify")
         .run(IRModule::from_expr(&function).unwrap())
         .unwrap();
@@ -1076,7 +1330,7 @@ fn mutate_can_limit_a_rewrite_to_loop_bodies() {
     .unwrap()
     .into();
     let original = statement.clone();
-    let mapped = transform::simplify_neutral_elements_in_loop_bodies(statement)
+    let mapped = transform::examples::simplify_neutral_elements_in_loop_bodies(statement)
         .unwrap()
         .try_cast::<TirFor>()
         .unwrap();
@@ -1437,10 +1691,8 @@ fn rust_unit_loop_elimination_matches_cpp_on_buffer_indices() {
     let function = PrimFunc::new(vec![buffer.into()], &outer_loop).unwrap();
     let module = IRModule::from_expr(&function).unwrap();
 
-    let rust_result = transform::eliminate_unit_loops()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
+    let rust_function = transform::examples::eliminate_unit_loops_prim_func(function).unwrap();
+    let rust_result = IRModule::from_expr(&rust_function).unwrap();
     let cpp_result = cpp_pass("tirx.transform.LowerTIRxOpaque")
         .run(module.clone())
         .unwrap();
@@ -1482,15 +1734,13 @@ fn integer_constant_folding_matches_cpp_on_fast_and_analyzer_paths() {
     let product: Expr = Mul::new(&sum, int_expression(4)).unwrap().into();
     let expression: Expr = Sub::new(&product, int_expression(1)).unwrap().into();
 
-    let folded = transform::fold_integer_constants_expr(expression.clone()).unwrap();
+    let folded = transform::examples::fold_integer_constants_expr(expression.clone()).unwrap();
     assert_eq!(folded.clone().try_cast::<IntImm>().unwrap().value, 19);
 
     let function = PrimFunc::from_body(Evaluate::new(&expression).unwrap()).unwrap();
     let module = IRModule::from_expr(&function).unwrap();
-    let rust_result = transform::fold_integer_constants()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
+    let rust_function = transform::examples::fold_integer_constants_prim_func(function).unwrap();
+    let rust_result = IRModule::from_expr(&rust_function).unwrap();
     let cpp_result = cpp_pass("tirx.transform.StmtSimplify").run(module).unwrap();
     assert_structural_equal(&rust_result, &cpp_result);
 
@@ -1500,10 +1750,18 @@ fn integer_constant_folding_matches_cpp_on_fast_and_analyzer_paths() {
     let overflow_module =
         IRModule::from_expr(PrimFunc::from_body(Evaluate::new(&overflow).unwrap()).unwrap())
             .unwrap();
-    let rust_overflow = transform::fold_integer_constants()
+    let overflow_function = overflow_module
+        .functions
+        .iter()
+        .next()
         .unwrap()
-        .run(overflow_module.clone())
+        .1
+        .try_cast::<PrimFunc>()
         .unwrap();
+    let rust_overflow = IRModule::from_expr(
+        transform::examples::fold_integer_constants_prim_func(overflow_function).unwrap(),
+    )
+    .unwrap();
     let cpp_overflow = cpp_pass("tirx.transform.StmtSimplify")
         .run(overflow_module)
         .unwrap();
@@ -1534,10 +1792,18 @@ fn known_control_flow_simplification_matches_cpp_on_analyzed_constants() {
         .unwrap()
         .into();
     let standalone = IRModule::from_expr(PrimFunc::from_body(&conditional).unwrap()).unwrap();
-    let rust_standalone = transform::simplify_known_control_flow()
+    let standalone_function = standalone
+        .functions
+        .iter()
+        .next()
         .unwrap()
-        .run(standalone.clone())
+        .1
+        .try_cast::<PrimFunc>()
         .unwrap();
+    let rust_standalone = IRModule::from_expr(
+        transform::examples::simplify_known_control_flow_prim_func(standalone_function).unwrap(),
+    )
+    .unwrap();
     let cpp_standalone = cpp_pass("tirx.transform.RemoveNoOp")
         .run(standalone)
         .unwrap();
@@ -1559,10 +1825,10 @@ fn known_control_flow_simplification_matches_cpp_on_analyzed_constants() {
     let function = PrimFunc::from_body(&body).unwrap();
     let module = IRModule::from_expr(&function).unwrap();
 
-    let rust_result = transform::simplify_known_control_flow()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
+    let rust_result = IRModule::from_expr(
+        transform::examples::simplify_known_control_flow_prim_func(function).unwrap(),
+    )
+    .unwrap();
     let cpp_result = cpp_pass("tirx.transform.RemoveNoOp").run(module).unwrap();
     assert_structural_equal(&rust_result, &cpp_result);
     assert_eq!(node_statistics(&rust_result).unwrap().conditionals, 0);
@@ -1600,10 +1866,18 @@ fn known_control_flow_simplification_matches_cpp_on_analyzed_constants() {
     ])
     .unwrap();
     let effects_module = IRModule::from_expr(PrimFunc::from_body(&evaluations).unwrap()).unwrap();
-    let rust_effects = transform::simplify_known_control_flow()
+    let effects_function = effects_module
+        .functions
+        .iter()
+        .next()
         .unwrap()
-        .run(effects_module.clone())
+        .1
+        .try_cast::<PrimFunc>()
         .unwrap();
+    let rust_effects = IRModule::from_expr(
+        transform::examples::simplify_known_control_flow_prim_func(effects_function).unwrap(),
+    )
+    .unwrap();
     let cpp_effects = cpp_pass("tirx.transform.RemoveNoOp")
         .run(effects_module)
         .unwrap();
@@ -1781,7 +2055,8 @@ fn module_reachability_pruning_keeps_callees_and_external_roots() {
     )
     .unwrap();
 
-    let direct = transform::prune_unreachable_functions_from_main(module.clone()).unwrap();
+    let direct =
+        transform::examples::prune_unreachable_functions_from_main(module.clone()).unwrap();
     assert_eq!(direct.functions.len(), 3);
     let mut retained_names = direct
         .functions
@@ -1791,23 +2066,14 @@ fn module_reachability_pruning_keeps_callees_and_external_roots() {
     retained_names.sort();
     assert_eq!(retained_names, vec!["exported", "helper", "main"]);
 
-    let through_pass = transform::prune_unreachable_functions_pass(vec!["main".to_owned()])
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
-    assert_structural_equal(&direct, &through_pass);
-
-    let external_only = transform::prune_unreachable_functions_pass(Vec::new())
-        .unwrap()
-        .run(module)
-        .unwrap();
+    let external_only = transform::examples::prune_unreachable_functions(module, &[]).unwrap();
     let external_names = external_only
         .functions
         .iter()
         .map(|(global, _)| global.name_hint.as_str().to_owned())
         .collect::<Vec<_>>();
     assert_eq!(external_names, vec!["exported"]);
-    assert!(transform::prune_unreachable_functions(direct, &["missing"]).is_err());
+    assert!(transform::examples::prune_unreachable_functions(direct, &["missing"]).is_err());
 }
 
 #[test]
@@ -1836,10 +2102,8 @@ fn unit_loop_elimination_preserves_annotated_loops() {
     let function = PrimFunc::from_body(&loop_statement).unwrap();
     let module = IRModule::from_expr(&function).unwrap();
 
-    let rust_result = transform::eliminate_unit_loops()
-        .unwrap()
-        .run(module.clone())
-        .unwrap();
+    let rust_function = transform::examples::eliminate_unit_loops_prim_func(function).unwrap();
+    let rust_result = IRModule::from_expr(&rust_function).unwrap();
     let cpp_result = cpp_pass("tirx.transform.LowerTIRxOpaque")
         .run(module)
         .unwrap();

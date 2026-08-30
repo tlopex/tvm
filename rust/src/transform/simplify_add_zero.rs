@@ -20,7 +20,6 @@
 use tvm_ffi::{structural_map, Any, AnyCompatible, Result, WalkOrder};
 
 use super::utils::int_value;
-use super::{create_module_pass, create_prim_func_pass, Pass};
 use crate::ir::{BaseFunc, Expr, IRModule};
 use crate::tirx::{Add, PrimFunc};
 
@@ -48,28 +47,6 @@ pub fn simplify_add_zero_module(module: IRModule) -> Result<IRModule> {
         output = output.update_function_owned(&global_var, &BaseFunc::try_from(mapped)?)?;
     }
     Ok(output)
-}
-
-/// Build add-zero simplification as a TVM PrimFunc pass.
-pub fn simplify_add_zero() -> Result<Pass> {
-    create_prim_func_pass(
-        "tirx.RustSimplifyAddZero",
-        0,
-        Vec::new(),
-        false,
-        |func, _module, _context| simplify_add_zero_prim_func(func),
-    )
-}
-
-/// Build add-zero simplification as a module pass.
-pub fn simplify_add_zero_module_pass() -> Result<Pass> {
-    create_module_pass(
-        "tirx.RustSimplifyAddZeroModule",
-        0,
-        Vec::new(),
-        false,
-        |module, _context| simplify_add_zero_module(module),
-    )
 }
 
 struct AddZeroSimplifier;

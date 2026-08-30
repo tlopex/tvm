@@ -20,7 +20,6 @@
 use tvm_ffi::{structural_map, Any, ObjectRefCast, Result, WalkOrder};
 
 use super::utils::{int_value, LazyAnalyzer};
-use super::{create_prim_func_pass, Pass};
 use crate::analysis::side_effect;
 use crate::ir::{Call, Expr, PrimExpr};
 use crate::tirx::{Evaluate, For as TirFor, IfThenElse, PrimFunc, SeqStmt, Stmt};
@@ -29,17 +28,6 @@ use crate::tirx::{Evaluate, For as TirFor, IfThenElse, PrimFunc, SeqStmt, Stmt};
 pub fn simplify_known_control_flow_prim_func(function: PrimFunc) -> Result<PrimFunc> {
     let mut mapper = KnownControlFlowSimplifier::default();
     structural_map(function, &mut mapper, WalkOrder::PostOrder)?.try_into()
-}
-
-/// Build analyzed control-flow simplification as a normal TVM PrimFunc pass.
-pub fn simplify_known_control_flow() -> Result<Pass> {
-    create_prim_func_pass(
-        "tirx.RustSimplifyKnownControlFlow",
-        0,
-        Vec::new(),
-        false,
-        |function, _module, _context| simplify_known_control_flow_prim_func(function),
-    )
 }
 
 #[derive(Default)]

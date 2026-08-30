@@ -28,12 +28,13 @@ use tvm::ir::{
     Type, TypeObj, Var, VarObj,
 };
 use tvm::tirx::{
-    Add, AddObj, AssertStmt, AssertStmtObj, Axis, AxisObj, BufferLoad, BufferLoadObj, BufferRegion,
-    BufferRegionObj, BufferStore, BufferStoreObj, BufferType, BufferTypeObj, BufferVar, Evaluate,
-    EvaluateObj, For, ForKind, ForObj, IfThenElse, IfThenElseObj, Iter, IterObj, IterVar,
-    IterVarObj, IterVarType, Layout, LayoutObj, MatchBufferRegion, MatchBufferRegionObj, Mul,
-    MulObj, PrimFunc, PrimFuncObj, PrimVar, SBlock, SBlockObj, SBlockRealize, SBlockRealizeObj,
-    SeqStmt, SeqStmtObj, Stmt, StmtObj, StringImm, StringImmObj, Sub, SubObj, TileLayoutObj,
+    Add, AddObj, AndObj, AssertStmt, AssertStmtObj, AttrStmtObj, Axis, AxisObj, BufferLoad,
+    BufferLoadObj, BufferRegion, BufferRegionObj, BufferStore, BufferStoreObj, BufferType,
+    BufferTypeObj, BufferVar, EQObj, Evaluate, EvaluateObj, For, ForKind, ForObj, IfThenElse,
+    IfThenElseObj, Iter, IterObj, IterVar, IterVarObj, IterVarType, Layout, LayoutObj,
+    MatchBufferRegion, MatchBufferRegionObj, Mul, MulObj, PrimFunc, PrimFuncObj, PrimVar, SBlock,
+    SBlockObj, SBlockRealize, SBlockRealizeObj, SeqStmt, SeqStmtObj, Stmt, StmtObj, StringImm,
+    StringImmObj, Sub, SubObj, TileLayoutObj,
 };
 use tvm::tvm_ffi::tvm_ffi_sys::{TVMFFIFieldFlagBitMask, TVMFFISEqHashKind};
 use tvm::tvm_ffi::{Any, Array, DLDataType, Map, Object, ObjectCore, ObjectRefCore, String};
@@ -47,6 +48,7 @@ const DEF_RECURSIVE: i64 =
     TVMFFIFieldFlagBitMask::kTVMFFIFieldFlagBitMaskSEqHashDefRecursive as i64;
 
 const SCHEMA_ANY_MAP: &str = r#"{"type":"ffi.Map","args":[{"type":"ffi.String"},{"type":"Any"}]}"#;
+const SCHEMA_ANY: &str = r#"{"type":"Any"}"#;
 const SCHEMA_ARRAY_BUFFER_REGION: &str =
     r#"{"type":"ffi.Array","args":[{"type":"tirx.BufferRegion"}]}"#;
 const SCHEMA_ARRAY_EXPR: &str = r#"{"type":"ffi.Array","args":[{"type":"ir.Expr"}]}"#;
@@ -313,8 +315,28 @@ fn all_handwritten_objects_match_runtime_metadata() {
         Some(Tree),
         &[("a", 0, SCHEMA_EXPR), ("b", 0, SCHEMA_EXPR)],
     );
+    assert_contract::<EQObj, ExprObj>(
+        true,
+        Some(Tree),
+        &[("a", 0, SCHEMA_EXPR), ("b", 0, SCHEMA_EXPR)],
+    );
+    assert_contract::<AndObj, ExprObj>(
+        true,
+        Some(Tree),
+        &[("a", 0, SCHEMA_EXPR), ("b", 0, SCHEMA_EXPR)],
+    );
     assert_contract::<StringImmObj, ExprObj>(true, Some(Tree), &[("value", 0, SCHEMA_STRING)]);
     assert_contract::<StmtObj, Object>(false, Some(Tree), &[("span", IGNORE, SCHEMA_SPAN)]);
+    assert_contract::<AttrStmtObj, StmtObj>(
+        true,
+        Some(Tree),
+        &[
+            ("node", 0, SCHEMA_ANY),
+            ("attr_key", 0, SCHEMA_STRING),
+            ("value", 0, SCHEMA_EXPR),
+            ("body", 0, SCHEMA_STMT),
+        ],
+    );
     assert_contract::<AssertStmtObj, StmtObj>(
         true,
         Some(Tree),

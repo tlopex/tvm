@@ -244,6 +244,179 @@ macro_rules! define_binary_expression {
 define_binary_expression!(SubObj, Sub, "tirx.Sub", "a subtraction expression");
 define_binary_expression!(MulObj, Mul, "tirx.Mul", "a multiplication expression");
 
+/// ABI-complete Rust representation of TVM's `tirx.EQ` node.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "tirx.EQ"]
+#[type_final]
+pub struct EQObj {
+    base: ExprObj,
+    pub a: PrimExpr,
+    pub b: PrimExpr,
+}
+
+/// Reference-counted handle to an equality comparison.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct EQ {
+    data: ObjectArc<EQObj>,
+}
+
+impl std::ops::Deref for EQ {
+    type Target = EQObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for EQObj {
+    type Target = ExprObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl EQ {
+    /// Construct an equality comparison directly in Rust.
+    pub fn new<L, R>(lhs: L, rhs: R) -> Result<Self>
+    where
+        L: Into<Expr>,
+        R: Into<Expr>,
+    {
+        Self::with_span(lhs, rhs, None)
+    }
+
+    /// Construct an equality comparison with optional source metadata.
+    pub fn with_span<L, R>(lhs: L, rhs: R, span: Option<&Span>) -> Result<Self>
+    where
+        L: Into<Expr>,
+        R: Into<Expr>,
+    {
+        let lhs = lhs.into();
+        let rhs = rhs.into();
+        let operand_type = matching_binary_type(&lhs, &rhs)?;
+        let result_type = PrimType::from_dtype(DLDataType {
+            code: DLDataTypeCode::kDLBool as u8,
+            bits: 8,
+            lanes: operand_type.dtype.lanes,
+        })?;
+        Ok(Self::from_complete_fields(
+            span.cloned(),
+            result_type,
+            PrimExpr::try_from(lhs)?,
+            PrimExpr::try_from(rhs)?,
+        ))
+    }
+
+    /// Construct a comparison from every physical field after external validation.
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        ty: PrimType,
+        a: PrimExpr,
+        b: PrimExpr,
+    ) -> Self {
+        Self {
+            data: ObjectArc::new(EQObj {
+                base: ExprObj::new(span, ty.into()),
+                a,
+                b,
+            }),
+        }
+    }
+}
+
+/// ABI-complete Rust representation of TVM's `tirx.And` node.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "tirx.And"]
+#[type_final]
+pub struct AndObj {
+    base: ExprObj,
+    pub a: PrimExpr,
+    pub b: PrimExpr,
+}
+
+/// Reference-counted handle to a logical conjunction.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct And {
+    data: ObjectArc<AndObj>,
+}
+
+impl std::ops::Deref for And {
+    type Target = AndObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for AndObj {
+    type Target = ExprObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl And {
+    /// Construct a logical conjunction directly in Rust.
+    pub fn new<L, R>(lhs: L, rhs: R) -> Result<Self>
+    where
+        L: Into<Expr>,
+        R: Into<Expr>,
+    {
+        Self::with_span(lhs, rhs, None)
+    }
+
+    /// Construct a logical conjunction with optional source metadata.
+    pub fn with_span<L, R>(lhs: L, rhs: R, span: Option<&Span>) -> Result<Self>
+    where
+        L: Into<Expr>,
+        R: Into<Expr>,
+    {
+        let lhs = lhs.into();
+        let rhs = rhs.into();
+        let operand_type = matching_binary_type(&lhs, &rhs)?;
+        if operand_type.dtype.code != DLDataTypeCode::kDLBool as u8 {
+            return Err(Error::new(
+                TYPE_ERROR,
+                "logical conjunction operands must have bool type",
+                "",
+            ));
+        }
+        let result_type = PrimType::from_dtype(DLDataType {
+            code: DLDataTypeCode::kDLBool as u8,
+            bits: 8,
+            lanes: operand_type.dtype.lanes,
+        })?;
+        Ok(Self::from_complete_fields(
+            span.cloned(),
+            result_type,
+            PrimExpr::try_from(lhs)?,
+            PrimExpr::try_from(rhs)?,
+        ))
+    }
+
+    /// Construct a conjunction from every physical field after external validation.
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        ty: PrimType,
+        a: PrimExpr,
+        b: PrimExpr,
+    ) -> Self {
+        Self {
+            data: ObjectArc::new(AndObj {
+                base: ExprObj::new(span, ty.into()),
+                a,
+                b,
+            }),
+        }
+    }
+}
+
 /// ABI-complete Rust representation of TVM's `StringImmNode`.
 #[repr(C)]
 #[derive(Object)]
@@ -314,6 +487,95 @@ pub struct StmtObj {
 #[derive(ObjectRef, Clone)]
 pub struct Stmt {
     data: ObjectArc<StmtObj>,
+}
+
+/// ABI-complete Rust representation of TVM's `AttrStmtNode`.
+#[repr(C)]
+#[derive(Object)]
+#[type_key = "tirx.AttrStmt"]
+#[type_final]
+pub struct AttrStmtObj {
+    base: StmtObj,
+    pub node: Any,
+    pub attr_key: String,
+    pub value: PrimExpr,
+    pub body: Stmt,
+}
+
+/// Reference-counted handle to a scoped TIR attribute.
+#[repr(C)]
+#[derive(ObjectRef, Clone)]
+pub struct AttrStmt {
+    data: ObjectArc<AttrStmtObj>,
+}
+
+impl std::ops::Deref for AttrStmt {
+    type Target = AttrStmtObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::Deref for AttrStmtObj {
+    type Target = StmtObj;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl AttrStmt {
+    /// Construct a scoped attribute directly in Rust.
+    pub fn new<N, V, B>(node: N, attr_key: &str, value: V, body: B) -> Result<Self>
+    where
+        N: Into<Any>,
+        V: Into<Expr>,
+        B: Into<Stmt>,
+    {
+        Self::with_span(node, attr_key, value, body, None)
+    }
+
+    /// Construct a scoped attribute with optional source metadata.
+    pub fn with_span<N, V, B>(
+        node: N,
+        attr_key: &str,
+        value: V,
+        body: B,
+        span: Option<&Span>,
+    ) -> Result<Self>
+    where
+        N: Into<Any>,
+        V: Into<Expr>,
+        B: Into<Stmt>,
+    {
+        Ok(Self::from_complete_fields(
+            span.cloned(),
+            node.into(),
+            String::from(attr_key),
+            PrimExpr::try_from(value.into())?,
+            body.into(),
+        ))
+    }
+
+    /// Construct an attribute statement from every physical field.
+    pub fn from_complete_fields(
+        span: Option<Span>,
+        node: Any,
+        attr_key: String,
+        value: PrimExpr,
+        body: Stmt,
+    ) -> Self {
+        Self {
+            data: ObjectArc::new(AttrStmtObj {
+                base: StmtObj::new(span),
+                node,
+                attr_key,
+                value,
+                body,
+            }),
+        }
+    }
 }
 
 impl std::ops::Deref for Stmt {
@@ -1133,8 +1395,13 @@ tvm_ffi::impl_object_upcast!(
     Sub => PrimExpr,
     Mul => Expr,
     Mul => PrimExpr,
+    EQ => Expr,
+    EQ => PrimExpr,
+    And => Expr,
+    And => PrimExpr,
     StringImm => Expr,
     StringImm => PrimExpr,
+    AttrStmt => Stmt,
     For => Stmt,
     AssertStmt => Stmt,
     Evaluate => Stmt,

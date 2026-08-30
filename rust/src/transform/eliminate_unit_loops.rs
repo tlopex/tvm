@@ -25,7 +25,6 @@ use tvm_ffi::{
 };
 
 use super::utils::int_value;
-use super::{create_prim_func_pass, Pass};
 use crate::ir::{Expr, Var};
 use crate::tirx::{For as TirFor, PrimFunc, Stmt};
 
@@ -42,17 +41,6 @@ struct UnitLoopEliminator {
 pub fn eliminate_unit_loops_prim_func(function: PrimFunc) -> Result<PrimFunc> {
     let mut mutator = UnitLoopEliminator::default();
     structural_mutate(function, &mut mutator)?.try_into()
-}
-
-/// Build unit-loop elimination as a normal TVM PrimFunc pass.
-pub fn eliminate_unit_loops() -> Result<Pass> {
-    create_prim_func_pass(
-        "tirx.RustEliminateUnitLoops",
-        0,
-        Vec::new(),
-        false,
-        |function, _module, _context| eliminate_unit_loops_prim_func(function),
-    )
 }
 
 #[tvm_ffi::dispatch(mutate)]

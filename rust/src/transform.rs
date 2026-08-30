@@ -24,9 +24,12 @@ use crate::ir::IRModule;
 use crate::tirx::PrimFunc;
 
 mod annotate_entry_func;
+mod convert_blocks_to_opaque;
+mod decorate_device_scope;
 mod eliminate_unit_loops;
 mod filter;
 mod fold_integer_constants;
+mod lower_init_block;
 mod prune_unreachable_functions;
 mod simplify_add_zero;
 mod simplify_known_control_flow;
@@ -35,27 +38,33 @@ mod skip_assert;
 mod utils;
 
 pub use annotate_entry_func::annotate_entry_func;
-pub use eliminate_unit_loops::{eliminate_unit_loops, eliminate_unit_loops_prim_func};
+pub use convert_blocks_to_opaque::{convert_blocks_to_opaque, convert_blocks_to_opaque_prim_func};
+pub use decorate_device_scope::{decorate_device_scope, decorate_device_scope_prim_func};
 pub use filter::filter;
-pub use fold_integer_constants::{
-    fold_integer_constants, fold_integer_constants_expr, fold_integer_constants_prim_func,
-};
-pub use prune_unreachable_functions::{
-    prune_unreachable_functions, prune_unreachable_functions_from_main,
-    prune_unreachable_functions_pass,
-};
-pub use simplify_add_zero::{
-    simplify_add_zero, simplify_add_zero_expr, simplify_add_zero_module,
-    simplify_add_zero_module_pass, simplify_add_zero_prim_func,
-};
-pub use simplify_known_control_flow::{
-    simplify_known_control_flow, simplify_known_control_flow_prim_func,
-};
-pub use simplify_neutral_elements::{
-    simplify_neutral_elements_expr, simplify_neutral_elements_in_loop_bodies,
-    simplify_neutral_elements_prim_func,
-};
+pub use lower_init_block::{lower_init_block, lower_init_block_prim_func};
 pub use skip_assert::{skip_assert, skip_assert_prim_func};
+
+/// Partial transformations used to exercise structural walk/map/mutate.
+///
+/// Unlike the pass factories at the root of this module, these examples are
+/// not complete ports of similarly named TVM passes.
+pub mod examples {
+    pub use super::eliminate_unit_loops::eliminate_unit_loops_prim_func;
+    pub use super::fold_integer_constants::{
+        fold_integer_constants_expr, fold_integer_constants_prim_func,
+    };
+    pub use super::prune_unreachable_functions::{
+        prune_unreachable_functions, prune_unreachable_functions_from_main,
+    };
+    pub use super::simplify_add_zero::{
+        simplify_add_zero_expr, simplify_add_zero_module, simplify_add_zero_prim_func,
+    };
+    pub use super::simplify_known_control_flow::simplify_known_control_flow_prim_func;
+    pub use super::simplify_neutral_elements::{
+        simplify_neutral_elements_expr, simplify_neutral_elements_in_loop_bodies,
+        simplify_neutral_elements_prim_func,
+    };
+}
 
 /// Opaque Rust view of TVM's `PassNode` prefix.
 #[repr(C)]

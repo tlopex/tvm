@@ -20,7 +20,6 @@
 use tvm_ffi::{structural_map, Any, DLDataType, DLDataTypeCode, ObjectRefCast, Result, WalkOrder};
 
 use super::utils::LazyAnalyzer;
-use super::{create_prim_func_pass, Pass};
 use crate::ir::{Expr, IntImm, PrimExpr, PrimType, Span};
 use crate::tirx::{Add, Mul, PrimFunc, Sub};
 
@@ -34,17 +33,6 @@ pub fn fold_integer_constants_expr(expr: Expr) -> Result<Expr> {
 pub fn fold_integer_constants_prim_func(function: PrimFunc) -> Result<PrimFunc> {
     let mut mapper = IntegerConstantFolder::default();
     structural_map(function, &mut mapper, WalkOrder::PostOrder)?.try_into()
-}
-
-/// Build checked integer constant folding as a normal TVM PrimFunc pass.
-pub fn fold_integer_constants() -> Result<Pass> {
-    create_prim_func_pass(
-        "tirx.RustFoldIntegerConstants",
-        0,
-        Vec::new(),
-        false,
-        |function, _module, _context| fold_integer_constants_prim_func(function),
-    )
 }
 
 #[derive(Default)]

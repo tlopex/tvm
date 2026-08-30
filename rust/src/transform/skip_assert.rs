@@ -47,7 +47,7 @@ impl AssertSkipper {
 /// Build the Rust implementation of `tirx.SkipAssert` as a normal TVM pass.
 pub fn skip_assert() -> Result<Pass> {
     create_prim_func_pass(
-        "tirx.RustSkipAssert",
+        "tirx.SkipAssert",
         0,
         Vec::new(),
         false,
