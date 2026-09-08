@@ -257,6 +257,27 @@ class ThreadSyncPlanner : public StorageAccessVisitor {
       return false;
     }
 
+    if (!loop_carry && prev.can_prove_disjoint && curr.can_prove_disjoint &&
+        !prev.double_buffer_write && !curr.double_buffer_write && prev.dtype == curr.dtype) {
+      // Two accesses may execute in different threads.  Rename every scalar
+      // variable on one side, including local Bind results.  Renaming only the
+      // thread id would incorrectly equate the locals of independent threads.
+      // Free parameters are also renamed, conservatively allowing them to differ.
+      std::unordered_map<const VarNode*, Var> renamed;
+      auto rename = [&](const Var& var) -> Var {
+        auto [it, inserted] = renamed.emplace(var.get(), var);
+        if (inserted) it->second = var.CopyWithSuffix("_other");
+        return it->second;
+      };
+      auto substitute = [&](const Var& var) -> ffi::Optional<Expr> { return rename(var); };
+      PrimExpr prev_index = prev.touched[0].PointValue();
+      PrimExpr curr_index = Substitute(curr.touched[0].PointValue(), substitute);
+      auto constraints = prev.constraints.Merge(curr.constraints.RenameVars(rename));
+      if (constraints.CanProve(prev_index != curr_index)) {
+        return false;
+      }
+    }
+
     // If nothing else allows sharing the same buffer, then they are
     // in conflict.
     return true;

@@ -44,6 +44,9 @@ void StorageAccessVisitor::VisitExpr_(const BufferLoadNode* op) {
     e.threads = env_threads();
     e.buffer = buf;
     e.dtype = op->ty.as_or_throw<PrimType>().WithLanes(1);
+    e.can_prove_disjoint =
+        CanProveDisjoint(op->buffer, op->indices, op->ty.as_or_throw<PrimType>());
+    if (e.can_prove_disjoint) e.constraints = GetConstrSet();
     for (const auto& index : op->indices) {
       e.touched.push_back(arith::IntSet::Vector(index));
     }
@@ -67,6 +70,8 @@ void StorageAccessVisitor::VisitStmt_(const BufferStoreNode* op) {
     e.threads = env_threads();
     e.buffer = buf;
     e.dtype = op->value.ty().WithLanes(1);
+    e.can_prove_disjoint = CanProveDisjoint(op->buffer, op->indices, op->value.ty());
+    if (e.can_prove_disjoint) e.constraints = GetConstrSet();
     for (const auto& index : op->indices) {
       e.touched.push_back(arith::IntSet::Vector(index));
     }
@@ -100,11 +105,23 @@ void StorageAccessVisitor::VisitStmt_(const BindNode* op) {
   allow_append_ = true;
   TVM_FFI_ICHECK_EQ(curr_stmt_.access.size(), 0U);
   curr_stmt_.stmt = op;
-  this->VisitExpr(op->value);
+  arith::ConstrVisitor::VisitStmt_(op);
   // push to the scope
   scope_.back().push_back(curr_stmt_);
   // clear access entry.
   curr_stmt_.access.clear();
+  allow_append_ = false;
+}
+
+void StorageAccessVisitor::VisitStmt_(const AssertStmtNode* op) {
+  allow_append_ = true;
+  TVM_FFI_ICHECK(curr_stmt_.access.empty());
+  curr_stmt_.stmt = op;
+  arith::ConstrVisitor::VisitStmt_(op);
+  if (!curr_stmt_.access.empty()) {
+    scope_.back().push_back(curr_stmt_);
+    curr_stmt_.access.clear();
+  }
   allow_append_ = false;
 }
 
@@ -113,7 +130,7 @@ void StorageAccessVisitor::VisitStmt_(const AttrStmtNode* op) {
     TVM_FFI_ICHECK(double_buffer_write_ == nullptr);
     double_buffer_write_ = op->node.as<VarNode>();
     scope_.push_back(std::vector<StmtEntry>());
-    StmtExprVisitor::VisitStmt_(op);
+    arith::ConstrVisitor::VisitStmt_(op);
     StmtEntry s;
     s.stmt = op;
     s.access = Summarize(std::move(scope_.back()), nullptr);
@@ -133,13 +150,13 @@ void StorageAccessVisitor::VisitStmt_(const AttrStmtNode* op) {
     if (!in_device_env_) {
       in_device_env_ = true;
       scope_.push_back(std::vector<StmtEntry>());
-      StmtExprVisitor::VisitStmt_(op);
+      arith::ConstrVisitor::VisitStmt_(op);
       // no need to take the result as the thread barrier automatically syncs.
       Summarize(std::move(scope_.back()), nullptr);
       in_device_env_ = false;
       scope_.pop_back();
     } else {
-      StmtExprVisitor::VisitStmt_(op);
+      arith::ConstrVisitor::VisitStmt_(op);
     }
     env_threads_.pop_back();
   } else if (op->attr_key == s_tir::attr::hand_threaded) {
@@ -147,13 +164,15 @@ void StorageAccessVisitor::VisitStmt_(const AttrStmtNode* op) {
     // this avoids control flow and read/write conflicts
     // between hand-threaded kernels and automatic threading
   } else {
-    StmtExprVisitor::VisitStmt_(op);
+    arith::ConstrVisitor::VisitStmt_(op);
   }
 }
 
 void StorageAccessVisitor::VisitStmt_(const ForNode* op) {
+  bool was_inside_loop = inside_loop_;
+  inside_loop_ = true;
   scope_.push_back(std::vector<StmtEntry>());
-  StmtExprVisitor::VisitStmt_(op);
+  arith::ConstrVisitor::VisitStmt_(op);
   StmtEntry s;
   s.stmt = op;
   s.access = Summarize(std::move(scope_.back()), op);
@@ -177,6 +196,7 @@ void StorageAccessVisitor::VisitStmt_(const ForNode* op) {
   if (!s.access.empty()) {
     scope_.back().emplace_back(std::move(s));
   }
+  inside_loop_ = was_inside_loop;
 }
 
 bool IsThreadInvariant(const PrimExpr& cond) {
@@ -192,20 +212,27 @@ bool IsThreadInvariant(const PrimExpr& cond) {
 }
 
 void StorageAccessVisitor::VisitStmt_(const IfThenElseNode* op) {
+  auto condition_reads = VisitCondition(op->condition);
   bool is_thread_invariant = IsThreadInvariant(op->condition);
   if (!is_thread_invariant) {
     ++condition_counter_;
   }
-  this->VisitExpr(op->condition);
   scope_.push_back(std::vector<StmtEntry>());
-  this->VisitStmt(op->then_case);
+  WithConstrScope([&]() {
+    AddConstraint(op->condition);
+    this->VisitStmt(op->then_case);
+  });
   StmtEntry s;
   s.stmt = op;
   s.access = Summarize(std::move(scope_.back()), nullptr);
+  s.access.insert(s.access.begin(), condition_reads.begin(), condition_reads.end());
   scope_.pop_back();
   if (op->else_case) {
     scope_.push_back(std::vector<StmtEntry>());
-    this->VisitStmt(op->else_case.value());
+    WithConstrScope([&]() {
+      AddConstraint(Not(op->condition));
+      this->VisitStmt(op->else_case.value());
+    });
     auto v = Summarize(std::move(scope_.back()), nullptr);
     scope_.pop_back();
     s.access.insert(s.access.end(), v.begin(), v.end());
@@ -217,21 +244,28 @@ void StorageAccessVisitor::VisitStmt_(const IfThenElseNode* op) {
 }
 
 void StorageAccessVisitor::VisitStmt_(const WhileNode* op) {
+  bool was_inside_loop = inside_loop_;
+  inside_loop_ = true;
+  auto condition_reads = VisitCondition(op->condition);
   bool is_thread_invariant = IsThreadInvariant(op->condition);
   if (!is_thread_invariant) {
     ++condition_counter_;
   }
-  this->VisitExpr(op->condition);
   scope_.push_back(std::vector<StmtEntry>());
-  this->VisitStmt(op->body);
+  WithConstrScope([&]() {
+    AddConstraint(op->condition);
+    this->VisitStmt(op->body);
+  });
   StmtEntry s;
   s.stmt = op;
   s.access = Summarize(std::move(scope_.back()), nullptr);
+  s.access.insert(s.access.begin(), condition_reads.begin(), condition_reads.end());
   scope_.pop_back();
   scope_.back().emplace_back(std::move(s));
   if (!is_thread_invariant) {
     --condition_counter_;
   }
+  inside_loop_ = was_inside_loop;
 }
 
 void StorageAccessVisitor::VisitExpr_(const CallNode* op) {
@@ -292,8 +326,29 @@ void StorageAccessVisitor::VisitExpr_(const CallNode* op) {
       curr_stmt_.access.emplace_back(std::move(e));
     }
   } else {
-    StmtExprVisitor::VisitExpr_(op);
+    arith::ConstrVisitor::VisitExpr_(op);
   }
+}
+
+std::vector<StorageAccessVisitor::AccessEntry> StorageAccessVisitor::VisitCondition(
+    const PrimExpr& condition) {
+  TVM_FFI_ICHECK(curr_stmt_.access.empty());
+  allow_append_ = true;
+  this->VisitExpr(condition);
+  std::vector<AccessEntry> result;
+  result.swap(curr_stmt_.access);
+  allow_append_ = false;
+  return result;
+}
+
+bool StorageAccessVisitor::CanProveDisjoint(const Buffer& buffer,
+                                            const ffi::Array<PrimExpr>& indices,
+                                            PrimType access_type) const {
+  // Strided/offset aliases, vectors, access_ptr and dynamic shared allocations
+  // need a byte-address model.  Loop accesses also need an iteration model.
+  return !inside_loop_ && access_type.IsScalar() && indices.size() == 1 &&
+         buffer->strides.empty() && is_zero(buffer->elem_offset) &&
+         GetScope(buffer->data).tag.empty() && IsPureScalar(indices[0]);
 }
 
 StorageScope StorageAccessVisitor::GetScope(Var buffer_var) const {
