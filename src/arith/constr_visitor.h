@@ -55,8 +55,9 @@ namespace arith {
  * that overflow the analyzer's int64 arithmetic when products are distributed.
  * Track a conservative magnitude through expressions and Bind definitions. Add
  * magnitudes for sums/comparisons and multiply them for products/divisions (which
- * can combine divisors). Reject growth beyond int64 rather than asking the
- * analyzer to simplify it. This deliberately excludes some valid large indices.
+ * can combine divisors). Growth must fit each integer node's type, including
+ * int32 nodes below widening casts. This deliberately excludes some valid large
+ * indices rather than asking the analyzer to construct overflowing literals.
  */
 class ConstraintExprValidator : public tirx::ExprFunctor<uint64_t(const Expr&)> {
  public:
@@ -67,7 +68,7 @@ class ConstraintExprValidator : public tirx::ExprFunctor<uint64_t(const Expr&)> 
 
   bool Bind(const tirx::Var& var, const PrimExpr& value) {
     expression_bounds_.clear();
-    uint64_t bound = VisitExpr(value);
+    uint64_t bound = CheckType(var->ty.as_or_throw<PrimType>(), VisitExpr(value));
     if (bound == kUnsupported) return false;
     bindings_[var.get()] = bound;
     return true;
@@ -75,7 +76,8 @@ class ConstraintExprValidator : public tirx::ExprFunctor<uint64_t(const Expr&)> 
 
   bool Bind(const tirx::Var& var, const Range& range) {
     expression_bounds_.clear();
-    uint64_t bound = Add(VisitExpr(range->min), VisitExpr(range->extent));
+    uint64_t bound = CheckType(var->ty.as_or_throw<PrimType>(),
+                               Add(VisitExpr(range->min), VisitExpr(range->extent)));
     if (bound == kUnsupported) return false;
     // A singleton range can become a value binding. Retain its dependencies
     // even when the extent is only known to be one after simplification.
@@ -85,6 +87,13 @@ class ConstraintExprValidator : public tirx::ExprFunctor<uint64_t(const Expr&)> 
 
  private:
   static constexpr uint64_t kUnsupported = uint64_t{1} << 63;
+
+  static uint64_t CheckType(PrimType ty, uint64_t bound) {
+    if (ty.MatchesCode(kDLInt) && bound >= (uint64_t{1} << (ty.bits() - 1))) {
+      return kUnsupported;
+    }
+    return bound;
+  }
 
   static uint64_t Add(uint64_t a, uint64_t b) {
     return a >= kUnsupported - b ? kUnsupported : a + b;
@@ -111,7 +120,7 @@ class ConstraintExprValidator : public tirx::ExprFunctor<uint64_t(const Expr&)> 
           expr.as<tirx::OrNode>() || expr.as<tirx::NotNode>())) {
       return kUnsupported;
     }
-    uint64_t bound = ExprFunctor::VisitExpr(expr);
+    uint64_t bound = CheckType(ty, ExprFunctor::VisitExpr(expr));
     expression_bounds_.emplace(expr.get(), bound);
     return bound;
   }
@@ -145,15 +154,23 @@ class ConstraintExprValidator : public tirx::ExprFunctor<uint64_t(const Expr&)> 
   TVM_CONSTR_ADDITIVE_BOUND(SubNode)
   TVM_CONSTR_ADDITIVE_BOUND(MinNode)
   TVM_CONSTR_ADDITIVE_BOUND(MaxNode)
-  TVM_CONSTR_ADDITIVE_BOUND(EQNode)
-  TVM_CONSTR_ADDITIVE_BOUND(NENode)
-  TVM_CONSTR_ADDITIVE_BOUND(LTNode)
-  TVM_CONSTR_ADDITIVE_BOUND(LENode)
-  TVM_CONSTR_ADDITIVE_BOUND(GTNode)
-  TVM_CONSTR_ADDITIVE_BOUND(GENode)
   TVM_CONSTR_ADDITIVE_BOUND(AndNode)
   TVM_CONSTR_ADDITIVE_BOUND(OrNode)
 #undef TVM_CONSTR_ADDITIVE_BOUND
+
+  // Comparisons may be rewritten as a difference of their integer operands.
+  // The result is boolean, but the difference must fit the operands' type.
+#define TVM_CONSTR_COMPARISON_BOUND(Node)                                  \
+  uint64_t VisitExpr_(const tirx::Node* op) final {                        \
+    return CheckType(op->a.ty(), Add(VisitExpr(op->a), VisitExpr(op->b))); \
+  }
+  TVM_CONSTR_COMPARISON_BOUND(EQNode)
+  TVM_CONSTR_COMPARISON_BOUND(NENode)
+  TVM_CONSTR_COMPARISON_BOUND(LTNode)
+  TVM_CONSTR_COMPARISON_BOUND(LENode)
+  TVM_CONSTR_COMPARISON_BOUND(GTNode)
+  TVM_CONSTR_COMPARISON_BOUND(GENode)
+#undef TVM_CONSTR_COMPARISON_BOUND
 
   uint64_t VisitExpr_(const tirx::NotNode* op) final { return VisitExpr(op->a); }
 
@@ -404,7 +421,34 @@ class ConstrVisitor : public tirx::StmtExprVisitor {
   }
 
   void VisitStmt_(const tirx::SBlockNode* op) override {
-    WithConstrScope([&]() { StmtExprVisitor::VisitStmt_(op); });
+    WithConstrScope([&]() {
+      auto visit_region = [&](const tirx::BufferRegion& region) {
+        this->VisitBufferUse(region->buffer);
+        for (const auto& range : region->region) {
+          this->VisitExpr(range->min);
+          this->VisitExpr(range->extent);
+        }
+      };
+      for (const auto& iv : op->iter_vars) {
+        this->VisitExpr(iv->dom->min);
+        this->VisitExpr(iv->dom->extent);
+      }
+      for (const auto& buffer : op->alloc_buffers) {
+        this->VisitBufferDef(buffer, /*alloc_data=*/true);
+      }
+      for (const auto& region : op->reads) visit_region(region);
+      for (const auto& region : op->writes) visit_region(region);
+      for (const auto& match : op->match_buffers) {
+        this->VisitBufferDef(match->buffer, /*alloc_data=*/true);
+        visit_region(match->source);
+      }
+      // Initialization executes only on the first reduction iteration. Its
+      // assertions and local bindings are not premises of subsequent updates.
+      if (op->init) {
+        WithConstrScope([&]() { this->VisitStmt(op->init.value()); });
+      }
+      this->VisitStmt(op->body);
+    });
   }
 
   void VisitExpr_(const tirx::LetNode* op) override {

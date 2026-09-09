@@ -186,6 +186,39 @@ TEST(ConstrSet, SymbolicGrowthAcrossBindingsIsRejected) {
   EXPECT_FALSE(bindings.CanProve(k - scale == 0));
 }
 
+TEST(ConstrVisitor, ReductionInitFactsDoNotReachTheUpdate) {
+  PrimVar i("i", PrimType::Int(32));
+  SBlock block({IterVar(Range::FromMinExtent(0, 4), i, IterVarType::kCommReduce)}, {}, {}, "reduce",
+               Evaluate(i),
+               SeqStmt({AssertStmt(i == 0, StringImm("AssertionError"), {}), Evaluate(i)}));
+  SnapshotCollector visitor;
+  visitor(block);
+  ASSERT_EQ(visitor.snapshots.size(), 2);
+  EXPECT_TRUE(visitor.snapshots[0].CanProve(i == 0));
+  EXPECT_FALSE(visitor.snapshots[1].CanProve(i == 0));
+  EXPECT_FALSE(visitor.GetConstrSet().CanProve(i == 0));
+}
+
+TEST(ConstrSet, ExpansionMustFitEachIntegerNode) {
+  PrimVar x("x", PrimType::Int(32));
+  PrimVar j("j", PrimType::Int(32));
+  PrimVar k("k", PrimType::Int(32));
+  PrimExpr inner = 50000 * x - 99999;
+  PrimExpr expr = 50000 * inner - 50000;
+  EXPECT_FALSE(IsSupportedConstraintExpr(expr));
+  EXPECT_FALSE(IsSupportedConstraintExpr(Cast(PrimType::Int(64), expr)));
+  // Boolean comparisons can introduce a difference in their operands' dtype.
+  EXPECT_TRUE(IsSupportedConstraintExpr(1500000000 * x));
+  EXPECT_FALSE(IsSupportedConstraintExpr(1500000000 * x != -1500000000 * x));
+  ConstrSet bindings{{Constr(j, inner), Constr(k, 50000 * j)}};
+  EXPECT_FALSE(bindings.CanProve(k != 50000));
+  ConstrSet ranges{{Constr(j, inner), Constr(k, Range::FromMinExtent(50000 * j, 1))}};
+  EXPECT_FALSE(ranges.CanProve(k != 50000));
+  PrimExpr wide = IntImm::Int64(50000) *
+                  (IntImm::Int64(50000) * Cast(PrimType::Int(64), x) - IntImm::Int64(99999));
+  EXPECT_TRUE(IsSupportedConstraintExpr(wide));
+}
+
 TEST(ConstrVisitor, SharedExpressionGrowthIsBounded) {
   PrimVar x("x", PrimType::Int(64));
   PrimExpr expr = x;
