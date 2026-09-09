@@ -85,6 +85,8 @@ class StorageAccessVisitor : public arith::ConstrVisitor {
     const ffi::Object* stmt;
     /*! \brief access patterns in the statement */
     std::vector<AccessEntry> access;
+    /*! \brief A synthetic entry for a while condition, keyed by its WhileNode. */
+    bool is_loop_condition = false;
   };
   // override visitor pattern
   void VisitExpr_(const BufferLoadNode* op) final;
@@ -121,10 +123,12 @@ class StorageAccessVisitor : public arith::ConstrVisitor {
    *
    * \param seq The sequence of the access operations.
    * \param loop Pass loop node if it is a loop, otherwise nullptr.
+   * \param while_loop Pass the WhileNode when summarizing a while iteration.
    * \return The summarized sequence that represent access that
    *  the parent should taken care of to synchronize.
    */
-  virtual std::vector<AccessEntry> Summarize(std::vector<StmtEntry> seq, const ForNode* loop) = 0;
+  virtual std::vector<AccessEntry> Summarize(std::vector<StmtEntry> seq, const ForNode* loop,
+                                             const WhileNode* while_loop = nullptr) = 0;
   /*!
    * \brief Get the scope of the buffer array.
    * \return The scope of the final buffer array.

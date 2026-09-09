@@ -26,6 +26,7 @@
 #include <tvm/s_tir/stmt.h>
 #include <tvm/tirx/op.h>
 
+#include <algorithm>
 #include <string>
 #include <utility>
 
@@ -200,6 +201,7 @@ void StorageAccessVisitor::VisitStmt_(const ForNode* op) {
 }
 
 bool IsThreadInvariant(const PrimExpr& cond) {
+  if (cond.as<IntImmNode>()) return true;
   if (auto call = cond.as<CallNode>()) {
     if (auto opt_call_op = call->op.as<Op>()) {
       auto call_op = opt_call_op.value();
@@ -218,6 +220,9 @@ void StorageAccessVisitor::VisitStmt_(const IfThenElseNode* op) {
     ++condition_counter_;
   }
   scope_.push_back(std::vector<StmtEntry>());
+  // Every taken branch must finish reading the condition before any of its
+  // writes can overwrite a value another thread still needs for that test.
+  scope_.back().push_back({op, condition_reads});
   WithConstrScope([&]() {
     AddConstraint(op->condition);
     this->VisitStmt(op->then_case);
@@ -225,10 +230,10 @@ void StorageAccessVisitor::VisitStmt_(const IfThenElseNode* op) {
   StmtEntry s;
   s.stmt = op;
   s.access = Summarize(std::move(scope_.back()), nullptr);
-  s.access.insert(s.access.begin(), condition_reads.begin(), condition_reads.end());
   scope_.pop_back();
   if (op->else_case) {
     scope_.push_back(std::vector<StmtEntry>());
+    scope_.back().push_back({op, condition_reads});
     WithConstrScope([&]() {
       AddConstraint(Not(op->condition));
       this->VisitStmt(op->else_case.value());
@@ -237,6 +242,11 @@ void StorageAccessVisitor::VisitStmt_(const IfThenElseNode* op) {
     scope_.pop_back();
     s.access.insert(s.access.end(), v.begin(), v.end());
   }
+  // A branch-local barrier may be bypassed by the other branch. Keep the
+  // parent's pending accesses until an unconditional barrier is encountered.
+  s.access.erase(std::remove_if(s.access.begin(), s.access.end(),
+                                [](const AccessEntry& e) { return e.type == kSync; }),
+                 s.access.end());
   scope_.back().emplace_back(std::move(s));
   if (!is_thread_invariant) {
     --condition_counter_;
@@ -252,14 +262,24 @@ void StorageAccessVisitor::VisitStmt_(const WhileNode* op) {
     ++condition_counter_;
   }
   scope_.push_back(std::vector<StmtEntry>());
+  // The condition executes at the start of every iteration. Keeping it in the
+  // sequence lets the planner check both read-before-write and loop-carried
+  // write-before-read dependencies against the body.
+  scope_.back().push_back({op, condition_reads, true});
   WithConstrScope([&]() {
     AddConstraint(op->condition);
     this->VisitStmt(op->body);
   });
   StmtEntry s;
   s.stmt = op;
-  s.access = Summarize(std::move(scope_.back()), nullptr);
-  s.access.insert(s.access.begin(), condition_reads.begin(), condition_reads.end());
+  s.access = Summarize(std::move(scope_.back()), nullptr, op);
+  // The body may execute zero times, so its barriers cannot clear the parent's
+  // pending accesses. Also expose the final, false condition evaluation: it
+  // happens after the last iteration, and can conflict with a following write.
+  s.access.erase(std::remove_if(s.access.begin(), s.access.end(),
+                                [](const AccessEntry& e) { return e.type == kSync; }),
+                 s.access.end());
+  s.access.insert(s.access.end(), condition_reads.begin(), condition_reads.end());
   scope_.pop_back();
   scope_.back().emplace_back(std::move(s));
   if (!is_thread_invariant) {

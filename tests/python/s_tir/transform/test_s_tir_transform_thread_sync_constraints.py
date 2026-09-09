@@ -415,7 +415,12 @@ def test_signed_widening_cast_preserves_disjoint_proof():
 
 
 @pytest.mark.parametrize("use_bind", [False, True])
-def test_large_symbolic_coefficients_keep_sync(use_bind):
+@pytest.mark.parametrize("bits", [32, 64])
+def test_large_symbolic_coefficients_keep_sync(use_bind, bits):
+    dtype = f"int{bits}"
+    scale = tirx.IntImm(dtype, 50000 if bits == 32 else 5000000000)
+    offset = tirx.IntImm(dtype, 99999 if bits == 32 else 9999999999)
+
     @T.prim_func(private=True, s_tir=True)
     def func(
         A: T.Buffer((4,), "float32"),
@@ -430,11 +435,7 @@ def test_large_symbolic_coefficients_keep_sync(use_bind):
         if tx == 0:
             S[tx] = B[tx]
         if tx == 2:
-            Out[tx] = S[
-                T.int64(5000000000)
-                * (T.int64(5000000000) * T.Cast("int64", tx) - T.int64(9999999999))
-                - T.int64(5000000000)
-            ]
+            Out[tx] = S[scale * (scale * T.Cast(dtype, tx) - offset) - scale]
 
     if use_bind:
 
@@ -442,17 +443,15 @@ def test_large_symbolic_coefficients_keep_sync(use_bind):
             if isinstance(node, tirx.BufferStore) and node.buffer.name == "Out":
                 index = node.value.indices[0]
                 inner = index.a.b
-                j = tirx.Var("j", "int64")
-                k = tirx.Var("k", "int64")
+                j = tirx.Var("j", dtype)
+                k = tirx.Var("k", dtype)
                 return tirx.SeqStmt(
                     [
                         tirx.Bind(j, inner),
-                        tirx.Bind(k, tirx.IntImm("int64", 5000000000) * j),
+                        tirx.Bind(k, scale * j),
                         tirx.BufferStore(
                             node.buffer,
-                            tirx.BufferLoad(
-                                node.value.buffer, [k - tirx.IntImm("int64", 5000000000)]
-                            ),
+                            tirx.BufferLoad(node.value.buffer, [k - scale]),
                             node.indices,
                         ),
                     ]
@@ -461,10 +460,185 @@ def test_large_symbolic_coefficients_keep_sync(use_bind):
 
         func = func.with_body(tirx.stmt_functor.ir_transform(func.body, None, bind_index))
 
-    # At tx == 2, the intermediates are 10^10, 1, 5*10^9, and 0:
-    # the execution does not overflow. Expanding the nested multiplications
-    # nevertheless requires a symbolic coefficient larger than int64.
+    # At tx == 2 the index is zero, and every intermediate fits its dtype.
+    # Distributing the products nevertheless overflows that dtype's coefficients.
     assert_sync_before_last_thread_statement(func)
+
+
+def test_if_condition_read_is_synchronized_before_branch_writes():
+    @T.prim_func(private=True, s_tir=True)
+    def func(Out: T.Buffer((64,), "int32")):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((64,), "int32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 64)
+        S[tx] = 1
+        T.tvm_storage_sync("shared")
+        if T.tvm_thread_invariant(S[0] > 0):
+            S[tx] = 0
+        else:
+            S[tx] = 2
+        Out[tx] = S[tx]
+
+    @T.prim_func(private=True, s_tir=True)
+    def expected(Out: T.Buffer((64,), "int32")):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((64,), "int32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 64)
+        S[tx] = 1
+        T.tvm_storage_sync("shared")
+        if T.tvm_thread_invariant(S[0] > 0):
+            T.evaluate(T.call_intrin("int32", "tirx.tvm_storage_sync", "shared"))
+            S[tx] = 0
+        else:
+            T.evaluate(T.call_intrin("int32", "tirx.tvm_storage_sync", "shared"))
+            S[tx] = 2
+        Out[tx] = S[tx]
+
+    result = apply_sync(func)
+    tvm.ir.assert_structural_equal(result, expected)
+    tvm.ir.assert_structural_equal(apply_sync(result), result)
+
+
+def test_conditional_barrier_does_not_synchronize_following_read():
+    @T.prim_func(private=True, s_tir=True)
+    def func(Out: T.Buffer((64,), "int32"), n: T.int32):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((64,), "int32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 64)
+        S[tx] = 1
+        if T.tvm_thread_invariant(n > 0):
+            T.tvm_storage_sync("shared")
+        Out[tx] = S[(tx + 1) % 64]
+
+    assert_sync_before_last_thread_statement(func)
+
+
+@pytest.mark.parametrize("use_while", [False, True])
+def test_unannotated_memory_condition_rejects_new_barriers(use_while):
+    @T.prim_func(private=True, s_tir=True)
+    def func(Out: T.Buffer((64,), "int32")):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((64,), "int32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 64)
+        S[tx] = 1
+        T.tvm_storage_sync("shared")
+        if S[0] > 0:
+            S[tx] = 0
+        Out[tx] = S[tx]
+
+    if use_while:
+
+        def replace_if(node):
+            if isinstance(node, tirx.IfThenElse):
+                return tirx.While(node.condition, node.then_case)
+            return None
+
+        func = func.with_body(tirx.stmt_functor.ir_transform(func.body, None, replace_if))
+
+    with pytest.raises(tvm.error.InternalError, match="Cannot insert syncs inside condition"):
+        apply_sync(func)
+
+
+def test_while_condition_and_body_are_synchronized():
+    @T.prim_func(private=True, s_tir=True)
+    def func(Out: T.Buffer((64,), "int32")):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((64,), "int32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 64)
+        S[tx] = 1
+        T.tvm_storage_sync("shared")
+        while T.tvm_thread_invariant(S[0] > 0):
+            S[tx] = 0
+        Out[tx] = S[tx]
+
+    @T.prim_func(private=True, s_tir=True)
+    def expected(Out: T.Buffer((64,), "int32")):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((64,), "int32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 64)
+        S[tx] = 1
+        T.tvm_storage_sync("shared")
+        while T.bool(True):
+            T.evaluate(T.call_intrin("int32", "tirx.tvm_storage_sync", "shared"))
+            if not T.tvm_thread_invariant(S[0] > 0):
+                break
+            T.evaluate(T.call_intrin("int32", "tirx.tvm_storage_sync", "shared"))
+            S[tx] = 0
+        Out[tx] = S[tx]
+
+    # The first barrier protects the next condition read; the second prevents
+    # a fast warp from writing S[0] before its peers finish reading the condition.
+    result = apply_sync(func)
+    tvm.ir.assert_structural_equal(result, expected)
+    tvm.ir.assert_structural_equal(apply_sync(result), result)
+
+
+def test_zero_trip_while_does_not_synchronize_following_read():
+    @T.prim_func(private=True, s_tir=True)
+    def func(Out: T.Buffer((64,), "int32"), n: T.int32):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((64,), "int32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 64)
+        S[tx] = 1
+        while T.tvm_thread_invariant(n > 0):
+            T.tvm_storage_sync("shared")
+            break
+        Out[tx] = S[(tx + 1) % 64]
+
+    # When n <= 0 the explicit barrier never executes.
+    assert_sync_before_last_thread_statement(func)
+
+
+def test_final_while_condition_read_is_synchronized_before_following_write():
+    @T.prim_func(private=True, s_tir=True)
+    def func(Out: T.Buffer((64,), "int32")):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((64,), "int32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 64)
+        S[tx] = 1
+        T.tvm_storage_sync("shared")
+        while T.tvm_thread_invariant(S[0] > 0):
+            S[tx] = 0
+        S[tx] = 2
+        Out[tx] = S[tx]
+
+    result = apply_sync(func)
+    thread_body = result.body.body.seq[-1].body
+    assert isinstance(thread_body.seq[-3], tirx.Evaluate)
+    assert thread_body.seq[-3].value.op.name == "tirx.tvm_storage_sync"
+
+
+@pytest.mark.parametrize(
+    "exit_kind", ["break_call", "continue_call", "break_node", "continue_node", "return_node"]
+)
+def test_while_with_early_exit_rejects_new_barriers(exit_kind):
+    @T.prim_func(private=True, s_tir=True)
+    def func(Out: T.Buffer((64,), "int32")):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((64,), "int32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 64)
+        while T.bool(True):
+            S[tx] = 1
+            if tx == 0:
+                break
+            Out[tx] = S[(tx + 1) % 64]
+
+    if exit_kind != "break_call":
+
+        def replace_break(node):
+            if isinstance(node, tirx.Evaluate) and isinstance(node.value, tvm.ir.Call):
+                if node.value.op == tvm.ir.Op.get("tirx.break_loop"):
+                    if exit_kind == "continue_call":
+                        return tirx.Evaluate(tirx.continue_loop())
+                    if exit_kind == "return_node":
+                        return tirx.Return(tirx.IntImm("int32", 0))
+                    return tirx.Continue() if exit_kind == "continue_node" else tirx.Break()
+            return None
+
+        func = func.with_body(tirx.stmt_functor.ir_transform(func.body, None, replace_break))
+
+    with pytest.raises(ValueError, match="while loop containing break, continue, or return"):
+        apply_sync(func)
 
 
 if __name__ == "__main__":
