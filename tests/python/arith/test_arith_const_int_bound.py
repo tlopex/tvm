@@ -90,9 +90,55 @@ class TestCastBound(BaseCompare):
     tmod = tvm.tirx.truncmod
 
     test_case = tvm.testing.parameter(
-        TestCase(tmod(x, 3).astype("uint32"), (0, 2)),
+        # Negative residues wrap to large unsigned values.
+        TestCase(tmod(x, 3).astype("uint32"), (0, 2**32 - 1)),
         TestCase(tmod(x, 3).astype("float32").astype("int32"), (-2, 2)),
     )
+
+
+class TestIntegerCastBound(BaseCompare):
+    x = tvm.tirx.Var("x", "int32")
+    y = tvm.tirx.Var("y", "uint32")
+    z = tvm.tirx.Var("z", "int64")
+
+    test_case = tvm.testing.parameter(
+        # A conversion maps values into the target type; it does not constrain
+        # its input to the intersection with the target's representable range.
+        TestCase(x.astype("uint8"), (0, 255), known_bounds={x: (256, 383)}),
+        TestCase(x.astype("uint8"), (0, 255), known_bounds={x: (250, 260)}),
+        TestCase(x.astype("uint8"), (0, 255), known_bounds={x: (-10, -1)}),
+        TestCase(x.astype("int8"), (-128, 127), known_bounds={x: (128, 255)}),
+        TestCase(
+            y.astype("int32"),
+            (-(2**31), 2**31 - 1),
+            known_bounds={y: (2**31, 2**32 - 1)},
+        ),
+        TestCase(
+            z.astype("int32"),
+            (-(2**31), 2**31 - 1),
+            known_bounds={z: (2**32, 2**32 + 127)},
+        ),
+        TestCase(x.astype("uint64"), (0, POS_INF), known_bounds={x: (-1, 1)}),
+        # Preserve tighter bounds when every source value fits the target type.
+        TestCase(x.astype("uint8"), (12, 127), known_bounds={x: (12, 127)}),
+        TestCase(x.astype("int8"), (-120, 120), known_bounds={x: (-120, 120)}),
+        TestCase(y.astype("uint8"), (128, 255), known_bounds={y: (128, 255)}),
+        TestCase(x.astype("int64"), (-200, 300), known_bounds={x: (-200, 300)}),
+    )
+
+
+def test_narrowing_cast_does_not_prove_disjoint_indices():
+    analyzer = tvm.arith.Analyzer()
+    writer = tvm.tirx.Var("writer", "int32")
+    reader = tvm.tirx.Var("reader", "int32")
+    analyzer.bind(writer, tvm.ir.Range.from_min_extent(0, 128))
+    analyzer.bind(reader, tvm.ir.Range.from_min_extent(128, 128))
+    read_index = (reader + 128).astype("uint8").astype("int32")
+
+    # Reader 128 reads index 0, so it can conflict with writer 0.
+    assert not analyzer.can_prove(writer != read_index)
+    bound = analyzer.const_int_bound(read_index)
+    assert (bound.min_value, bound.max_value) == (0, 255)
 
 
 class TestAddSubBound(BaseCompare):
