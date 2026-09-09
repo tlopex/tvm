@@ -975,9 +975,9 @@ class ConstraintContext {
   ConstraintContext(AnalyzerObj* analyzer, PrimExpr constraint, bool is_assume)
       : ConstraintContext(ffi::GetRef<Analyzer>(analyzer), std::move(constraint), is_assume) {}
   // enter the scope.
-  void EnterWithScope();
+  TVM_DLL void EnterWithScope();
   // exit the scope.
-  void ExitWithScope();
+  TVM_DLL void ExitWithScope();
   /*! \brief Analyzer kept alive while the context is active. */
   Analyzer analyzer_;
   /*! \brief The constraint */
