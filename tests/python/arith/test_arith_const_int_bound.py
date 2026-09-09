@@ -96,6 +96,20 @@ class TestCastBound(BaseCompare):
     )
 
 
+def test_uint64_to_int64_may_be_negative():
+    u = tvm.tirx.Var("u", "uint64")
+    cast = u.astype("int64")
+    analyzer = tvm.arith.Analyzer()
+    bound = analyzer.const_int_bound(cast)
+    assert (bound.min_value, bound.max_value) == (NEG_INF, POS_INF)
+    assert not analyzer.can_prove(cast >= tvm.tirx.IntImm("int64", 0))
+
+    # A finite source bound still permits the tighter result.
+    analyzer.update(u, ConstIntBound(0, 255))
+    bound = analyzer.const_int_bound(cast)
+    assert (bound.min_value, bound.max_value) == (0, 255)
+
+
 class TestIntegerCastBound(BaseCompare):
     x = tvm.tirx.Var("x", "int32")
     y = tvm.tirx.Var("y", "uint32")

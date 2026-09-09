@@ -203,7 +203,16 @@ class ConstIntBoundAnalyzer::Impl : public ExprFunctor<ConstIntBoundAnalyzer::En
       a = VisitExpr(op->value);
     }
 
-    Entry b = Everything(op->ty.as_or_throw<PrimType>());
+    PrimType from = op->value.ty();
+    PrimType to = op->ty.as_or_throw<PrimType>();
+    Entry b = Everything(to);
+    if (from.MatchesCode(kDLUInt) && to.MatchesCode(kDLInt) && from.bits() >= to.bits() &&
+        a.max_value == kPosInf) {
+      // uint64's upper half is represented by the same +inf sentinel as
+      // int64's maximum. Equality of those bounds does not make the cast
+      // value-preserving: unsigned values can become negative signed values.
+      return b;
+    }
     if (op->value.ty().MatchesCode(kDLInt, kDLUInt) &&
         op->ty.as_or_throw<PrimType>().MatchesCode(kDLInt, kDLUInt) &&
         (a.min_value < b.min_value || a.max_value > b.max_value)) {
