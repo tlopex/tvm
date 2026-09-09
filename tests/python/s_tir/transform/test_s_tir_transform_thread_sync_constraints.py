@@ -414,5 +414,58 @@ def test_signed_widening_cast_preserves_disjoint_proof():
     tvm.ir.assert_structural_equal(apply_sync(func), func)
 
 
+@pytest.mark.parametrize("use_bind", [False, True])
+def test_large_symbolic_coefficients_keep_sync(use_bind):
+    @T.prim_func(private=True, s_tir=True)
+    def func(
+        A: T.Buffer((4,), "float32"),
+        B: T.Buffer((4,), "float32"),
+        Out: T.Buffer((4,), "float32"),
+    ):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((4,), "float32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 4)
+        S[tx] = A[tx]
+        T.tvm_storage_sync("shared")
+        if tx == 0:
+            S[tx] = B[tx]
+        if tx == 2:
+            Out[tx] = S[
+                T.int64(5000000000)
+                * (T.int64(5000000000) * T.Cast("int64", tx) - T.int64(9999999999))
+                - T.int64(5000000000)
+            ]
+
+    if use_bind:
+
+        def bind_index(node):
+            if isinstance(node, tirx.BufferStore) and node.buffer.name == "Out":
+                index = node.value.indices[0]
+                inner = index.a.b
+                j = tirx.Var("j", "int64")
+                k = tirx.Var("k", "int64")
+                return tirx.SeqStmt(
+                    [
+                        tirx.Bind(j, inner),
+                        tirx.Bind(k, tirx.IntImm("int64", 5000000000) * j),
+                        tirx.BufferStore(
+                            node.buffer,
+                            tirx.BufferLoad(
+                                node.value.buffer, [k - tirx.IntImm("int64", 5000000000)]
+                            ),
+                            node.indices,
+                        ),
+                    ]
+                )
+            return None
+
+        func = func.with_body(tirx.stmt_functor.ir_transform(func.body, None, bind_index))
+
+    # At tx == 2, the intermediates are 10^10, 1, 5*10^9, and 0:
+    # the execution does not overflow. Expanding the nested multiplications
+    # nevertheless requires a symbolic coefficient larger than int64.
+    assert_sync_before_last_thread_statement(func)
+
+
 if __name__ == "__main__":
     tvm.testing.main()

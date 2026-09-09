@@ -28,10 +28,14 @@
 #include <tvm/ir/with_context.h>
 #include <tvm/s_tir/stmt.h>
 #include <tvm/tirx/builtin.h>
+#include <tvm/tirx/expr_functor.h>
 #include <tvm/tirx/op.h>
 #include <tvm/tirx/stmt_functor.h>
 
+#include <algorithm>
 #include <functional>
+#include <limits>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -40,61 +44,144 @@ namespace tvm {
 namespace arith {
 
 /*!
- * \brief Whether an expression is in the integer domain used by snapshot proofs.
+ * \brief Validate the restricted arithmetic domain used by snapshot proofs.
  *
- * Purity alone is insufficient: narrowing casts and unsigned arithmetic can
- * wrap, while the analyzer's integer bounds and rewrites do not model every
- * such conversion.  Use a closed set of scalar signed int32/int64 arithmetic
- * and boolean operators.  Casts must preserve the signed integer value;
- * multiplication and division are restricted to constant scale factors and
- * positive constant divisors.  All other nodes, including calls and loads,
- * are excluded.  Signed overflow follows the existing TIR undefined semantics.
+ * Use a closed set of scalar signed int32/int64 arithmetic and boolean operators.
+ * Casts must preserve the signed integer value; multiplication requires a constant
+ * factor, and division a positive constant divisor. Calls and loads are excluded.
+ * Signed overflow follows the existing TIR undefined semantics.
  *
- * Check the entire expression, including operands of comparisons and casts.
- * Checking only its result type would accept a narrowing cast hidden below an
- * int32 cast or a boolean comparison.
+ * Also limit symbolic expansion: even a defined execution can have coefficients
+ * that overflow the analyzer's int64 arithmetic when products are distributed.
+ * Track a conservative magnitude through expressions and Bind definitions. Add
+ * magnitudes for sums/comparisons and multiply them for products/divisions (which
+ * can combine divisors). Reject growth beyond int64 rather than asking the
+ * analyzer to simplify it. This deliberately excludes some valid large indices.
  */
-inline bool IsSupportedConstraintExpr(const PrimExpr& expr) {
-  bool supported = true;
-  tirx::PostOrderVisit(expr, [&](const ffi::ObjectRef& node) {
-    if (!supported) return;
-    auto value = node.as<PrimExpr>();
-    if (!value) {
-      supported = false;
-      return;
-    }
+class ConstraintExprValidator : public tirx::ExprFunctor<uint64_t(const Expr&)> {
+ public:
+  bool IsSupported(const PrimExpr& expr) {
+    expression_bounds_.clear();
+    return VisitExpr(expr) < kUnsupported;
+  }
+
+  bool Bind(const tirx::Var& var, const PrimExpr& value) {
+    expression_bounds_.clear();
+    uint64_t bound = VisitExpr(value);
+    if (bound == kUnsupported) return false;
+    bindings_[var.get()] = bound;
+    return true;
+  }
+
+  bool Bind(const tirx::Var& var, const Range& range) {
+    expression_bounds_.clear();
+    uint64_t bound = Add(VisitExpr(range->min), VisitExpr(range->extent));
+    if (bound == kUnsupported) return false;
+    // A singleton range can become a value binding. Retain its dependencies
+    // even when the extent is only known to be one after simplification.
+    bindings_[var.get()] = bound;
+    return true;
+  }
+
+ private:
+  static constexpr uint64_t kUnsupported = uint64_t{1} << 63;
+
+  static uint64_t Add(uint64_t a, uint64_t b) {
+    return a >= kUnsupported - b ? kUnsupported : a + b;
+  }
+
+  static uint64_t Mul(uint64_t a, uint64_t b) {
+    return a > (kUnsupported - 1) / b ? kUnsupported : a * b;
+  }
+
+  uint64_t VisitExpr(const Expr& expr) final {
+    auto it = expression_bounds_.find(expr.get());
+    if (it != expression_bounds_.end()) return it->second;
+    auto value = expr.as<PrimExpr>();
+    if (!value) return kUnsupported;
     PrimType ty = value.value().ty();
     if (!ty.IsScalar() || !(ty.MatchesCode(kDLBool) ||
                             (ty.MatchesCode(kDLInt) && (ty.bits() == 32 || ty.bits() == 64)))) {
-      supported = false;
-      return;
+      return kUnsupported;
     }
-    if (ty.MatchesCode(kDLBool)) {
-      supported = node.as<tirx::VarNode>() || node.as<IntImmNode>() || node.as<tirx::EQNode>() ||
-                  node.as<tirx::NENode>() || node.as<tirx::LTNode>() || node.as<tirx::LENode>() ||
-                  node.as<tirx::GTNode>() || node.as<tirx::GENode>() || node.as<tirx::AndNode>() ||
-                  node.as<tirx::OrNode>() || node.as<tirx::NotNode>();
-    } else if (const auto* cast = node.as<tirx::CastNode>()) {
-      PrimType from = cast->value.ty();
-      supported = from.MatchesCode(kDLInt) && ty.MatchesCode(kDLInt) && from.bits() <= ty.bits();
-    } else if (const auto* mul = node.as<tirx::MulNode>()) {
-      supported = mul->a.as<IntImmNode>() || mul->b.as<IntImmNode>();
-    } else if (node.as<tirx::DivNode>() || node.as<tirx::ModNode>() ||
-               node.as<tirx::FloorDivNode>() || node.as<tirx::FloorModNode>()) {
-      auto positive_constant = [](const PrimExpr& divisor) {
-        const auto* imm = divisor.as<IntImmNode>();
-        return imm && imm->value > 0;
-      };
-      if (const auto* op = node.as<tirx::DivNode>()) supported = positive_constant(op->b);
-      if (const auto* op = node.as<tirx::ModNode>()) supported = positive_constant(op->b);
-      if (const auto* op = node.as<tirx::FloorDivNode>()) supported = positive_constant(op->b);
-      if (const auto* op = node.as<tirx::FloorModNode>()) supported = positive_constant(op->b);
-    } else {
-      supported = node.as<tirx::VarNode>() || node.as<IntImmNode>() || node.as<tirx::AddNode>() ||
-                  node.as<tirx::SubNode>() || node.as<tirx::MinNode>() || node.as<tirx::MaxNode>();
+    if (ty.MatchesCode(kDLBool) &&
+        !(expr.as<tirx::VarNode>() || expr.as<IntImmNode>() || expr.as<tirx::EQNode>() ||
+          expr.as<tirx::NENode>() || expr.as<tirx::LTNode>() || expr.as<tirx::LENode>() ||
+          expr.as<tirx::GTNode>() || expr.as<tirx::GENode>() || expr.as<tirx::AndNode>() ||
+          expr.as<tirx::OrNode>() || expr.as<tirx::NotNode>())) {
+      return kUnsupported;
     }
-  });
-  return supported;
+    uint64_t bound = ExprFunctor::VisitExpr(expr);
+    expression_bounds_.emplace(expr.get(), bound);
+    return bound;
+  }
+
+  uint64_t VisitExprDefault_(const ffi::Object*) final { return kUnsupported; }
+
+  uint64_t VisitExpr_(const tirx::VarNode* op) final {
+    auto it = bindings_.find(op);
+    return it == bindings_.end() ? 1 : it->second;
+  }
+
+  uint64_t VisitExpr_(const IntImmNode* op) final {
+    if (op->value == std::numeric_limits<int64_t>::min()) return kUnsupported;
+    return std::max<int64_t>(1, op->value < 0 ? -op->value : op->value);
+  }
+
+  uint64_t VisitExpr_(const tirx::CastNode* op) final {
+    PrimType from = op->value.ty();
+    PrimType to = op->ty.as_or_throw<PrimType>();
+    if (!(from.MatchesCode(kDLInt) && to.MatchesCode(kDLInt) && from.bits() <= to.bits())) {
+      return kUnsupported;
+    }
+    return VisitExpr(op->value);
+  }
+
+#define TVM_CONSTR_ADDITIVE_BOUND(Node)             \
+  uint64_t VisitExpr_(const tirx::Node* op) final { \
+    return Add(VisitExpr(op->a), VisitExpr(op->b)); \
+  }
+  TVM_CONSTR_ADDITIVE_BOUND(AddNode)
+  TVM_CONSTR_ADDITIVE_BOUND(SubNode)
+  TVM_CONSTR_ADDITIVE_BOUND(MinNode)
+  TVM_CONSTR_ADDITIVE_BOUND(MaxNode)
+  TVM_CONSTR_ADDITIVE_BOUND(EQNode)
+  TVM_CONSTR_ADDITIVE_BOUND(NENode)
+  TVM_CONSTR_ADDITIVE_BOUND(LTNode)
+  TVM_CONSTR_ADDITIVE_BOUND(LENode)
+  TVM_CONSTR_ADDITIVE_BOUND(GTNode)
+  TVM_CONSTR_ADDITIVE_BOUND(GENode)
+  TVM_CONSTR_ADDITIVE_BOUND(AndNode)
+  TVM_CONSTR_ADDITIVE_BOUND(OrNode)
+#undef TVM_CONSTR_ADDITIVE_BOUND
+
+  uint64_t VisitExpr_(const tirx::NotNode* op) final { return VisitExpr(op->a); }
+
+  uint64_t VisitExpr_(const tirx::MulNode* op) final {
+    if (!(op->a.as<IntImmNode>() || op->b.as<IntImmNode>())) return kUnsupported;
+    return Mul(VisitExpr(op->a), VisitExpr(op->b));
+  }
+
+#define TVM_CONSTR_DIVISION_BOUND(Node)                       \
+  uint64_t VisitExpr_(const tirx::Node* op) final {           \
+    const auto* divisor = op->b.as<IntImmNode>();             \
+    if (!divisor || divisor->value <= 0) return kUnsupported; \
+    return Mul(VisitExpr(op->a), VisitExpr(op->b));           \
+  }
+  TVM_CONSTR_DIVISION_BOUND(DivNode)
+  TVM_CONSTR_DIVISION_BOUND(ModNode)
+  TVM_CONSTR_DIVISION_BOUND(FloorDivNode)
+  TVM_CONSTR_DIVISION_BOUND(FloorModNode)
+#undef TVM_CONSTR_DIVISION_BOUND
+
+  std::unordered_map<const tirx::VarNode*, uint64_t> bindings_;
+  // Memoize within one check to avoid expanding shared expression DAGs.
+  // Reset between checks, since bindings and expression lifetimes can change.
+  std::unordered_map<const ffi::Object*, uint64_t> expression_bounds_;
+};
+
+inline bool IsSupportedConstraintExpr(const PrimExpr& expr) {
+  return ConstraintExprValidator().IsSupported(expr);
 }
 
 /*! \brief One premise, retaining bindings for the analyzer's rewrite and bound tables. */
@@ -151,7 +238,7 @@ struct ConstrSet {
   }
 
   bool CanProve(const PrimExpr& predicate) const {
-    if (!IsSupportedConstraintExpr(predicate)) return false;
+    ConstraintExprValidator validator;
     // Rebinding a variable can discard information or introduce inconsistent
     // premises.  Require the consumer to rename independent executions first.
     std::unordered_set<const tirx::VarNode*> bound;
@@ -166,15 +253,21 @@ struct ConstrSet {
         if (!var || !IsSupportedConstraintExpr(var.value())) return false;
       }
       if (c.kind == Constr::kBindRange) {
-        if (!IsSupportedConstraintExpr(c.range->min) ||
-            !IsSupportedConstraintExpr(c.range->extent)) {
-          return false;
-        }
-      } else if (!IsSupportedConstraintExpr(c.value)) {
+        if (!validator.Bind(c.var, c.range)) return false;
+      } else if (c.kind == Constr::kBindValue) {
+        if (!validator.Bind(c.var, c.value)) return false;
+      } else if (!validator.IsSupported(c.value)) {
         return false;
       }
     }
+    if (!validator.IsSupported(predicate)) return false;
     Analyzer analyzer;
+    // Congruence alone often separates flat addresses, e.g. even and odd
+    // indices.  Try this inexpensive sufficient condition before replaying
+    // bindings and entering predicate scopes.  No snapshot facts are assumed.
+    if (const auto* ne = predicate.as<tirx::NENode>(); ne && ne->a.ty().MatchesCode(kDLInt)) {
+      if (analyzer->modular_set(ne->a - ne->b)->base != 0) return true;
+    }
     WithGroup<ConstraintContext> contexts;
     for (const auto& c : constraints) {
       switch (c.kind) {
@@ -212,6 +305,43 @@ class ConstrVisitor : public tirx::StmtExprVisitor {
   using StmtExprVisitor::VisitStmt_;
 
   ConstrSet GetConstrSet() const { return {constraints_}; }
+
+  /*!
+   * \brief Save predicates and the bindings needed by an expression or predicate.
+   *
+   * Bindings are in definition order, so a backward pass also finds transitive
+   * dependencies.  Keep every predicate, including ones after the definition of
+   * a query variable: they may constrain it indirectly through another variable.
+   * Unused bindings (often unrelated loop/thread axes or scalar temporaries) do
+   * not need to be copied, renamed, validated, and replayed for an address proof.
+   * Omitting a premise only weakens the snapshot.
+   */
+  ConstrSet GetConstrSet(const PrimExpr& expr) const {
+    std::unordered_set<const tirx::VarNode*> needed;
+    auto add_vars = [&](const PrimExpr& value) {
+      tirx::PostOrderVisit(value, [&](const ffi::ObjectRef& node) {
+        if (const auto* var = node.as<tirx::VarNode>()) needed.insert(var);
+      });
+    };
+    add_vars(expr);
+    for (const auto& c : constraints_) {
+      if (c.kind == Constr::kPredicate) add_vars(c.value);
+    }
+    ConstrSet result;
+    for (auto it = constraints_.rbegin(); it != constraints_.rend(); ++it) {
+      const auto& c = *it;
+      if (c.kind != Constr::kPredicate && !needed.count(c.var.get())) continue;
+      result.constraints.push_back(c);
+      if (c.kind == Constr::kBindRange) {
+        add_vars(c.range->min);
+        add_vars(c.range->extent);
+      } else if (c.kind == Constr::kBindValue) {
+        add_vars(c.value);
+      }
+    }
+    std::reverse(result.constraints.begin(), result.constraints.end());
+    return result;
+  }
 
   void VisitStmt_(const tirx::BindNode* op) override {
     this->VisitExpr(op->value);

@@ -46,7 +46,7 @@ void StorageAccessVisitor::VisitExpr_(const BufferLoadNode* op) {
     e.dtype = op->ty.as_or_throw<PrimType>().WithLanes(1);
     e.can_prove_disjoint =
         CanProveDisjoint(op->buffer, op->indices, op->ty.as_or_throw<PrimType>());
-    if (e.can_prove_disjoint) e.constraints = GetConstrSet();
+    if (e.can_prove_disjoint) e.constraints = GetConstrSet(op->indices[0]);
     for (const auto& index : op->indices) {
       e.touched.push_back(arith::IntSet::Vector(index));
     }
@@ -71,7 +71,7 @@ void StorageAccessVisitor::VisitStmt_(const BufferStoreNode* op) {
     e.buffer = buf;
     e.dtype = op->value.ty().WithLanes(1);
     e.can_prove_disjoint = CanProveDisjoint(op->buffer, op->indices, op->value.ty());
-    if (e.can_prove_disjoint) e.constraints = GetConstrSet();
+    if (e.can_prove_disjoint) e.constraints = GetConstrSet(op->indices[0]);
     for (const auto& index : op->indices) {
       e.touched.push_back(arith::IntSet::Vector(index));
     }
