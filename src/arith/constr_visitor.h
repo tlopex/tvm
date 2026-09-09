@@ -27,7 +27,6 @@
 #include <tvm/arith/analyzer.h>
 #include <tvm/ir/with_context.h>
 #include <tvm/s_tir/stmt.h>
-#include <tvm/tirx/analysis.h>
 #include <tvm/tirx/builtin.h>
 #include <tvm/tirx/op.h>
 #include <tvm/tirx/stmt_functor.h>
@@ -39,6 +38,64 @@
 
 namespace tvm {
 namespace arith {
+
+/*!
+ * \brief Whether an expression is in the integer domain used by snapshot proofs.
+ *
+ * Purity alone is insufficient: narrowing casts and unsigned arithmetic can
+ * wrap, while the analyzer's integer bounds and rewrites do not model every
+ * such conversion.  Use a closed set of scalar signed int32/int64 arithmetic
+ * and boolean operators.  Casts must preserve the signed integer value;
+ * multiplication and division are restricted to constant scale factors and
+ * positive constant divisors.  All other nodes, including calls and loads,
+ * are excluded.  Signed overflow follows the existing TIR undefined semantics.
+ *
+ * Check the entire expression, including operands of comparisons and casts.
+ * Checking only its result type would accept a narrowing cast hidden below an
+ * int32 cast or a boolean comparison.
+ */
+inline bool IsSupportedConstraintExpr(const PrimExpr& expr) {
+  bool supported = true;
+  tirx::PostOrderVisit(expr, [&](const ffi::ObjectRef& node) {
+    if (!supported) return;
+    auto value = node.as<PrimExpr>();
+    if (!value) {
+      supported = false;
+      return;
+    }
+    PrimType ty = value.value().ty();
+    if (!ty.IsScalar() || !(ty.MatchesCode(kDLBool) ||
+                            (ty.MatchesCode(kDLInt) && (ty.bits() == 32 || ty.bits() == 64)))) {
+      supported = false;
+      return;
+    }
+    if (ty.MatchesCode(kDLBool)) {
+      supported = node.as<tirx::VarNode>() || node.as<IntImmNode>() || node.as<tirx::EQNode>() ||
+                  node.as<tirx::NENode>() || node.as<tirx::LTNode>() || node.as<tirx::LENode>() ||
+                  node.as<tirx::GTNode>() || node.as<tirx::GENode>() || node.as<tirx::AndNode>() ||
+                  node.as<tirx::OrNode>() || node.as<tirx::NotNode>();
+    } else if (const auto* cast = node.as<tirx::CastNode>()) {
+      PrimType from = cast->value.ty();
+      supported = from.MatchesCode(kDLInt) && ty.MatchesCode(kDLInt) && from.bits() <= ty.bits();
+    } else if (const auto* mul = node.as<tirx::MulNode>()) {
+      supported = mul->a.as<IntImmNode>() || mul->b.as<IntImmNode>();
+    } else if (node.as<tirx::DivNode>() || node.as<tirx::ModNode>() ||
+               node.as<tirx::FloorDivNode>() || node.as<tirx::FloorModNode>()) {
+      auto positive_constant = [](const PrimExpr& divisor) {
+        const auto* imm = divisor.as<IntImmNode>();
+        return imm && imm->value > 0;
+      };
+      if (const auto* op = node.as<tirx::DivNode>()) supported = positive_constant(op->b);
+      if (const auto* op = node.as<tirx::ModNode>()) supported = positive_constant(op->b);
+      if (const auto* op = node.as<tirx::FloorDivNode>()) supported = positive_constant(op->b);
+      if (const auto* op = node.as<tirx::FloorModNode>()) supported = positive_constant(op->b);
+    } else {
+      supported = node.as<tirx::VarNode>() || node.as<IntImmNode>() || node.as<tirx::AddNode>() ||
+                  node.as<tirx::SubNode>() || node.as<tirx::MinNode>() || node.as<tirx::MaxNode>();
+    }
+  });
+  return supported;
+}
 
 /*! \brief One premise, retaining bindings for the analyzer's rewrite and bound tables. */
 struct Constr {
@@ -94,11 +151,26 @@ struct ConstrSet {
   }
 
   bool CanProve(const PrimExpr& predicate) const {
+    if (!IsSupportedConstraintExpr(predicate)) return false;
     // Rebinding a variable can discard information or introduce inconsistent
     // premises.  Require the consumer to rename independent executions first.
     std::unordered_set<const tirx::VarNode*> bound;
     for (const auto& c : constraints) {
       if (c.kind != Constr::kPredicate && !bound.insert(c.var.get()).second) {
+        return false;
+      }
+      // Validate replay as well as collection: a consumer can construct or
+      // rename snapshots without going through ConstrVisitor.
+      if (c.kind != Constr::kPredicate) {
+        auto var = c.var.as<PrimExpr>();
+        if (!var || !IsSupportedConstraintExpr(var.value())) return false;
+      }
+      if (c.kind == Constr::kBindRange) {
+        if (!IsSupportedConstraintExpr(c.range->min) ||
+            !IsSupportedConstraintExpr(c.range->extent)) {
+          return false;
+        }
+      } else if (!IsSupportedConstraintExpr(c.value)) {
         return false;
       }
     }
@@ -125,10 +197,11 @@ struct ConstrSet {
 /*!
  * \brief Collect constraints that can safely be replayed at another access point.
  *
- * Only pure scalar integer expressions are retained.  In particular, a Bind of
- * a mutable read does not create a persistent rewrite to that read.  Its variable
- * remains an unconstrained symbol, which a consumer must rename per execution.
- * This deliberately loses information instead of modeling memory snapshots.
+ * Only expressions accepted by IsSupportedConstraintExpr are retained.  A Bind
+ * of a mutable read or an unsupported conversion does not create a persistent
+ * rewrite.  Its variable remains an unconstrained symbol, which a consumer must
+ * rename per execution.  Dropping such facts weakens the premises without
+ * introducing assumptions about memory snapshots or wrapping arithmetic.
  *
  * Derived visitors that override control flow must use WithConstrScope and add
  * the appropriate premises after visiting conditions and bounds.
@@ -139,12 +212,6 @@ class ConstrVisitor : public tirx::StmtExprVisitor {
   using StmtExprVisitor::VisitStmt_;
 
   ConstrSet GetConstrSet() const { return {constraints_}; }
-
-  static bool IsPureScalar(const PrimExpr& value) {
-    auto ty = value.ty();
-    return ty.IsScalar() && ty.MatchesCode(kDLInt, kDLUInt, kDLBool) &&
-           tirx::SideEffect(value) <= tirx::CallEffectKind::kPure;
-  }
 
   void VisitStmt_(const tirx::BindNode* op) override {
     this->VisitExpr(op->value);
@@ -248,17 +315,17 @@ class ConstrVisitor : public tirx::StmtExprVisitor {
   }
 
   void AddConstraint(const PrimExpr& predicate) {
-    if (IsPureScalar(predicate)) constraints_.emplace_back(predicate);
+    if (IsSupportedConstraintExpr(predicate)) constraints_.emplace_back(predicate);
   }
 
   void AddBinding(const tirx::Var& var, const Expr& value) {
-    if (auto scalar = value.as<PrimExpr>(); scalar && IsPureScalar(scalar.value())) {
+    if (auto scalar = value.as<PrimExpr>(); scalar && IsSupportedConstraintExpr(scalar.value())) {
       constraints_.emplace_back(var, scalar.value());
     }
   }
 
   void AddRange(const tirx::Var& var, const Range& range) {
-    if (IsPureScalar(range->min) && IsPureScalar(range->extent)) {
+    if (IsSupportedConstraintExpr(range->min) && IsSupportedConstraintExpr(range->extent)) {
       constraints_.emplace_back(var, range);
     }
   }

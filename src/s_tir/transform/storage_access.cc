@@ -348,7 +348,7 @@ bool StorageAccessVisitor::CanProveDisjoint(const Buffer& buffer,
   // need a byte-address model.  Loop accesses also need an iteration model.
   return !inside_loop_ && access_type.IsScalar() && indices.size() == 1 &&
          buffer->strides.empty() && is_zero(buffer->elem_offset) &&
-         GetScope(buffer->data).tag.empty() && IsPureScalar(indices[0]);
+         GetScope(buffer->data).tag.empty() && arith::IsSupportedConstraintExpr(indices[0]);
 }
 
 StorageScope StorageAccessVisitor::GetScope(Var buffer_var) const {
