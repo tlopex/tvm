@@ -186,6 +186,42 @@ TEST(ConstrSet, SymbolicGrowthAcrossBindingsIsRejected) {
   EXPECT_FALSE(bindings.CanProve(k - scale == 0));
 }
 
+TEST(ConstrSet, CombinedRemainderPremisesDoNotExcludeAValidValue) {
+  PrimVar x("x", PrimType::Int(64));
+  PrimVar j("j", PrimType::Int(64));
+  PrimExpr one = IntImm::Int64(1);
+  for (bool truncate : {false, true}) {
+    for (int64_t modulus : {3037000500LL, 4000000000LL}) {
+      auto remainder = [&](PrimExpr divisor) {
+        return truncate ? truncmod(x, divisor) : floormod(x, divisor);
+      };
+      PrimExpr first = remainder(IntImm::Int64(modulus));
+      PrimExpr second = remainder(IntImm::Int64(modulus + 1));
+      // x == 1 satisfies both premises without any runtime overflow. Their
+      // combined modulus overflows int64 inside the analyzer's intersection.
+      ConstrSet facts{{Constr(first == one), Constr(second == one)}};
+      EXPECT_FALSE(facts.CanProve(x != one));
+      EXPECT_FALSE(facts.CanProve(IntImm::Int64(0) != x - one));
+      // A remainder hidden in a Bind must not bypass replay validation.
+      ConstrSet bindings{{Constr(j, first), Constr(j == one), Constr(second == one)}};
+      EXPECT_FALSE(bindings.CanProve(x != one));
+    }
+  }
+}
+
+TEST(ConstrVisitor, DroppingRemainderFactsPreservesIndependentPremises) {
+  PrimVar x("x", PrimType::Int(64));
+  PrimVar tx("tx", PrimType::Int(32));
+  PrimExpr one = IntImm::Int64(1);
+  SnapshotCollector visitor;
+  visitor(IfThenElse(
+      tx < 32, IfThenElse(floormod(x, IntImm::Int64(4000000000)) == one,
+                          IfThenElse(floormod(x, IntImm::Int64(4000000001)) == one, Evaluate(x)))));
+  ASSERT_EQ(visitor.snapshots.size(), 1);
+  EXPECT_FALSE(visitor.snapshots[0].CanProve(x != one));
+  EXPECT_TRUE(visitor.snapshots[0].CanProve(tx < 32));
+}
+
 TEST(ConstrVisitor, ReductionInitFactsDoNotReachTheUpdate) {
   PrimVar i("i", PrimType::Int(32));
   SBlock block({IterVar(Range::FromMinExtent(0, 4), i, IterVarType::kCommReduce)}, {}, {}, "reduce",

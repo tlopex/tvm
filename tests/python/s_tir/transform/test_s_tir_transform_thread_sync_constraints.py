@@ -539,6 +539,92 @@ def test_unannotated_memory_condition_rejects_new_barriers(use_while):
         apply_sync(func)
 
 
+@pytest.mark.parametrize("remainder", [tirx.floormod, tirx.truncmod])
+@pytest.mark.parametrize("use_bind", [False, True])
+def test_combined_remainder_constraints_keep_sync(remainder, use_bind):
+    @T.prim_func(private=True, s_tir=True)
+    def func(A: T.Buffer((64,), "int32"), Out: T.Buffer((64,), "int32"), n: T.int64):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((64,), "int32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 64)
+        if tx == 0:
+            S[T.int64(0)] = A[tx]
+        if tx == 32:
+            if remainder(n, T.int64(4000000000)) == T.int64(1):
+                if remainder(n, T.int64(4000000001)) == T.int64(1):
+                    Out[tx] = S[n - T.int64(1)]
+
+    if use_bind:
+
+        def bind_remainder(node):
+            if isinstance(node, tirx.IfThenElse) and isinstance(node.condition, tirx.EQ):
+                value = node.condition.a
+                if isinstance(value, tirx.FloorMod | tirx.Mod):
+                    local = tirx.Var("remainder", "int64")
+                    return tirx.SeqStmt(
+                        [
+                            tirx.Bind(local, value),
+                            tirx.IfThenElse(local == node.condition.b, node.then_case, None),
+                        ]
+                    )
+            return None
+
+        func = func.with_body(tirx.stmt_functor.ir_transform(func.body, None, bind_remainder))
+
+    assert tirx.analysis.verify_well_formed(func)
+    result = apply_sync(func)
+    # n == 1 satisfies both conditions: thread 32 reads the location written
+    # by thread 0. The barrier must precede the reader's divergent branch.
+    thread_body = result.body.body.seq[-1].body
+    assert isinstance(thread_body, tirx.SeqStmt)
+    assert len(thread_body.seq) == 3
+    assert isinstance(thread_body.seq[1], tirx.Evaluate)
+    assert thread_body.seq[1].value.op.name == "tirx.tvm_storage_sync"
+    assert sync_count(result) == 1
+
+
+@pytest.mark.parametrize("break_node", [False, True])
+def test_uniform_tail_break_preserves_existing_sync(break_node):
+    @T.prim_func(private=True, s_tir=True)
+    def func(A: T.Buffer((64,), "int32"), Out: T.Buffer((64,), "int32"), n: T.int32):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((64,), "int32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 64)
+        while T.tvm_thread_invariant(n > 0):
+            S[tx] = A[tx]
+            Out[tx] = S[(tx + 1) % 64]
+            break
+
+    @T.prim_func(private=True, s_tir=True)
+    def expected(A: T.Buffer((64,), "int32"), Out: T.Buffer((64,), "int32"), n: T.int32):
+        _bx = T.launch_thread("blockIdx.x", 1)
+        S = T.alloc_buffer((64,), "int32", scope="shared")
+        tx = T.launch_thread("threadIdx.x", 64)
+        while T.tvm_thread_invariant(n > 0):
+            S[tx] = A[tx]
+            T.evaluate(T.call_intrin("int32", "tirx.tvm_storage_sync", "shared"))
+            Out[tx] = S[(tx + 1) % 64]
+            break
+
+    if break_node:
+
+        def replace_break(node):
+            if isinstance(node, tirx.Evaluate) and isinstance(node.value, tvm.ir.Call):
+                if node.value.op == tvm.ir.Op.get("tirx.break_loop"):
+                    return tirx.Break()
+            return None
+
+        func = func.with_body(tirx.stmt_functor.ir_transform(func.body, None, replace_break))
+        expected = expected.with_body(
+            tirx.stmt_functor.ir_transform(expected.body, None, replace_break)
+        )
+
+    assert tirx.analysis.verify_well_formed(func)
+    result = apply_sync(func)
+    tvm.ir.assert_structural_equal(result, expected)
+    tvm.ir.assert_structural_equal(apply_sync(result), result)
+
+
 def test_while_condition_and_body_are_synchronized():
     @T.prim_func(private=True, s_tir=True)
     def func(Out: T.Buffer((64,), "int32")):

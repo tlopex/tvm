@@ -48,14 +48,17 @@ namespace arith {
  *
  * Use a closed set of scalar signed int32/int64 arithmetic and boolean operators.
  * Casts must preserve the signed integer value; multiplication requires a constant
- * factor, and division a positive constant divisor. Calls and loads are excluded.
+ * factor. Calls, loads, division, and remainders are excluded.
  * Signed overflow follows the existing TIR undefined semantics.
+ * Division and remainder premises can introduce congruences whose combination
+ * overflows the analyzer even when every input expression is small. Until that
+ * growth is modeled, reject them in predicates, bindings, ranges, and queries.
  *
  * Also limit symbolic expansion: even a defined execution can have coefficients
  * that overflow the analyzer's int64 arithmetic when products are distributed.
  * Track a conservative magnitude through expressions and Bind definitions. Add
- * magnitudes for sums/comparisons and multiply them for products/divisions (which
- * can combine divisors). Growth must fit each integer node's type, including
+ * magnitudes for sums/comparisons and multiply them for products. Growth must
+ * fit each integer node's type, including
  * int32 nodes below widening casts. This deliberately excludes some valid large
  * indices rather than asking the analyzer to construct overflowing literals.
  */
@@ -178,18 +181,6 @@ class ConstraintExprValidator : public tirx::ExprFunctor<uint64_t(const Expr&)> 
     if (!(op->a.as<IntImmNode>() || op->b.as<IntImmNode>())) return kUnsupported;
     return Mul(VisitExpr(op->a), VisitExpr(op->b));
   }
-
-#define TVM_CONSTR_DIVISION_BOUND(Node)                       \
-  uint64_t VisitExpr_(const tirx::Node* op) final {           \
-    const auto* divisor = op->b.as<IntImmNode>();             \
-    if (!divisor || divisor->value <= 0) return kUnsupported; \
-    return Mul(VisitExpr(op->a), VisitExpr(op->b));           \
-  }
-  TVM_CONSTR_DIVISION_BOUND(DivNode)
-  TVM_CONSTR_DIVISION_BOUND(ModNode)
-  TVM_CONSTR_DIVISION_BOUND(FloorDivNode)
-  TVM_CONSTR_DIVISION_BOUND(FloorModNode)
-#undef TVM_CONSTR_DIVISION_BOUND
 
   std::unordered_map<const tirx::VarNode*, uint64_t> bindings_;
   // Memoize within one check to avoid expanding shared expression DAGs.
