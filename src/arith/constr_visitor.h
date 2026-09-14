@@ -269,6 +269,24 @@ struct ConstrSet {
       }
     }
     if (!validator.IsSupported(predicate)) return false;
+
+    // Inline immutable Bind values before replaying the snapshot.  Analyzer::Bind
+    // installs a rewrite rule for the bound variable.  Rewriting a comparison
+    // through several such rules can apply algebraic cancellation to an
+    // expression whose value is still symbolic, so it must not be used as the
+    // proof boundary.  A value binding is an SSA definition; substituting its
+    // already-inlined value preserves that definition without asking the
+    // analyzer to rewrite through it.
+    std::unordered_map<const tirx::VarNode*, PrimExpr> substitutions;
+    auto substitute = [&](const tirx::Var& var) -> ffi::Optional<Expr> {
+      auto it = substitutions.find(var.get());
+      if (it == substitutions.end()) return std::nullopt;
+      return it->second;
+    };
+    auto inline_expr = [&](const PrimExpr& value) {
+      return substitutions.empty() ? value : tirx::Substitute(value, substitute);
+    };
+
     Analyzer analyzer;
     // Congruence alone often separates flat addresses, e.g. even and odd
     // indices.  Try this inexpensive sufficient condition before replaying
@@ -279,19 +297,33 @@ struct ConstrSet {
     WithGroup<ConstraintContext> contexts;
     for (const auto& c : constraints) {
       switch (c.kind) {
-        case Constr::kPredicate:
+        case Constr::kPredicate: {
           // Bound analysis needs normalized comparisons, e.g. !(x < n) -> x >= n.
-          contexts.Emplace(analyzer, analyzer->rewrite_simplify(c.value));
+          PrimExpr value = inline_expr(c.value);
+          if (!IsSupportedConstraintExpr(value)) return false;
+          contexts.Emplace(analyzer, analyzer->rewrite_simplify(value));
           break;
-        case Constr::kBindValue:
-          analyzer->Bind(c.var, c.value);
+        }
+        case Constr::kBindValue: {
+          PrimExpr value = inline_expr(c.value);
+          if (!IsSupportedConstraintExpr(value)) return false;
+          substitutions.emplace(c.var.get(), value);
           break;
-        case Constr::kBindRange:
-          analyzer->Bind(c.var, c.range);
+        }
+        case Constr::kBindRange: {
+          Range range = tirx::Substitute(c.range, substitute);
+          if (!IsSupportedConstraintExpr(range->min) ||
+              !IsSupportedConstraintExpr(range->extent)) {
+            return false;
+          }
+          analyzer->Bind(c.var, range);
           break;
+        }
       }
     }
-    return analyzer->CanProve(predicate);
+    PrimExpr query = inline_expr(predicate);
+    if (!IsSupportedConstraintExpr(query)) return false;
+    return analyzer->CanProve(query);
   }
 };
 

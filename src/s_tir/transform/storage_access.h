@@ -32,7 +32,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../../arith/constr_visitor.h"
 #include "../../runtime/thread_storage_scope.h"
 
 namespace tvm {
@@ -44,7 +43,7 @@ using runtime::StorageScope;
 /*!
  * \brief Base class of storage access analysis
  */
-class StorageAccessVisitor : public arith::ConstrVisitor {
+class StorageAccessVisitor : public StmtExprVisitor {
  public:
   /*! \brief Storage access type */
   enum AccessType {
@@ -68,10 +67,6 @@ class StorageAccessVisitor : public arith::ConstrVisitor {
      * Has one IntSet for each index in the buffer being accessed.
      */
     ffi::Array<arith::IntSet> touched;
-    /*! \brief Premises at this access, before subsequent statements execute. */
-    arith::ConstrSet constraints;
-    /*! \brief A scalar flat access whose address can be compared using constraints. */
-    bool can_prove_disjoint = false;
     /*! \brief The type of access */
     AccessType type;
     /*! \brief The storage scope */
@@ -85,15 +80,12 @@ class StorageAccessVisitor : public arith::ConstrVisitor {
     const ffi::Object* stmt;
     /*! \brief access patterns in the statement */
     std::vector<AccessEntry> access;
-    /*! \brief A synthetic entry for a while condition, keyed by its WhileNode. */
-    bool is_loop_condition = false;
   };
   // override visitor pattern
   void VisitExpr_(const BufferLoadNode* op) final;
   void VisitStmt_(const BufferStoreNode* op) final;
   void VisitStmt_(const EvaluateNode* op) final;
   void VisitStmt_(const BindNode* op) final;
-  void VisitStmt_(const AssertStmtNode* op) final;
   void VisitStmt_(const AttrStmtNode* op) final;
   void VisitStmt_(const ForNode* op) final;
   void VisitStmt_(const IfThenElseNode* op) final;
@@ -123,12 +115,10 @@ class StorageAccessVisitor : public arith::ConstrVisitor {
    *
    * \param seq The sequence of the access operations.
    * \param loop Pass loop node if it is a loop, otherwise nullptr.
-   * \param while_loop Pass the WhileNode when summarizing a while iteration.
    * \return The summarized sequence that represent access that
    *  the parent should taken care of to synchronize.
    */
-  virtual std::vector<AccessEntry> Summarize(std::vector<StmtEntry> seq, const ForNode* loop,
-                                             const WhileNode* while_loop = nullptr) = 0;
+  virtual std::vector<AccessEntry> Summarize(std::vector<StmtEntry> seq, const ForNode* loop) = 0;
   /*!
    * \brief Get the scope of the buffer array.
    * \return The scope of the final buffer array.
@@ -138,12 +128,6 @@ class StorageAccessVisitor : public arith::ConstrVisitor {
   std::vector<std::vector<StmtEntry>> scope_;
 
  private:
-  // Record condition reads without assuming that either branch is taken.
-  std::vector<AccessEntry> VisitCondition(const PrimExpr& condition);
-  bool CanProveDisjoint(const Buffer& buffer, const ffi::Array<PrimExpr>& indices,
-                        PrimType access_type) const;
-  // Loop executions and their summaries are not modeled by the initial proof path.
-  bool inside_loop_{false};
   // whether access appending is enabled.
   bool allow_append_{false};
   // Whether we are in device environment

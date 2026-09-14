@@ -45,16 +45,13 @@ class ThreadSyncPlanner : public StorageAccessVisitor {
 
   // The syncs inserted before each statement
   std::unordered_set<const ffi::Object*> syncs_inserted_;
-  // Barriers that must execute before every evaluation of a while condition.
-  std::unordered_set<const ffi::Object*> condition_syncs_;
 
  protected:
   bool Enabled(const VarNode* buf, const StorageScope& scope) const final {
     return in_device_env() && scope == sync_scope_;
   }
   // Plan the sync
-  std::vector<AccessEntry> Summarize(std::vector<StmtEntry> seq, const ForNode* loop,
-                                     const WhileNode* while_loop) final {
+  std::vector<AccessEntry> Summarize(std::vector<StmtEntry> seq, const ForNode* loop) final {
     // Redirect all "shared.dyn" buffer access to the same buffer var
     // so that the accesses can be planned together.
     Var shared_dyn_buf;
@@ -79,7 +76,7 @@ class ThreadSyncPlanner : public StorageAccessVisitor {
     for (size_t i = 0; i < seq.size(); ++i) {
       const StmtEntry& s = seq[i];
       // check if sync before statement is needed.
-      bool sync_before_stmt = HasSync(s);
+      bool sync_before_stmt = (syncs_inserted_.count(s.stmt) != 0);
       // Apply the syncs added already.
       if (sync_before_stmt) {
         reads.clear();
@@ -119,13 +116,13 @@ class ThreadSyncPlanner : public StorageAccessVisitor {
       }
       if (sync_before_stmt) {
         TVM_FFI_ICHECK_EQ(condition_counter(), 0) << "Cannot insert syncs inside condition";
-        PlanSync(s);
+        syncs_inserted_.insert(s.stmt);
       }
     }
-    if (loop != nullptr || while_loop != nullptr) {
+    if (loop != nullptr) {
       for (size_t i = 0; i < seq.size(); ++i) {
         const StmtEntry& s = seq[i];
-        if (HasSync(s)) break;
+        if (syncs_inserted_.count(s.stmt) != 0) break;
         if (reads.empty() && writes.empty()) break;
         bool sync_before_stmt = false;
         for (const AccessEntry& acc : s.access) {
@@ -146,26 +143,10 @@ class ThreadSyncPlanner : public StorageAccessVisitor {
         }
         if (sync_before_stmt) {
           TVM_FFI_ICHECK_EQ(condition_counter(), 0) << "Cannot insert syncs inside condition";
-          PlanSync(s);
+          syncs_inserted_.insert(s.stmt);
           break;
         }
       }
-    }
-    if (while_loop != nullptr) {
-      bool has_exit = false;
-      bool has_planned_sync = condition_syncs_.count(while_loop);
-      PostOrderVisit(while_loop->body, [&](const ffi::ObjectRef& node) {
-        has_exit |= node.as<BreakNode>() || node.as<ContinueNode>() || node.as<ReturnNode>();
-        if (const auto* call = node.as<CallNode>()) {
-          has_exit |=
-              call->op.same_as(builtin::break_loop()) || call->op.same_as(builtin::continue_loop());
-        }
-        has_planned_sync |= syncs_inserted_.count(node.get()) || condition_syncs_.count(node.get());
-      });
-      TVM_FFI_CHECK(!(has_exit && has_planned_sync), ValueError)
-          << "ThreadSync cannot insert barriers in a while loop containing break, continue, or "
-             "return; "
-             "early exits require explicit synchronization";
     }
     // return the exposed entries, remove unecessary ones.
     int sync_count = 0;
@@ -177,7 +158,7 @@ class ThreadSyncPlanner : public StorageAccessVisitor {
     esync.scope = sync_scope_;
 
     for (const StmtEntry& s : seq) {
-      if (HasSync(s)) {
+      if (syncs_inserted_.count(s.stmt)) {
         if (sync_count != 0) {
           tail.clear();
         } else {
@@ -203,7 +184,7 @@ class ThreadSyncPlanner : public StorageAccessVisitor {
       }
     }
     head.insert(head.end(), tail.begin(), tail.end());
-    if (loop != nullptr || while_loop != nullptr) {
+    if (loop != nullptr) {
       // clear double buffer flag after a loop is finished.
       for (AccessEntry& e : head) {
         e.double_buffer_write = false;
@@ -213,14 +194,6 @@ class ThreadSyncPlanner : public StorageAccessVisitor {
   }
 
  private:
-  bool HasSync(const StmtEntry& entry) const {
-    return (entry.is_loop_condition ? condition_syncs_ : syncs_inserted_).count(entry.stmt);
-  }
-
-  void PlanSync(const StmtEntry& entry) {
-    (entry.is_loop_condition ? condition_syncs_ : syncs_inserted_).insert(entry.stmt);
-  }
-
   // find conflicting entry in vec.
   bool FindConflict(const std::vector<AccessEntry>& prev, const AccessEntry& curr,
                     bool loop_carry) {
@@ -284,27 +257,6 @@ class ThreadSyncPlanner : public StorageAccessVisitor {
       return false;
     }
 
-    if (!loop_carry && prev.can_prove_disjoint && curr.can_prove_disjoint &&
-        !prev.double_buffer_write && !curr.double_buffer_write && prev.dtype == curr.dtype) {
-      // Two accesses may execute in different threads.  Rename every scalar
-      // variable on one side, including local Bind results.  Renaming only the
-      // thread id would incorrectly equate the locals of independent threads.
-      // Free parameters are also renamed, conservatively allowing them to differ.
-      std::unordered_map<const VarNode*, Var> renamed;
-      auto rename = [&](const Var& var) -> Var {
-        auto [it, inserted] = renamed.emplace(var.get(), var);
-        if (inserted) it->second = var.CopyWithSuffix("_other");
-        return it->second;
-      };
-      auto substitute = [&](const Var& var) -> ffi::Optional<Expr> { return rename(var); };
-      PrimExpr prev_index = prev.touched[0].PointValue();
-      PrimExpr curr_index = Substitute(curr.touched[0].PointValue(), substitute);
-      auto constraints = prev.constraints.Merge(curr.constraints.RenameVars(rename));
-      if (constraints.CanProve(prev_index != curr_index)) {
-        return false;
-      }
-    }
-
     // If nothing else allows sharing the same buffer, then they are
     // in conflict.
     return true;
@@ -359,16 +311,15 @@ class ThreadSyncAfterWaitQueueInserter : public StmtExprMutator {
 
 class ThreadSyncInserter : public StmtExprMutator {
  public:
-  ThreadSyncInserter(StorageScope sync_scope, const std::unordered_set<const ffi::Object*>& syncs,
-                     const std::unordered_set<const ffi::Object*>& condition_syncs)
-      : sync_scope_(sync_scope), syncs_(syncs), condition_syncs_(condition_syncs) {}
-
-  using StmtExprMutator::VisitStmt_;
+  ThreadSyncInserter(StorageScope sync_scope, const std::unordered_set<const ffi::Object*>& syncs)
+      : sync_scope_(sync_scope), syncs_(syncs) {}
 
   Stmt VisitStmt(const Stmt& stmt) final {
-    if (syncs_.empty() && condition_syncs_.empty()) return stmt;
+    if (syncs_.size() == 0) return stmt;
     if (syncs_.count(stmt.get())) {
-      Stmt barrier = MakeBarrier();
+      Stmt barrier = Evaluate(
+          Call(PrimType::Int(32), builtin::tvm_storage_sync(), {StringImm(sync_scope_.to_string())})
+              .as_or_throw<PrimExpr>());
       // Mutate after query, to avoid stmt change.
       auto ret = StmtExprMutator::VisitStmt(stmt);
       ret = SeqStmt({barrier, ret});
@@ -378,30 +329,10 @@ class ThreadSyncInserter : public StmtExprMutator {
     }
   }
 
-  Stmt VisitStmt_(const WhileNode* op) final {
-    auto result = StmtExprMutator::VisitStmt_(op);
-    if (!condition_syncs_.count(op)) return result;
-    auto loop = result.as_or_throw<While>();
-    // A barrier before the While statement only protects its first condition
-    // read. Move the test into the loop so every read, including the final false
-    // test, is preceded by the planned barrier.
-    return While(
-        IntImm(PrimType::Bool(), 1),
-        SeqStmt({MakeBarrier(), IfThenElse(Not(loop->condition), Evaluate(break_loop(op->span))),
-                 loop->body}),
-        op->span);
-  }
-
  private:
-  Stmt MakeBarrier() const {
-    return Evaluate(
-        Call(PrimType::Int(32), builtin::tvm_storage_sync(), {StringImm(sync_scope_.to_string())})
-            .as_or_throw<PrimExpr>());
-  }
   // data structure.
   StorageScope sync_scope_;
   const std::unordered_set<const ffi::Object*>& syncs_;
-  const std::unordered_set<const ffi::Object*>& condition_syncs_;
 };
 
 Stmt ThreadSync(Stmt stmt, std::string storage_scope) {
@@ -411,8 +342,7 @@ Stmt ThreadSync(Stmt stmt, std::string storage_scope) {
   }
   ThreadSyncPlanner planner(sync_scope);
   planner(stmt);
-  return ThreadSyncInserter(sync_scope, planner.syncs_inserted_,
-                            planner.condition_syncs_)(std::move(stmt));
+  return ThreadSyncInserter(sync_scope, planner.syncs_inserted_)(std::move(stmt));
 }
 
 namespace transform {

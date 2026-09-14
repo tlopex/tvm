@@ -186,6 +186,24 @@ TEST(ConstrSet, SymbolicGrowthAcrossBindingsIsRejected) {
   EXPECT_FALSE(bindings.CanProve(k - scale == 0));
 }
 
+TEST(ConstrSet, InlineBindingsBeforeReplay) {
+  PrimVar x("x", PrimType::Int(64));
+  PrimVar w("w", PrimType::Int(64));
+  PrimVar z("z", PrimType::Int(64));
+  PrimVar y("y", PrimType::Int(64));
+  PrimExpr scale = IntImm::Int64(1500000000);
+  PrimExpr value = IntImm::Int64(361500000000);
+
+  // x == -8 and w == 7 satisfy y == value and y >= value.  Replaying the
+  // Bind values through Analyzer::Bind used to simplify that predicate to
+  // w <= -241, incorrectly proving y != value.  Inline SSA values before
+  // entering analyzer scopes so the snapshot remains a sound sufficient proof.
+  ConstrSet bindings{{Constr(z, x * IntImm::Int64(-31)),
+                     Constr(y, (z - w) * scale),
+                     Constr(y >= value)}};
+  EXPECT_FALSE(bindings.CanProve(y != value));
+}
+
 TEST(ConstrSet, CombinedRemainderPremisesDoNotExcludeAValidValue) {
   PrimVar x("x", PrimType::Int(64));
   PrimVar j("j", PrimType::Int(64));
