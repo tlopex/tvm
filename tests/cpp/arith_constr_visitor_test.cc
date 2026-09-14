@@ -198,14 +198,12 @@ TEST(ConstrSet, InlineBindingsBeforeReplay) {
   // Bind values through Analyzer::Bind used to simplify that predicate to
   // w <= -241, incorrectly proving y != value.  Inline SSA values before
   // entering analyzer scopes so the snapshot remains a sound sufficient proof.
-  ConstrSet bindings{{Constr(z, x * IntImm::Int64(-31)),
-                     Constr(y, (z - w) * scale),
-                     Constr(y >= value)}};
+  ConstrSet bindings{
+      {Constr(z, x * IntImm::Int64(-31)), Constr(y, (z - w) * scale), Constr(y >= value)}};
   EXPECT_FALSE(bindings.CanProve(y != value));
 
   ConstrSet singleton_range{{Constr(z, Range::FromMinExtent(x * IntImm::Int64(-31), 1)),
-                             Constr(y, (z - w) * scale),
-                             Constr(y >= value)}};
+                             Constr(y, (z - w) * scale), Constr(y >= value)}};
   EXPECT_FALSE(singleton_range.CanProve(y != value));
 }
 

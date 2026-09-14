@@ -312,8 +312,7 @@ struct ConstrSet {
         }
         case Constr::kBindRange: {
           Range range = tirx::Substitute(c.range, substitute);
-          if (!IsSupportedConstraintExpr(range->min) ||
-              !IsSupportedConstraintExpr(range->extent)) {
+          if (!IsSupportedConstraintExpr(range->min) || !IsSupportedConstraintExpr(range->extent)) {
             return false;
           }
           if (tirx::is_one(range->extent)) {
