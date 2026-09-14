@@ -70,8 +70,11 @@ class ConstraintExprValidator : public tirx::ExprFunctor<uint64_t(const Expr&)> 
   }
 
   bool Bind(const tirx::Var& var, const PrimExpr& value) {
+    if (!var.defined() || !value.defined()) return false;
+    auto var_type = var->ty.as<PrimType>();
+    if (!var_type || value.ty() != var_type.value()) return false;
     expression_bounds_.clear();
-    uint64_t bound = CheckType(var->ty.as_or_throw<PrimType>(), VisitExpr(value));
+    uint64_t bound = CheckType(var_type.value(), VisitExpr(value));
     if (bound == kUnsupported) return false;
     bindings_[var.get()] = bound;
     return true;
@@ -237,6 +240,11 @@ struct ConstrSet {
           break;
         case Constr::kBindRange:
           result.constraints.emplace_back(rename(c.var), tirx::Substitute(c.range, substitute));
+          break;
+        default:
+          // Keep malformed input visible to CanProve instead of silently
+          // dropping a premise during variable renaming.
+          result.constraints.push_back(c);
           break;
       }
     }
