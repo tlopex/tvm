@@ -78,7 +78,6 @@ class ConstraintExprValidator : public tirx::ExprFunctor<uint64_t(const Expr&)> 
   }
 
   bool Bind(const tirx::Var& var, const Range& range) {
-    if (!range.defined() || !range->min.defined() || !range->extent.defined()) return false;
     expression_bounds_.clear();
     uint64_t bound = CheckType(var->ty.as_or_throw<PrimType>(),
                                Add(VisitExpr(range->min), VisitExpr(range->extent)));
@@ -193,10 +192,6 @@ inline bool IsSupportedConstraintExpr(const PrimExpr& expr) {
   return ConstraintExprValidator().IsSupported(expr);
 }
 
-inline bool IsSupportedConstraintPredicate(const PrimExpr& expr) {
-  return expr.defined() && expr.ty().MatchesCode(kDLBool) && IsSupportedConstraintExpr(expr);
-}
-
 /*! \brief One premise, retaining bindings for the analyzer's rewrite and bound tables. */
 struct Constr {
   enum Kind { kPredicate, kBindValue, kBindRange };
@@ -256,10 +251,6 @@ struct ConstrSet {
     // premises.  Require the consumer to rename independent executions first.
     std::unordered_set<const tirx::VarNode*> bound;
     for (const auto& c : constraints) {
-      if (c.kind != Constr::kPredicate && c.kind != Constr::kBindValue &&
-          c.kind != Constr::kBindRange) {
-        return false;
-      }
       if (c.kind != Constr::kPredicate && !bound.insert(c.var.get()).second) {
         return false;
       }
@@ -273,11 +264,11 @@ struct ConstrSet {
         if (!validator.Bind(c.var, c.range)) return false;
       } else if (c.kind == Constr::kBindValue) {
         if (!validator.Bind(c.var, c.value)) return false;
-      } else if (!IsSupportedConstraintPredicate(c.value)) {
+      } else if (!validator.IsSupported(c.value)) {
         return false;
       }
     }
-    if (!IsSupportedConstraintPredicate(predicate)) return false;
+    if (!validator.IsSupported(predicate)) return false;
 
     // Inline immutable Bind values before replaying the snapshot.  Analyzer::Bind
     // installs a rewrite rule for the bound variable.  Rewriting a comparison
@@ -309,7 +300,7 @@ struct ConstrSet {
         case Constr::kPredicate: {
           // Bound analysis needs normalized comparisons, e.g. !(x < n) -> x >= n.
           PrimExpr value = inline_expr(c.value);
-          if (!IsSupportedConstraintPredicate(value)) return false;
+          if (!IsSupportedConstraintExpr(value)) return false;
           contexts.Emplace(analyzer, analyzer->rewrite_simplify(value));
           break;
         }
@@ -334,12 +325,10 @@ struct ConstrSet {
           }
           break;
         }
-        default:
-          return false;
       }
     }
     PrimExpr query = inline_expr(predicate);
-    if (!IsSupportedConstraintPredicate(query)) return false;
+    if (!IsSupportedConstraintExpr(query)) return false;
     return analyzer->CanProve(query);
   }
 };
@@ -415,14 +404,13 @@ class ConstrVisitor : public tirx::StmtExprVisitor {
 
   void VisitStmt_(const tirx::IfThenElseNode* op) override {
     this->VisitExpr(op->condition);
-    PrimExpr condition = ExtractRealCondition(op->condition);
     WithConstrScope([&]() {
-      AddConstraint(condition);
+      AddConstraint(op->condition);
       this->VisitStmt(op->then_case);
     });
     if (op->else_case) {
       WithConstrScope([&]() {
-        AddConstraint(tirx::Not(condition));
+        AddConstraint(tirx::Not(op->condition));
         this->VisitStmt(op->else_case.value());
       });
     }
@@ -473,7 +461,6 @@ class ConstrVisitor : public tirx::StmtExprVisitor {
       for (const auto& iv : op->iter_vars) {
         this->VisitExpr(iv->dom->min);
         this->VisitExpr(iv->dom->extent);
-        AddRange(iv->var, iv->dom);
       }
       for (const auto& buffer : op->alloc_buffers) {
         this->VisitBufferDef(buffer, /*alloc_data=*/true);
@@ -493,28 +480,6 @@ class ConstrVisitor : public tirx::StmtExprVisitor {
     });
   }
 
-  void VisitStmt_(const tirx::SBlockRealizeNode* op) override {
-    for (const auto& value : op->iter_values) this->VisitExpr(value);
-    this->VisitExpr(op->predicate);
-    WithConstrScope([&]() {
-      AddConstraint(op->predicate);
-      this->VisitStmt(op->block);
-    });
-  }
-
-  void VisitExpr_(const tirx::ReduceNode* op) override {
-    WithConstrScope([&]() {
-      for (const auto& iv : op->axis) {
-        this->VisitExpr(iv->dom->min);
-        this->VisitExpr(iv->dom->extent);
-        AddRange(iv->var, iv->dom);
-      }
-      for (const auto& source : op->source) this->VisitExpr(source);
-      for (const auto& init : op->init) this->VisitExpr(init);
-      this->VisitExpr(op->condition);
-    });
-  }
-
   void VisitExpr_(const tirx::LetNode* op) override {
     this->VisitExpr(op->value);
     WithConstrScope([&]() {
@@ -526,9 +491,8 @@ class ConstrVisitor : public tirx::StmtExprVisitor {
   // Select may evaluate both operands, so neither gets a branch constraint.
   void VisitExpr_(const CallNode* op) override {
     if (op->op.same_as(tirx::builtin::if_then_else())) {
-      auto raw_condition = op->args[0].as_or_throw<PrimExpr>();
-      this->VisitExpr(raw_condition);
-      PrimExpr condition = ExtractRealCondition(raw_condition);
+      auto condition = op->args[0].as_or_throw<PrimExpr>();
+      this->VisitExpr(condition);
       WithConstrScope([&]() {
         AddConstraint(condition);
         this->VisitExpr(op->args[1]);
@@ -543,14 +507,6 @@ class ConstrVisitor : public tirx::StmtExprVisitor {
   }
 
  protected:
-  static PrimExpr ExtractRealCondition(const PrimExpr& condition) {
-    if (const auto* call = condition.as<CallNode>();
-        call && call->op.same_as(tirx::builtin::likely())) {
-      return call->args[0].as_or_throw<PrimExpr>();
-    }
-    return condition;
-  }
-
   template <typename F>
   void WithConstrScope(F&& body) {
     struct Guard {
@@ -562,7 +518,7 @@ class ConstrVisitor : public tirx::StmtExprVisitor {
   }
 
   void AddConstraint(const PrimExpr& predicate) {
-    if (IsSupportedConstraintPredicate(predicate)) constraints_.emplace_back(predicate);
+    if (IsSupportedConstraintExpr(predicate)) constraints_.emplace_back(predicate);
   }
 
   void AddBinding(const tirx::Var& var, const Expr& value) {
@@ -572,8 +528,7 @@ class ConstrVisitor : public tirx::StmtExprVisitor {
   }
 
   void AddRange(const tirx::Var& var, const Range& range) {
-    if (range.defined() && range->min.defined() && range->extent.defined() &&
-        IsSupportedConstraintExpr(range->min) && IsSupportedConstraintExpr(range->extent)) {
+    if (IsSupportedConstraintExpr(range->min) && IsSupportedConstraintExpr(range->extent)) {
       constraints_.emplace_back(var, range);
     }
   }

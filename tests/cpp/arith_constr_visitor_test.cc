@@ -63,14 +63,6 @@ TEST(ConstrVisitor, SnapshotsOutliveBranchAndVisitor) {
   EXPECT_FALSE(snapshots[2].CanProve(x >= 8));
 }
 
-TEST(ConstrVisitor, LikelyConditionKeepsTheUnderlyingPredicate) {
-  PrimVar x("x", PrimType::Int(32));
-  SnapshotCollector visitor;
-  visitor(IfThenElse(likely(x < 8), Evaluate(x)));
-  ASSERT_EQ(visitor.snapshots.size(), 1);
-  EXPECT_TRUE(visitor.snapshots[0].CanProve(x < 8));
-}
-
 TEST(ConstrVisitor, LaterBindingsDoNotChangeEarlierSnapshots) {
   PrimVar x("x", PrimType::Int(32));
   PrimVar y("y", PrimType::Int(32));
@@ -180,16 +172,6 @@ TEST(ConstrSet, ManuallyConstructedUnsupportedFactsAreRejected) {
   EXPECT_FALSE(ConstrSet{}.CanProve(wrapped == y));
 }
 
-TEST(ConstrSet, PredicatesAndRangesHaveExplicitBoundaries) {
-  PrimVar x("x", PrimType::Int(32));
-  ConstrSet integer_predicate{{Constr(PrimExpr(1))}};
-  EXPECT_FALSE(integer_predicate.CanProve(IntImm::Bool(true)));
-  EXPECT_FALSE(ConstrSet{}.CanProve(PrimExpr(1)));
-
-  ConstrSet undefined_range{{Constr(x, Range())}};
-  EXPECT_FALSE(undefined_range.CanProve(x == 0));
-}
-
 TEST(ConstrSet, SymbolicGrowthAcrossBindingsIsRejected) {
   PrimVar x("x", PrimType::Int(64));
   PrimVar j("j", PrimType::Int(64));
@@ -272,42 +254,6 @@ TEST(ConstrVisitor, ReductionInitFactsDoNotReachTheUpdate) {
   EXPECT_TRUE(visitor.snapshots[0].CanProve(i == 0));
   EXPECT_FALSE(visitor.snapshots[1].CanProve(i == 0));
   EXPECT_FALSE(visitor.GetConstrSet().CanProve(i == 0));
-}
-
-TEST(ConstrVisitor, BlockAndReductionRangesAreScoped) {
-  PrimVar block_i("block_i", PrimType::Int(32));
-  SnapshotCollector block_visitor;
-  block_visitor(SBlock({IterVar(Range::FromMinExtent(0, 4), block_i, IterVarType::kDataPar)}, {},
-                       {}, "block", Evaluate(block_i)));
-  ASSERT_EQ(block_visitor.snapshots.size(), 1);
-  EXPECT_TRUE(block_visitor.snapshots[0].CanProve(block_i >= 0 && block_i < 4));
-  EXPECT_FALSE(block_visitor.GetConstrSet().CanProve(block_i < 4));
-
-  PrimVar reduce_i("reduce_i", PrimType::Int(32));
-  PrimVar lhs("lhs", PrimType::Int(32));
-  PrimVar rhs("rhs", PrimType::Int(32));
-  PrimVar result("result", PrimType::Int(32));
-  auto buffer = decl_buffer({8}, PrimType::Int(32));
-  auto reducer = CommReducer({lhs}, {rhs}, {result}, {PrimExpr(0)});
-  SnapshotCollector reduce_visitor;
-  reduce_visitor(
-      Evaluate(Reduce(reducer, {BufferLoad(buffer, {reduce_i})},
-                      {IterVar(Range::FromMinExtent(0, 8), reduce_i, IterVarType::kCommReduce)},
-                      IntImm::Bool(true), 0, {})));
-  ASSERT_EQ(reduce_visitor.loads.size(), 1);
-  EXPECT_TRUE(reduce_visitor.loads[0].CanProve(reduce_i >= 0 && reduce_i < 8));
-  EXPECT_FALSE(reduce_visitor.GetConstrSet().CanProve(reduce_i < 8));
-}
-
-TEST(ConstrVisitor, BlockRealizePredicateIsScopedToTheBlock) {
-  PrimVar i("realized_i", PrimType::Int(32));
-  auto block = SBlock({IterVar(Range::FromMinExtent(0, 4), i, IterVarType::kDataPar)}, {}, {},
-                      "realized", Evaluate(i));
-  SnapshotCollector visitor;
-  visitor(SBlockRealize({0}, i < 2, block));
-  ASSERT_EQ(visitor.snapshots.size(), 1);
-  EXPECT_TRUE(visitor.snapshots[0].CanProve(i < 2));
-  EXPECT_FALSE(visitor.GetConstrSet().CanProve(i < 2));
 }
 
 TEST(ConstrSet, ExpansionMustFitEachIntegerNode) {
