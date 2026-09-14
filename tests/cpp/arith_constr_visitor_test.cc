@@ -132,10 +132,10 @@ TEST(ConstrVisitor, MutableReadDoesNotBecomeAPersistentBinding) {
   EXPECT_FALSE(visitor.snapshots[0].CanProve(x == 0));
 }
 
-TEST(ConstrSet, RenameDistinguishesLocalValuesAcrossExecutions) {
-  PrimVar tx("tx", PrimType::Int(32));
-  PrimVar j("j", PrimType::Int(32));
-  ConstrSet first{{Constr(tx, Range::FromMinExtent(0, 32)), Constr(j, 2 * tx)}};
+TEST(ConstrSet, RenameDistinguishesBindingsAcrossSnapshots) {
+  PrimVar index("index", PrimType::Int(32));
+  PrimVar mapped("mapped", PrimType::Int(32));
+  ConstrSet first{{Constr(index, Range::FromMinExtent(0, 32)), Constr(mapped, 2 * index)}};
   std::unordered_map<const VarNode*, Var> vars;
   auto rename = [&](const Var& var) {
     auto [it, inserted] = vars.emplace(var.get(), var);
@@ -143,12 +143,12 @@ TEST(ConstrSet, RenameDistinguishesLocalValuesAcrossExecutions) {
     return it->second;
   };
   auto second = first.RenameVars(rename);
-  auto other_j = rename(j).as_or_throw<PrimExpr>();
+  auto other_mapped = rename(mapped).as_or_throw<PrimExpr>();
   auto merged = first.Merge(second);
-  EXPECT_TRUE(merged.CanProve(j != other_j + 1));
-  EXPECT_FALSE(merged.CanProve(j != other_j));
-  EXPECT_FALSE(merged.CanProve(j == other_j));
-  EXPECT_TRUE(first.CanProve(j < 64));
+  EXPECT_TRUE(merged.CanProve(mapped != other_mapped + 1));
+  EXPECT_FALSE(merged.CanProve(mapped != other_mapped));
+  EXPECT_FALSE(merged.CanProve(mapped == other_mapped));
+  EXPECT_TRUE(first.CanProve(mapped < 64));
 }
 
 TEST(ConstrSet, MergeDoesNotSilentlyDiscardDuplicateBindings) {

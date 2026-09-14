@@ -359,7 +359,7 @@ class ConstrVisitor : public tirx::StmtExprVisitor {
    * Bindings are in definition order, so a backward pass also finds transitive
    * dependencies.  Keep every predicate, including ones after the definition of
    * a query variable: they may constrain it indirectly through another variable.
-   * Unused bindings (often unrelated loop/thread axes or scalar temporaries) do
+   * Unused bindings (often unrelated loop axes or scalar temporaries) do
    * not need to be copied, renamed, validated, and replayed for an address proof.
    * Omitting a premise only weakens the snapshot.
    */
