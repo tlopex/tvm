@@ -202,6 +202,11 @@ TEST(ConstrSet, InlineBindingsBeforeReplay) {
                      Constr(y, (z - w) * scale),
                      Constr(y >= value)}};
   EXPECT_FALSE(bindings.CanProve(y != value));
+
+  ConstrSet singleton_range{{Constr(z, Range::FromMinExtent(x * IntImm::Int64(-31), 1)),
+                             Constr(y, (z - w) * scale),
+                             Constr(y >= value)}};
+  EXPECT_FALSE(singleton_range.CanProve(y != value));
 }
 
 TEST(ConstrSet, CombinedRemainderPremisesDoNotExcludeAValidValue) {

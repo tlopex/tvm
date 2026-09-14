@@ -316,7 +316,14 @@ struct ConstrSet {
               !IsSupportedConstraintExpr(range->extent)) {
             return false;
           }
-          analyzer->Bind(c.var, range);
+          if (tirx::is_one(range->extent)) {
+            // A singleton range is an SSA definition as well.  Keep it on the
+            // same substitution path as BindValue so analyzer rewrite rules
+            // cannot cross a symbolic definition.
+            substitutions.emplace(c.var.get(), range->min);
+          } else {
+            analyzer->Bind(c.var, range);
+          }
           break;
         }
       }
