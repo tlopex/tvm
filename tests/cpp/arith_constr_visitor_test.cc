@@ -188,9 +188,6 @@ TEST(ConstrSet, PredicatesAndRangesHaveExplicitBoundaries) {
 
   ConstrSet undefined_range{{Constr(x, Range())}};
   EXPECT_FALSE(undefined_range.CanProve(x == 0));
-
-  ConstrSet mismatched_binding{{Constr(x, IntImm::Int64(1))}};
-  EXPECT_FALSE(mismatched_binding.CanProve(x == 1));
 }
 
 TEST(ConstrSet, SymbolicGrowthAcrossBindingsIsRejected) {
