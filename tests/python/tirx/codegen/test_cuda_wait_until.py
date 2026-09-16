@@ -347,3 +347,44 @@ def test_the_four_direct_forms_are_gone():
         "atomic_ref_wait",
     )
     assert [name for name in retired if hasattr(T.cuda, name)] == []
+
+
+@pytest.mark.parametrize("as_callback", [False, True])
+def test_boolean_call_predicate_is_not_invoked_as_a_function(as_callback):
+    from tvm.backend.cuda.op import cuda_wait_until
+
+    value = tvm.tirx.Var("value", "int32")
+    predicate = tvm.tirx.if_then_else(value == 1, True, False)
+    supplied = (lambda _: predicate) if as_callback else predicate
+    call = cuda_wait_until(value, value, supplied)
+    assert call.args[2].same_as(predicate)
+
+
+def test_wait_keeps_predicate_statements_inside_each_poll():
+    @T.prim_func
+    def kernel(state: T.Buffer((1,), "int32"), out: T.Buffer((1,), "int32")):
+        T.device_entry()
+        T.cta_id([1])
+        T.thread_id([32])
+        seen = T.alloc_local((1,), "int32")
+        T.cuda.wait_until(seen[0], state.ptr_to([0]),
+                          T.if_then_else(seen[0] > 0, seen[0] == 7, False))
+        out[0] = seen[0]
+
+    source = build(kernel)
+    assert "([&]() {" in source
+    assert source.index("([&]() {") < source.index("bool condval;")
+
+
+def test_wait_publication_preserves_a_64_bit_literal_carrier():
+    @T.prim_func
+    def kernel(state: T.Buffer((1,), "int64")):
+        T.device_entry()
+        T.cta_id([1])
+        lane = T.thread_id([32])
+        if lane == 0:
+            T.ptx.st.release.gpu.global_.s64(state.ptr_to([0]), T.int64(7))
+
+    source = build(kernel)
+    assert "int64_t __value" in source
+    assert "st_release_gpu_global_s64_s32" not in source

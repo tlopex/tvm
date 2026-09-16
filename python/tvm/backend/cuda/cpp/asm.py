@@ -160,7 +160,7 @@ def _wait_until_forward(spelling, *args):
 
 @register_codegen("cuda_wait_until")
 def cuda_wait_until(dst, ptr, condition, scope, space, ptx_type, backoff_ns):
-    """Lower a declared wait to a pre-tested loop around one scoped load."""
+    """Lower a declared wait to relaxed polls and a closing acquire."""
     scope, space, ptx_type = (parse_str(x) for x in (scope, space, ptx_type))
     dtype = _wait_until_thread_local_scalar(dst, "wait_until")
     suffix = _wait_until_word_suffix(ptr, ptx_type, "wait_until")

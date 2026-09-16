@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 from tvm import tirx
-from tvm.ir import Call, Op, StringImm
+from tvm.ir import Call, Op, StringImm, is_prim_expr
 from tvm.ir.type import PointerType, PrimType
 from tvm.runtime import const
 from tvm.tirx.op import bitwise_and, call_intrin, tvm_access_ptr
@@ -459,9 +459,9 @@ def cuda_wait_until(
     word: the checker judges every access to that address against the protocol
     the wait names, rather than as an ordinary pair of memory accesses.
 
-    ``dst`` is an initialized thread-local scalar; its current value is tested
-    first, so an already satisfied predicate performs no load. ``predicate`` is
-    a trace-time callable taking the current value, or the boolean expression
+    ``dst`` is a writable thread-local scalar. The wait loads the word before
+    its first predicate test, so the incoming value of ``dst`` is not used.
+    ``predicate`` is a trace-time callable taking the current value, or the boolean expression
     itself. It is re-evaluated on every iteration, so it may test ``dst``
     against a loop-carried scalar such as a barrier's phase: the loop body only
     loads, and nothing it does can move that scalar.
@@ -492,10 +492,9 @@ def cuda_wait_until(
     only ``global``.
 
     ``backoff_ns`` puts a ``__nanosleep`` before each retry, as a contended
-    wait is ordinarily written. It goes before the load, so a predicate that
-    holds on entry still performs no load and no sleep, and a wait whose first
-    poll succeeds pays nothing. A kernel that spells the backoff itself writes
-    ``ld`` once and then waits, which is the same instruction sequence.
+    wait is ordinarily written. It goes before each retry load; a wait whose
+    first poll succeeds performs no sleep. A kernel that spells the backoff
+    itself writes ``ld`` once and then waits, which is the same instruction sequence.
 
     The backoff is the only thing a wait carries besides its own load, and it
     stays a scalar for a reason: it runs every iteration, touches no memory,
@@ -507,7 +506,9 @@ def cuda_wait_until(
     _reject_wide_word_for_predicate(ptx_type, "wait_until")
     if tirx.is_buffer_var(dst):
         dst = dst[0]
-    condition = tirx.convert(predicate(dst) if callable(predicate) else predicate)
+    condition = tirx.convert(
+        predicate(dst) if callable(predicate) and not is_prim_expr(predicate) else predicate
+    )
     return call_intrin(
         "",
         "tirx.cuda.wait_until",

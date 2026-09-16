@@ -230,9 +230,21 @@ def _make_codegen(entry: InstructionEntry):
             # back to its canonical choice, which is the only one it can have
             # when there is nothing to read it from.
             live = [i + lane for lane in range(n) if i + lane not in sunk]
-            if live and len(operand_dtypes(slot, mod_map)) > 1:
-                return arg_dtype(rest[at[live[0]]])
-            return operand_dtypes(slot, mod_map)[0]
+            allowed = operand_dtypes(slot, mod_map)
+            if live and len(allowed) > 1:
+                value = rest[at[live[0]]]
+                dtype = arg_dtype(value)
+                # Integer simplification may narrow a constant after tracing.
+                # The PTX operand still needs a legal register width; use the
+                # table's canonical integer carrier for that literal.
+                if (
+                    dtype not in allowed
+                    and isinstance(value, IntImm)
+                    and allowed[0] in _INTEGER_DTYPES
+                ):
+                    return allowed[0]
+                return dtype
+            return allowed[0]
 
         dtypes = tuple(_slot_dtype(slot, i, n) for slot, i, n in layout if slot.kind == "reg")
         # Caller-chosen immediates ride the Call until device codegen so an

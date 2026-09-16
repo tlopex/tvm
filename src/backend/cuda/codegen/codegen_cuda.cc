@@ -1030,12 +1030,26 @@ void CodeGenCUDA::Dispatch_(const CallNode* op, std::ostream& os) {
     }
   }
 
-  auto print_cuda_func_call = [&](const CallNode* op, std::ostream& os) {
+  auto print_cuda_func_call = [&](const CallNode* op, std::ostream& os, int deferred_arg = -1) {
     TVM_FFI_ICHECK_GE(op->args.size(), 2U);
     size_t num_args = op->args.size() - 2;
     std::vector<std::string> args;
     for (size_t i = 1; i < num_args + 1; i++) {
-      args.push_back(this->PrintExpr(op->args[i]));
+      if (static_cast<int>(i) == deferred_arg) {
+        // A wait predicate is evaluated after each poll. Keep statements
+        // emitted by expressions such as if_then_else inside that evaluation.
+        std::ostringstream outer;
+        std::swap(stream, outer);
+        int scope = BeginScope();
+        std::string value = PrintExpr(op->args[i]);
+        EndScope(scope);
+        std::string statements = stream.str();
+        std::swap(stream, outer);
+        args.push_back(statements.empty() ? value
+                                         : "([&]() { " + statements + "return " + value + "; }())");
+      } else {
+        args.push_back(this->PrintExpr(op->args[i]));
+      }
     }
     std::string source_code = op->args[num_args + 1].as<StringImmNode>()->value;
     std::string func_name = op->args[0].as<StringImmNode>()->value;
@@ -1062,7 +1076,8 @@ void CodeGenCUDA::Dispatch_(const CallNode* op, std::ostream& os) {
       // codegen is registered, it should return a Call to cuda_func_call
       auto func_call = codegen.value()(op->args);
       auto res = func_call.cast<ffi::Tuple<Call, ffi::Array<ffi::String>>>();
-      print_cuda_func_call(res.get<0>().get(), os);
+      print_cuda_func_call(res.get<0>().get(), os,
+                          call_op->name == "tirx.cuda.wait_until" ? 3 : -1);
       for (const auto& tag : res.get<1>()) {
         codegen_tags_.insert(tag.operator std::string());
       }
