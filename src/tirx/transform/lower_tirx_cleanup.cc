@@ -222,6 +222,9 @@ class LayoutApplier : public IRMutatorWithAnalyzer {
         StmtExprMutator::Mutate(ffi::AnyView(buf->elem_offset), InplaceMode::kDisallow)
             .ValueOrUnchanged(buf->elem_offset)
             .as_or_throw<PrimExpr>();
+    type->allocated_addr = type->allocated_addr.Map([this](const PrimExpr& addr) {
+      return this->Mutate(addr, InplaceMode::kDisallow).ValueOrUnchanged(addr);
+    });
     if (ffi::StructuralEqual()(buf.type(), BufferType(type))) {
       return buf;
     }

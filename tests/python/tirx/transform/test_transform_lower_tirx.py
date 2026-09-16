@@ -23,7 +23,7 @@ import tvm.testing
 from tvm.script import tirx as T
 from tvm.script.tirx import tile as Tx
 from tvm.tirx.function import PrimFunc
-from tvm.tirx.layout import laneid, warpid, wg_local_layout
+from tvm.tirx.layout import laneid, tmem_datapath_layout, warpid, wg_local_layout
 from tvm.tirx.transform import LowerTIRx, StmtSimplify
 
 
@@ -61,6 +61,30 @@ def _launch_thread_extents(func):
 
 
 L_LANE = T.TileLayout(T.S[32 : 1 @ laneid])
+
+
+def test_lower_tmem_allocated_address_tracks_shared_buffer():
+    @T.prim_func
+    def kernel():
+        T.device_entry()
+        T.cta_id([1])
+        T.thread_id([32])
+        address = T.alloc_buffer((1,), "uint32", scope="shared")
+        tmem = T.decl_buffer(
+            (128, 32),
+            "uint32",
+            scope="tmem",
+            layout=tmem_datapath_layout("D", 128, 32),
+            allocated_addr=address[0],
+        )
+        T.ptx.tcgen05.alloc.cta_group__1.sync.aligned.shared__cta.b32(address.ptr_to([0]), 32)
+        T.ptx.tcgen05.dealloc.cta_group__1.sync.aligned.b32(address[0], 32)
+
+    with tvm.target.Target("cuda"):
+        lowered = LowerTIRx()(tvm.IRModule({"main": kernel}))["main"]
+    # Layout lowering rebuilds the shared allocation. Metadata on a TMEM
+    # declaration must not retain a load from the original buffer variable.
+    assert not tvm.tirx.analysis.undefined_vars(lowered.body, lowered.params)
 
 
 def test_lower_tirx_opaque_optional_pragma_annotations():
