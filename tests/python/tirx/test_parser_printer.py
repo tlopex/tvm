@@ -2261,6 +2261,20 @@ def test_buffer_view_dtype_ir():
     assert from_source(code).script() == code
 
 
+def test_tmem_with_dtype_declares_derived_view():
+    @T.prim_func
+    def func() -> None:
+        T.device_entry()
+        A = T.decl_buffer((64, 64), "float32", scope="tmem", allocated_addr=0)
+        B = A.with_dtype("uint32")
+        B[0, 0] = T.uint32(0)
+
+    bufs = _collect_buffers(func)
+    assert str(bufs["B"].ty.dtype) == "uint32"
+    assert int(bufs["B"].ty.allocated_addr[0]) == 0
+    _assert_roundtrip(func)
+
+
 def test_buffer_slice_region():
     """Verify A[slice] returns BufferRegion (not DeclBuffer)."""
 

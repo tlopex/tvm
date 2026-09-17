@@ -123,6 +123,11 @@ def view(buf: Buffer, *args, **kwargs) -> Buffer:
     return _redecl(buf, shape, buf.layout if layout is None else layout)
 
 
+def with_dtype(buf: Buffer, dtype) -> Buffer:
+    """Re-declare ``buf`` with a different element dtype."""
+    return _redecl(buf, buf.shape, buf.layout, dtype=dtype)
+
+
 def local(buf: Buffer, *shape, layout=None) -> Buffer:
     """Implement :meth:`Buffer.local`."""
     if not shape:

@@ -213,7 +213,7 @@ class _BufferMethods:
 
     def with_dtype(self, dtype):
         """Return a new buffer with the dtype."""
-        return _ffi_api.BufferWithDtype(self, dtype)  # type: ignore
+        return _buffer_view.with_dtype(self, dtype)
 
     def offset_of(self, indices):
         """Determine the offset of the provided indices in the flattened buffer.
