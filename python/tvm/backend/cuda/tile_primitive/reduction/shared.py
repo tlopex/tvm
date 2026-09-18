@@ -189,7 +189,7 @@ def _emit_reduction_shared_cta(
             pass
 
     # fmt: off
-    @T.prim_func
+    @T.prim_func(check_well_formed=False)
     def impl():
         tid_in_scope = get_tid_in_scope()
         thread_data = T.alloc_buffer([1], dtype=dtype, scope="local")
@@ -237,7 +237,7 @@ def _emit_reduction_shared_thread(
     assert op_func is not None
     init_value = reduce_default_value_table(dtype).get(reduce_op)
 
-    @T.prim_func
+    @T.prim_func(check_well_formed=False)
     def impl():
         for spa_fused in T.serial(spatial_len):
             dst_indices = T.meta_var(get_indices(spa_fused, dst_st, dst_extent))
