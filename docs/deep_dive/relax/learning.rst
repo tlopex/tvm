@@ -55,16 +55,19 @@ execution. Of course, we can rewrite the above code using Relax as follows:
 
 .. code:: python
 
-    from tvm.script import relax as R
+    from tvm.relax import script as R
+    from tvm_tirx.script import tirx as T
+
+    n = T.dynamic("n", "int64")
 
     @R.function
     def relax_mlp(
-        data: R.Tensor(("n", 784), dtype="float32"),
+        data: R.Tensor((n, 784), dtype="float32"),
         w0: R.Tensor((784, 128), dtype="float32"),
         b0: R.Tensor((128,), dtype="float32"),
         w1: R.Tensor((128, 10), dtype="float32"),
         b1: R.Tensor((10,), dtype="float32"),
-    ) -> R.Tensor(("n", 10), dtype="float32"):
+    ) -> R.Tensor((n, 10), dtype="float32"):
         with R.dataflow():
             lv0 = R.matmul(data, w0) + b0
             lv1 = R.nn.relu(lv0)
@@ -124,14 +127,18 @@ for the end-to-end model execution. The code block below shows a TVMScript imple
 
 .. code:: python
 
-    from tvm.script import ir as I
-    from tvm.script import tirx as T
-    from tvm.script import s_tir as Ts
-    from tvm.script import relax as R
+    from tvm.relax import script as R
+    from tvm.s_tir import script as Ts
+    from tvm_tirx.script import ir as I
+    from tvm_tirx.script import tirx as T
+
+    n = T.dynamic("n", "int64")
+    M = T.dynamic("M", "int64")
+    N = T.dynamic("N", "int64")
+    K = T.dynamic("K", "int64")
 
     @I.ir_module
     class Module:
-        M, N, K = T.int64(), T.int64(), T.int64()
         @Ts.function(private=True)
         def linear(X: T.Tensor((M, K), 'float32'), W: T.Tensor((K, N), 'float32'), B: T.Tensor((N,), 'float32'), Z: T.Tensor((M, N), 'float32')):
 
@@ -151,7 +158,6 @@ for the end-to-end model execution. The code block below shows a TVMScript imple
                     v_i, v_j = Ts.axis.remap("SS", [i, j])
                     Z[v_i, v_j] = Y[v_i, v_j] + B[v_j]
 
-        M, N = T.int64(), T.int64()
         @Ts.function(private=True)
         def relu(X: T.Tensor((M, N), 'float32'), Y: T.Tensor((M, N), 'float32')):
 
@@ -164,14 +170,13 @@ for the end-to-end model execution. The code block below shows a TVMScript imple
 
         @R.function
         def main(
-            x: R.Tensor(("n", 784), dtype="float32"),
+            x: R.Tensor((n, 784), dtype="float32"),
             w0: R.Tensor((784, 256), dtype="float32"),
             b0: R.Tensor((256,), dtype="float32"),
             w1: R.Tensor((256, 10), dtype="float32"),
             b1: R.Tensor((10,), dtype="float32")
-        ) -> R.Tensor(("n", 10), dtype="float32"):
+        ) -> R.Tensor((n, 10), dtype="float32"):
             cls = Module
-            n = T.int64()
             with R.dataflow():
                 lv = R.call_tir(cls.linear, (x, w0, b0), ty_args=[R.Tensor((n, 256), dtype="float32")])
                 lv1 = R.call_tir(cls.relu, (lv,), ty_args=[R.Tensor((n, 256), dtype="float32")])
@@ -183,7 +188,7 @@ The above code contains kinds of functions: the primitive tensor functions (``T.
 ``R.function`` (relax function). Relax function is a new type of abstraction representing
 high-level neural network executions.
 
-Note that the above relax module natively supports symbolic shapes, see the ``"n"`` in the
+Note that the above relax module natively supports symbolic shapes, see the ``n`` in the
 tensor shapes in ``main`` function and ``M``, ``N``, ``K`` in the ``linear`` function. This is
 a key feature of Relax abstraction, which enables the compiler to track dynamic shape relations
 globally across tensor operators and function calls.

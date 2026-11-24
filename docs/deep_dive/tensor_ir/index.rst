@@ -25,12 +25,14 @@ represent and optimize primitive tensor functions.
 The TensorIR codebase consists of two modules (split from the former ``tir``):
 
 - **tirx** — Core IR definitions and lowering (Function, Buffer, SBlock,
-  expressions, statements, lowering passes).
+  expressions, statements, lowering passes), provided by the standalone
+  TIRx package as ``tvm_tirx.tirx``.
 - **s_tir** (Schedulable TIR) — Schedule primitives, MetaSchedule, DLight,
-  and tensor intrinsics.
+  and tensor intrinsics, provided by TVM as ``tvm.s_tir``.
 
-In TVMScript, both modules are accessed via
-``from tvm.script import tirx as T``.
+In TVMScript, core constructs are accessed via
+``from tvm_tirx.script import tirx as T`` and schedulable constructs via
+``from tvm.s_tir import script as Ts``.
 
 .. toctree::
     :maxdepth: 2
